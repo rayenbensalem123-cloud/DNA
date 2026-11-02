@@ -3,11 +3,38 @@ import { api } from '../api';
 import { useLanguage } from '../i18n';
 import { todayInputValue, toInputDate, fmtSize } from '../utils';
 
-export default function LetterForm({ initial = {}, onSubmit, submitLabel }) {
+const CATEGORIES = ['administration', 'juridique', 'finances', 'rh', 'communication', 'securite', 'autre'];
+const MAX_FILE_BYTES = 10 * 1024 * 1024;
+const ALLOWED_FILE = /\.(pdf|jpe?g|png)$/i;
+
+/**
+ * Letter form, used to create a letter (mode "page") and to edit one inside a modal (mode "modal").
+ *
+ * onSubmit(data) receives the fields plus `files` (new files picked by the user). It may return a
+ * promise: while it runs the buttons are disabled, and if it throws the message is shown in the form.
+ * In modal mode the already-attached files are passed as `existingPieces`; they can be opened
+ * (onOpenPiece) and, when canDeletePieces is true, removed (onDeletePiece).
+ */
+export default function LetterForm({
+  initial = {},
+  onSubmit,
+  submitLabel,
+  mode = 'page',
+  onCancel,
+  existingPieces = [],
+  onOpenPiece,
+  onDeletePiece,
+  canDeletePieces = false,
+  error = '',
+}) {
   const { t } = useLanguage();
+  const isEdit = mode === 'modal';
   const [committees, setCommittees] = useState([]);
   const [files, setFiles] = useState([]);
   const [fileError, setFileError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
+  const [deletingId, setDeletingId] = useState(null);
   const [f, setF] = useState({
     direction: initial.direction || 'entrant',
     type: initial.type || 'courrier',
@@ -29,7 +56,6 @@ export default function LetterForm({ initial = {}, onSubmit, submitLabel }) {
   });
   const set = (k, v) => setF((prev) => ({ ...prev, [k]: v }));
 
-
   useEffect(() => {
     let cancelled = false;
     api.committees()
@@ -42,7 +68,8 @@ export default function LetterForm({ initial = {}, onSubmit, submitLabel }) {
     setFileError('');
     const accepted = [];
     for (const file of Array.from(fileList || [])) {
-      if (file.size > 10 * 1024 * 1024) { setFileError((t('form.fileTooBig'))); continue; }
+      if (!ALLOWED_FILE.test(file.name)) { setFileError(`${t('form.fileBadType')} ${file.name}`); continue; }
+      if (file.size > MAX_FILE_BYTES) { setFileError(`${t('form.fileTooBig')} ${file.name}`); continue; }
       accepted.push(file);
     }
     setFiles((prev) => [...prev, ...accepted]);
@@ -50,22 +77,38 @@ export default function LetterForm({ initial = {}, onSubmit, submitLabel }) {
 
   const submit = async (e) => {
     e.preventDefault();
-    onSubmit({
-      direction: f.direction,
-      type: f.type,
-      categorie: f.categorie,
-      priorite: f.priorite,
-      statut: f.statut,
-      objet: f.objet,
-      resume: f.resume,
-      numeroLettre: f.numeroLettre,
-      commission: f.commission || null,
-      expediteur: { nom: f.expediteurNom, fonction: f.expediteurFonction, service: f.expediteurService },
-      destinataire: { nom: f.destinataireNom, fonction: f.destinataireFonction, service: f.destinataireService },
-      dateEmission: f.dateEmission ? f.dateEmission + 'T09:00:00.000Z' : new Date().toISOString(),
-      dateReception: f.dateReception ? f.dateReception + 'T09:00:00.000Z' : null,
-      files,
-    });
+    if (submitting) return;
+    setSubmitting(true);
+    setSubmitError('');
+    try {
+      await onSubmit({
+        direction: f.direction,
+        type: f.type,
+        categorie: f.categorie,
+        priorite: f.priorite,
+        statut: f.statut,
+        objet: f.objet,
+        resume: f.resume,
+        numeroLettre: f.numeroLettre,
+        commission: f.commission || null,
+        expediteur: { nom: f.expediteurNom, fonction: f.expediteurFonction, service: f.expediteurService },
+        destinataire: { nom: f.destinataireNom, fonction: f.destinataireFonction, service: f.destinataireService },
+        dateEmission: f.dateEmission ? f.dateEmission + 'T09:00:00.000Z' : new Date().toISOString(),
+        dateReception: f.dateReception ? f.dateReception + 'T09:00:00.000Z' : null,
+        files,
+      });
+    } catch (err) {
+      setSubmitError(err?.message || t('common.error'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const removePiece = async (piece) => {
+    if (!onDeletePiece) return;
+    if (!window.confirm(t('edit.confirmRemoveFile', { name: piece.nom }))) return;
+    setDeletingId(piece.id);
+    try { await onDeletePiece(piece); } finally { setDeletingId(null); }
   };
 
   const field = (key, label, el) => (
@@ -75,8 +118,8 @@ export default function LetterForm({ initial = {}, onSubmit, submitLabel }) {
     </label>
   );
 
-  return (
-    <form className="card form-card" onSubmit={submit}>
+  const fields = (
+    <>
       <div className="form-grid">
         {field('numeroLettre', t('form.numero'), (
           <input value={f.numeroLettre} onChange={(e) => set('numeroLettre', e.target.value)} placeholder="N° ..." />
@@ -100,13 +143,9 @@ export default function LetterForm({ initial = {}, onSubmit, submitLabel }) {
         ))}
         {field('categorie', t('form.categorie'), (
           <select value={f.categorie} onChange={(e) => set('categorie', e.target.value)}>
-            <option value="administration">{t('categorie.administration')}</option>
-            <option value="juridique">{t('categorie.juridique')}</option>
-            <option value="finances">{t('categorie.finances')}</option>
-            <option value="rh">{t('categorie.rh')}</option>
-            <option value="communication">{t('categorie.communication')}</option>
-            <option value="securite">{t('categorie.securite')}</option>
-            <option value="autre">{t('categorie.autre')}</option>
+            {CATEGORIES.map((c) => <option key={c} value={c}>{t('categorie.' + c)}</option>)}
+            {/* keep an older value selectable instead of silently switching it to another category */}
+            {!CATEGORIES.includes(f.categorie) && <option value={f.categorie}>{f.categorie}</option>}
           </select>
         ))}
         {field('priorite', t('form.priorite'), (
@@ -128,7 +167,7 @@ export default function LetterForm({ initial = {}, onSubmit, submitLabel }) {
             ))}
           </select>
         ))}
-        {field('statut', t('form.statut'), (
+        {field('statut', isEdit ? t('form.statutEdit') : t('form.statut'), (
           <select value={f.statut} onChange={(e) => set('statut', e.target.value)}>
             <option value="recu">{t('status.recu')}</option>
             <option value="enregistre">{t('status.enregistre')}</option>
@@ -183,8 +222,39 @@ export default function LetterForm({ initial = {}, onSubmit, submitLabel }) {
           <input type="date" value={f.dateReception} onChange={(e) => set('dateReception', e.target.value)} />
         </label>
       </div>
+
+      {isEdit && (
+        <div className="field full">
+          <span>{t('edit.currentFiles')}</span>
+          {existingPieces.length === 0 ? (
+            <div className="muted">{t('edit.noFiles')}</div>
+          ) : (
+            <div className="file-list">
+              {existingPieces.map((p) => (
+                <div key={p.id} className="file-row">
+                  {p.hasFile && onOpenPiece
+                    ? <button type="button" className="btn-link" onClick={() => onOpenPiece(p)}>{p.nom}</button>
+                    : <span className="file-name">{p.nom}</span>}
+                  <span className="muted">{p.taille ? fmtSize(p.taille) : ''}{p.hasFile ? '' : ' (' + t('detail.demoFile') + ')'}</span>
+                  {canDeletePieces && onDeletePiece && (
+                    <button
+                      type="button"
+                      className="btn btn-danger btn-sm file-delete"
+                      disabled={submitting || deletingId === p.id}
+                      onClick={() => removePiece(p)}
+                    >
+                      {t('edit.removeFile')}
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="field full">
-        <span>{t('form.addFiles')}</span>
+        <span>{isEdit ? t('edit.addFiles') : t('form.addFiles')}</span>
         <label className="upload-box">
           <input
             type="file"
@@ -204,13 +274,35 @@ export default function LetterForm({ initial = {}, onSubmit, submitLabel }) {
               <div key={i} className="file-row">
                 <span className="file-name">{file.name}</span>
                 <span className="muted">{fmtSize(file.size)}</span>
-                <button type="button" className="btn btn-ghost" onClick={() => setFiles((prev) => prev.filter((_, j) => j !== i))}>{t('common.cancel')}</button>
+                <button type="button" className="btn btn-ghost file-delete" onClick={() => setFiles((prev) => prev.filter((_, j) => j !== i))}>{t('common.cancel')}</button>
               </div>
             ))}
           </div>
         )}
       </div>
-      <button className="btn btn-primary" type="submit">{submitLabel || t('form.submit')}</button>
+    </>
+  );
+
+  const message = error || submitError;
+
+  if (isEdit) {
+    return (
+      <form className="modal-form" onSubmit={submit}>
+        <div className="modal-body">{fields}</div>
+        {message && <div className="modal-error"><div className="form-error">{message}</div></div>}
+        <div className="modal-footer">
+          <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={submitting}>{t('common.cancel')}</button>
+          <button className="btn btn-primary" type="submit" disabled={submitting}>{submitting ? t('common.loading') : (submitLabel || t('form.submit'))}</button>
+        </div>
+      </form>
+    );
+  }
+
+  return (
+    <form className="card form-card" onSubmit={submit}>
+      {fields}
+      {message && <div className="form-error">{message}</div>}
+      <button className="btn btn-primary" type="submit" disabled={submitting}>{submitLabel || t('form.submit')}</button>
     </form>
   );
 }
