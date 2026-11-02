@@ -14,8 +14,10 @@ export function fmtDateTime(iso) {
 }
 
 export function fmtSize(bytes) {
-  if (!bytes && bytes !== 0) return '';
-  const kb = Math.round(Number(bytes) / 1024);
+  if (bytes === null || bytes === undefined) return '';
+  const b = Number(bytes) || 0;
+  if (b < 1024) return b + ' o';
+  const kb = Math.round(b / 1024);
   if (kb < 1024) return kb + ' Ko';
   return (kb / 1024).toFixed(1) + ' Mo';
 }

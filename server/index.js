@@ -6,6 +6,7 @@ import { getDB, saveDB, verifyPassword } from './store.js';
 
 const PORT = process.env.PORT || 3001;
 const CLIENT_DIST = path.join(process.cwd(), 'client', 'dist');
+const UPLOAD_DIR = path.join(process.cwd(), 'server', 'data', 'uploads');
 const TOKEN_TTL = 1000 * 60 * 60 * 8; // 8h
 
 const sessions = new Map(); // token -> { userId, expiresAt }
@@ -34,12 +35,12 @@ function send(res, status, data, extraHeaders = {}) {
   res.end(body);
 }
 
-function readBody(req) {
+function readBody(req, limitMB = 10) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let size = 0;
-    req.on('data', (c) => { size += c.length; if (size > 5 * 1024 * 1024) { reject(new Error('Payload too large')); req.destroy(); return; } chunks.push(c); });
-    req.on('end', () => { try { resolve(chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {}); } catch (e) { reject(new Error('Invalid JSON')); } });
+    req.on('data', (c) => { size += c.length; if (size > limitMB * 1024 * 1024) { reject(new Error('Payload too large')); req.destroy(); return; } chunks.push(c); });
+    req.on('end', () => { try { resolve(chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {}); } catch (e) { resolve({}); } });
     req.on('error', reject);
   });
 }
@@ -69,6 +70,14 @@ function isValidStatut(s) { return ['recu', 'enregistre', 'en_cours', 'traite', 
 function isValidType(t) { return ['officielle', 'arrete', 'decret', 'note', 'courrier', 'mandat', 'autre'].includes(t); }
 function isValidCategorie(c) { return ['administration', 'juridique', 'finances', 'rh', 'communication', 'securite', 'autre'].includes(c); }
 function isValidPriorite(p) { return ['normale', 'urgente', 'confidentielle'].includes(p); }
+function isValidCommission(db, c) { return !c || (Array.isArray(db.committees) && db.committees.some((x) => x.id === c)); }
+
+const COMMISSION_EVENTS = ['recu_comite', 'traite_comite', 'note'];
+
+function sanitizeFilename(name) {
+  const base = path.basename(String(name || 'document.pdf'));
+  return base.replace(/[^\w., ()\-\u00C0-\u017F]/g, '_').slice(0, 120) || 'document.pdf';
+}
 
 function nextRef(db) {
   const year = new Date().getFullYear();
@@ -78,10 +87,30 @@ function nextRef(db) {
 
 function publicLetter(l) {
   const { id, createdAt, updatedAt, createdBy, ...rest } = l;
-  return { ...rest, id, createdAt, updatedAt, createdBy };
+  return {
+    ...rest,
+    id, createdAt, updatedAt, createdBy,
+    numeroLettre: l.numeroLettre || '',
+    commission: l.commission || null,
+    commissionHisto: Array.isArray(l.commissionHisto) ? l.commissionHisto : [],
+    pieces: (l.pieces || []).map((p) => ({ id: p.id, nom: p.nom, taille: p.taille, hasFile: !!p.storedAs })),
+  };
 }
 
+process.on('uncaughtException', (e) => { console.error('uncaught', e); });
+process.on('unhandledRejection', (e) => { console.error('unhandledRejection', e); });
+
 const server = http.createServer(async (req, res) => {
+  try {
+    await route(req, res);
+  } catch (e) {
+    console.error('Request error', req.url, e);
+    if (!res.headersSent) send(res, 500, { error: 'Erreur serveur' });
+    else res.end();
+  }
+});
+
+async function route(req, res) {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
   const pathname = url.pathname;
   const method = req.method;
@@ -111,6 +140,13 @@ const server = http.createServer(async (req, res) => {
     return send(res, 200, { user: publicUser(user) });
   }
 
+  if (pathname === '/api/committees' && method === 'GET') {
+    const user = requireAuth(req, res);
+    if (!user) return;
+    const db = getDB();
+    return send(res, 200, { items: db.committees });
+  }
+
   if (pathname === '/api/stats' && method === 'GET') {
     const user = requireAuth(req, res);
     if (!user) return;
@@ -119,6 +155,7 @@ const server = http.createServer(async (req, res) => {
     const parStatut = {};
     const parCategorie = {};
     const parType = {};
+    const parCommission = {};
     let recusCeMois = 0, archivesCeMois = 0, traiteCeMois = 0, urgentes = 0;
     const now = new Date();
     const debutMois = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
@@ -129,6 +166,8 @@ const server = http.createServer(async (req, res) => {
       parCategorie[ck] = (parCategorie[ck] || 0) + 1;
       const tk = l.type || 'autre';
       parType[tk] = (parType[tk] || 0) + 1;
+      const mk = l.commission || 'non_assigne';
+      parCommission[mk] = (parCommission[mk] || 0) + 1;
       if ((l.direction || 'entrant') === 'entrant' && (l.dateReception || l.createdAt) >= debutMois) recusCeMois++;
       if (l.statut === 'archive' && (l.dateEmission || l.createdAt) >= debutMois) archivesCeMois++;
       if (l.statut === 'traite' && (l.dateEmission || l.createdAt) >= debutMois) traiteCeMois++;
@@ -139,7 +178,7 @@ const server = http.createServer(async (req, res) => {
       entrants: lettres.filter((l) => (l.direction || 'entrant') === 'entrant').length,
       sortants: lettres.filter((l) => l.direction === 'sortant').length,
       recusCeMois, archivesCeMois, traiteCeMois, urgentes,
-      parStatut, parCategorie, parType,
+      parStatut, parCategorie, parType, parCommission,
     });
   }
 
@@ -153,6 +192,7 @@ const server = http.createServer(async (req, res) => {
     const type = url.searchParams.get('type') || '';
     const categorie = url.searchParams.get('categorie') || '';
     const priorite = url.searchParams.get('priorite') || '';
+    const commission = url.searchParams.get('commission') || '';
     const from = url.searchParams.get('from') ? new Date(url.searchParams.get('from')).toISOString() : null;
     const to = url.searchParams.get('to') ? new Date(url.searchParams.get('to') + 'T23:59:59.999Z').toISOString() : null;
 
@@ -162,10 +202,11 @@ const server = http.createServer(async (req, res) => {
       if (type && (l.type || 'autre') !== type) return false;
       if (categorie && (l.categorie || 'autre') !== categorie) return false;
       if (priorite && (l.priorite || 'normale') !== priorite) return false;
+      if (commission && ((l.commission || '') !== commission)) return false;
       if (from && (l.dateEmission || l.createdAt) < from) return false;
       if (to && (l.dateEmission || l.createdAt) > to) return false;
       if (q) {
-        const hay = [l.ref, l.objet, l.resume, l.expediteur?.nom || '', l.destinataire?.nom || '', l.expediteur?.fonction || '', l.destinataire?.fonction || '', l.service || '']
+        const hay = [l.ref, l.numeroLettre, l.objet, l.resume, l.expediteur?.nom || '', l.destinataire?.nom || '', l.expediteur?.fonction || '', l.destinataire?.fonction || '', l.service || '']
           .join(' ').toLowerCase();
         if (!hay.includes(q)) return false;
       }
@@ -212,7 +253,11 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req);
       const nextStatut = body.statut !== undefined ? body.statut : letter.statut;
       if (!isValidStatut(nextStatut)) return send(res, 400, { error: 'Statut invalide' });
+      const prevCommission = letter.commission || null;
+      const nextCommission = body.commission !== undefined ? (body.commission || null) : prevCommission;
+      if (!isValidCommission(db, nextCommission)) return send(res, 400, { error: 'Comité invalide' });
       if (body.ref) letter.ref = body.ref;
+      if (body.numeroLettre !== undefined) letter.numeroLettre = String(body.numeroLettre || '');
       Object.assign(letter, {
         direction: body.direction !== undefined ? body.direction : letter.direction,
         type: body.type !== undefined ? body.type : letter.type,
@@ -227,6 +272,18 @@ const server = http.createServer(async (req, res) => {
         dateReception: body.dateReception !== undefined ? body.dateReception : letter.dateReception,
         pieces: body.pieces !== undefined ? body.pieces : letter.pieces,
       });
+      letter.commission = nextCommission;
+      if (nextCommission && nextCommission !== prevCommission) {
+        letter.commissionHisto.push({
+          id: 'h' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+          date: new Date().toISOString(),
+          type: 'assigne',
+          committee: nextCommission,
+          by: user.id, byName: user.name,
+          note: String(body.commissionNote || ''),
+        });
+        if (body.statut === undefined) letter.statut = 'transmis';
+      }
       letter.updatedAt = new Date().toISOString();
       saveDB(db);
       const updated = db.letters.find((l) => l.id === id);
@@ -237,6 +294,14 @@ const server = http.createServer(async (req, res) => {
       const user = requireAuth(req, res);
       if (!user) return;
       if (user.role !== 'admin') return send(res, 403, { error: 'Droits insuffisants' });
+      const letter = db.letters.find((l) => l.id === id);
+      if (!letter) return send(res, 404, { error: 'Lettre introuvable' });
+      for (const p of letter.pieces || []) {
+        if (p.storedAs) {
+          const fp = path.join(UPLOAD_DIR, p.storedAs);
+          try { if (fs.existsSync(fp)) fs.unlinkSync(fp); } catch (e) { /* ignore */ }
+        }
+      }
       const idx = db.letters.findIndex((l) => l.id === id);
       if (idx < 0) return send(res, 404, { error: 'Lettre introuvable' });
       db.letters.splice(idx, 1);
@@ -251,11 +316,17 @@ const server = http.createServer(async (req, res) => {
     if (!['admin', 'agent'].includes(user.role)) return send(res, 403, { error: 'Droits insuffisants' });
     const body = await readBody(req);
     const db = getDB();
-    const statut = body.statut || 'recu';
+    if (!isValidCommission(db, body.commission || null)) return send(res, 400, { error: 'Comité invalide' });
+    const statut = body.statut || (body.commission ? 'transmis' : 'recu');
     if (!isValidStatut(statut)) return send(res, 400, { error: 'Statut invalide' });
+    const commission = body.commission || null;
+    const commissionHisto = commission
+      ? [{ id: 'h' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8), date: new Date().toISOString(), type: 'assigne', committee: commission, by: user.id, byName: user.name, note: '' }]
+      : [];
     const lettre = {
       id: 'l' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
       ref: body.ref || nextRef(db),
+      numeroLettre: String(body.numeroLettre || ''),
       direction: body.direction === 'sortant' ? 'sortant' : 'entrant',
       type: isValidType(body.type) ? body.type : 'courrier',
       categorie: isValidCategorie(body.categorie) ? body.categorie : 'autre',
@@ -263,6 +334,8 @@ const server = http.createServer(async (req, res) => {
       resume: String(body.resume || ''),
       priorite: isValidPriorite(body.priorite) ? body.priorite : 'normale',
       statut,
+      commission,
+      commissionHisto,
       expediteur: body.expediteur || { nom: '', fonction: '', service: '' },
       destinataire: body.destinataire || { nom: '', fonction: '', service: '' },
       dateEmission: body.dateEmission || new Date().toISOString(),
@@ -275,6 +348,106 @@ const server = http.createServer(async (req, res) => {
     db.letters.push(lettre);
     saveDB(db);
     return send(res, 201, { item: publicLetter(lettre) });
+  }
+
+  // Committee tracking events
+  const eventsMatch = /^\/api\/letters\/([A-Za-z0-9_-]+)\/commission-events$/.exec(pathname);
+  if (eventsMatch && method === 'POST') {
+    const user = requireAuth(req, res);
+    if (!user) return;
+    if (!['admin', 'agent'].includes(user.role)) return send(res, 403, { error: 'Droits insuffisants' });
+    const db = getDB();
+    const letter = db.letters.find((l) => l.id === eventsMatch[1]);
+    if (!letter) return send(res, 404, { error: 'Lettre introuvable' });
+    const body = await readBody(req);
+    const type = String(body.type || '');
+    if (!COMMISSION_EVENTS.includes(type)) return send(res, 400, { error: 'Type d\'événement invalide' });
+    if (type !== 'note' && !letter.commission) return send(res, 400, { error: 'Aucun comité assigné' });
+    const event = {
+      id: 'h' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+      date: new Date().toISOString(),
+      type,
+      committee: letter.commission,
+      by: user.id, byName: user.name,
+      note: String(body.note || ''),
+    };
+    letter.commissionHisto.push(event);
+    if (type === 'recu_comite') letter.statut = 'en_cours';
+    if (type === 'traite_comite') letter.statut = 'traite';
+    letter.updatedAt = new Date().toISOString();
+    saveDB(db);
+    return send(res, 200, { item: publicLetter(db.letters.find((l) => l.id === letter.id)) });
+  }
+
+  // Attachments (scanned letter PDF): upload / stream / delete
+  const piecesMatch = /^\/api\/letters\/([A-Za-z0-9_-]+)\/pieces(?:\/([A-Za-z0-9_-]+))?$/.exec(pathname);
+  if (piecesMatch) {
+    const [_, letterId, pieceId] = piecesMatch;
+    const db = getDB();
+    const letter = db.letters.find((l) => l.id === letterId);
+    if (!letter) return send(res, 404, { error: 'Lettre introuvable' });
+
+    if (method === 'POST') {
+      const user = requireAuth(req, res);
+      if (!user) return;
+      if (!['admin', 'agent'].includes(user.role)) return send(res, 403, { error: 'Droits insuffisants' });
+      let body;
+      try { body = await readBody(req, 14); } catch (e) { return send(res, 413, { error: 'Fichier trop volumineux (max ~10 Mo)' }); }
+      const filename = sanitizeFilename(body.filename);
+      if (!/^[A-Za-z0-9+/=\s]+$/.test(String(body.dataBase64 || ''))) return send(res, 400, { error: 'Données base64 invalides' });
+      const buf = Buffer.from(String(body.dataBase64), 'base64');
+      if (!buf.length) return send(res, 400, { error: 'Fichier vide' });
+      if (buf.length > 10 * 1024 * 1024) return send(res, 413, { error: 'Fichier trop volumineux (max 10 Mo)' });
+      fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+      const storedAs = letterId + '-' + Date.now().toString(36) + '-' + filename.replace(/[^.\w]/g, '_');
+      fs.writeFileSync(path.join(UPLOAD_DIR, storedAs), buf);
+      const piece = { id: 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8), nom: filename, taille: buf.length, storedAs };
+      letter.pieces.push(piece);
+      letter.updatedAt = new Date().toISOString();
+      saveDB(db);
+      return send(res, 201, { item: { id: piece.id, nom: piece.nom, taille: piece.taille, hasFile: true }, letters: db.letters.length });
+    }
+
+    if (method === 'GET' && !pieceId) {
+      const user = requireAuth(req, res);
+      if (!user) return;
+      return send(res, 200, { items: (letter.pieces || []).map((p) => ({ id: p.id, nom: p.nom, taille: p.taille, hasFile: !!p.storedAs })) });
+    }
+
+    if (method === 'GET' && pieceId) {
+      const user = requireAuth(req, res);
+      if (!user) return;
+      const piece = (letter.pieces || []).find((p) => p.id === pieceId);
+      if (!piece || !piece.storedAs) return send(res, 404, { error: 'Fichier non disponible' });
+      const filePath = path.join(UPLOAD_DIR, piece.storedAs);
+      if (!fs.existsSync(filePath)) return send(res, 404, { error: 'Fichier non disponible' });
+      const ext = path.extname(piece.storedAs).toLowerCase();
+      const mime = ext === '.pdf' ? 'application/pdf' : ext === '.png' ? 'image/png' : (ext === '.jpg' || ext === '.jpeg') ? 'image/jpeg' : 'application/octet-stream';
+      const data = fs.readFileSync(filePath);
+      res.writeHead(200, {
+        'Content-Type': mime,
+        'Content-Length': data.length,
+        'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(piece.nom)}`,
+      });
+      res.end(data);
+      return;
+    }
+
+    if (method === 'DELETE' && pieceId) {
+      const user = requireAuth(req, res);
+      if (!user) return;
+      if (user.role !== 'admin') return send(res, 403, { error: 'Droits insuffisants' });
+      const idx = (letter.pieces || []).findIndex((p) => p.id === pieceId);
+      if (idx < 0) return send(res, 404, { error: 'Fichier introuvable' });
+      const [removed] = letter.pieces.splice(idx, 1);
+      if (removed && removed.storedAs) {
+        const fp = path.join(UPLOAD_DIR, removed.storedAs);
+        try { if (fs.existsSync(fp)) fs.unlinkSync(fp); } catch (e) { /* ignore */ }
+      }
+      letter.updatedAt = new Date().toISOString();
+      saveDB(db);
+      return send(res, 200, { ok: true });
+    }
   }
 
   // Static client
@@ -292,7 +465,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   return send(res, 404, { error: 'Not found' });
-});
+}
 
 server.listen(PORT, () => {
   console.log(`Bureau Ordre server listening on http://localhost:${PORT}`);

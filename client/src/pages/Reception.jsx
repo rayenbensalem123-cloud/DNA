@@ -9,6 +9,13 @@ export default function Reception() {
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [committees, setCommittees] = useState([]);
+
+  const committeeName = (id) => (committees.find((c) => c.id === id)?.nom) || '—';
+
+  useEffect(() => {
+    api.committees().then((d) => setCommittees(d.items || [])).catch(() => {});
+  }, []);
 
   const loadReceived = async () => {
     setLoading(true);
@@ -23,7 +30,7 @@ export default function Reception() {
   useEffect(() => { loadReceived(); /* eslint-disable-next-line */ }, []);
 
   const submit = async (data) => {
-    const d = await api.createLetter({ ...data, direction: 'entrant' });
+    const d = await api.createLetterWithFiles({ ...data, direction: 'entrant' }, data.files || []);
     await loadReceived();
     return d.item.id;
   };
@@ -47,19 +54,21 @@ export default function Reception() {
         {loading ? <div className="card-pad">{t('common.loading')}</div> : (
           <table className="table">
             <thead>
-              <tr><th>{t('letters.ref')}</th><th>{t('letters.objet')}</th><th>{t('letters.expediteur')}</th><th>{t('letters.statut')}</th><th>{t('letters.date')}</th></tr>
+              <tr><th>{t('letters.ref')}</th><th>{t('letters.numero')}</th><th>{t('letters.objet')}</th><th>{t('letters.expediteur')}</th><th>{t('letters.commission')}</th><th>{t('letters.statut')}</th><th>{t('letters.date')}</th></tr>
             </thead>
             <tbody>
               {items.map((l) => (
                 <tr key={l.id}>
                   <td className="mono">{l.ref}</td>
+                  <td className="mono">{l.numeroLettre || '—'}</td>
                   <td>{l.objet}</td>
                   <td>{l.expediteur?.nom || '—'}</td>
+                  <td>{committeeName(l.commission)}</td>
                   <td><span className={'badge statut-' + l.statut}>{t('status.' + (l.statut || 'recu'))}</span></td>
                   <td>{fmtDate(l.dateReception || l.createdAt)}</td>
                 </tr>
               ))}
-              {items.length === 0 && <tr><td colSpan={5} className="empty-cell">{t('letters.empty')}</td></tr>}
+              {items.length === 0 && <tr><td colSpan={7} className="empty-cell">{t('letters.empty')}</td></tr>}
             </tbody>
           </table>
         )}

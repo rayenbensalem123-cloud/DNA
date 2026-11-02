@@ -11,21 +11,29 @@ export default function LetterDetail() {
   const { user } = useAuth();
   const { t } = useLanguage();
   const [letter, setLetter] = useState(null);
+  const [committees, setCommittees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [statut, setStatut] = useState('');
+  const [committee, setCommittee] = useState('');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const committeeName = (cid) => (committees.find((c) => c.id === cid)?.nom) || cid || '—';
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError('');
+    api.committees().then((d) => { if (!cancelled) setCommittees(d.items || []); }).catch(() => {});
     // The list endpoint is the only read endpoint; find by id from a full scan.
     api.listLetters({ limit: 500, sort: 'date' })
       .then((d) => {
-        const found = d.items.find((l) => l.id === id) || null;
         if (cancelled) return;
+        const found = d.items.find((l) => l.id === id) || null;
         setLetter(found);
         setStatut(found ? found.statut : '');
+        setCommittee(found ? (found.commission || '') : '');
         setLoading(false);
       })
       .catch(() => { if (!cancelled) { setError('Erreur'); setLoading(false); } });
@@ -35,10 +43,38 @@ export default function LetterDetail() {
   const saveStatus = async () => {
     if (!letter) return;
     try {
-      const d = await api.updateLetter(letter.id, { statut });
+      const d = await api.updateLetter(letter.id, { statut, commission: committee || null });
+      setLetter(d.item);
+      setStatut(d.item.statut);
+      setCommittee(d.item.commission || '');
+    } catch (e) { setError(e.message || 'Erreur'); }
+  };
+
+  const assignCommittee = async () => {
+    if (!letter) return;
+    setBusy(true);
+    setError('');
+    try {
+      const changed = (committee || null) !== (letter.commission || null);
+      const nextStatut = changed ? (committee ? 'transmis' : 'recu') : statut;
+      const d = await api.updateLetter(letter.id, { commission: committee || null, statut: nextStatut });
       setLetter(d.item);
       setStatut(d.item.statut);
     } catch (e) { setError(e.message || 'Erreur'); }
+    setBusy(false);
+  };
+
+  const addEvent = async (type) => {
+    if (!letter) return;
+    setBusy(true);
+    setError('');
+    try {
+      const d = await api.addCommissionEvent(letter.id, { type, note });
+      setLetter(d.item);
+      setStatut(d.item.statut);
+      setNote('');
+    } catch (e) { setError(e.message || 'Erreur'); }
+    setBusy(false);
   };
 
   const remove = async () => {
@@ -49,8 +85,14 @@ export default function LetterDetail() {
     } catch (e) { setError(e.message || 'Erreur'); }
   };
 
+  const openPiece = async (pieceId) => {
+    setError('');
+    try { await api.openPiece(letter.id, pieceId); }
+    catch (e) { setError(e.message || 'Erreur'); }
+  };
+
   if (loading) return <div className="page"><div className="card">{t('common.loading')}</div></div>;
-  if (error) return <div className="page"><div className="card">{error}</div></div>;
+  if (error && !letter) return <div className="page"><div className="card">{error}</div></div>;
   if (!letter) return <div className="page"><div className="card">Introuvable</div></div>;
 
   const canManage = user?.role === 'admin' || user?.role === 'agent';
@@ -73,6 +115,7 @@ export default function LetterDetail() {
       </div>
       <div className="card">
         {info('detail.ref', letter.ref)}
+        {info('detail.numero', letter.numeroLettre || '—')}
         {info('detail.objet', letter.objet)}
         {info('detail.resume', letter.resume)}
         {info('detail.direction', t('direction.' + (letter.direction || 'entrant')))}
@@ -80,26 +123,87 @@ export default function LetterDetail() {
         {info('detail.categorie', t('categorie.' + (letter.categorie || 'autre')))}
         {info('detail.statut', t('status.' + (letter.statut || 'recu')))}
         {info('detail.priorite', t('priorite.' + (letter.priorite || 'normale')))}
+        {info('detail.commission', letter.commission ? committeeName(letter.commission) : '—')}
         {info('detail.expediteur', [letter.expediteur?.nom, letter.expediteur?.fonction, letter.expediteur?.service].filter(Boolean).join(' — ') || '—')}
         {info('detail.destinataire', [letter.destinataire?.nom, letter.destinataire?.fonction, letter.destinataire?.service].filter(Boolean).join(' — ') || '—')}
         {info('detail.dateEmission', fmtDate(letter.dateEmission))}
         {info('detail.dateReception', fmtDate(letter.dateReception))}
-        {info('detail.pieces', (letter.pieces || []).map((p) => p.nom + (p.taille ? ' (' + fmtSize(p.taille) + ')' : '')).join(', ') || '—')}
-      </div>
-      {canManage && (
-        <div className="card">
-          <h2 className="card-title">{t('detail.actions')}</h2>
-          <div className="status-actions">
-            <select value={statut} onChange={(e) => setStatut(e.target.value)}>
-              {['recu', 'enregistre', 'en_cours', 'traite', 'transmis', 'archive'].map((s) => (
-                <option key={s} value={s}>{t('status.' + s)}</option>
+        {info('detail.pieces',
+          (letter.pieces || []).length === 0 ? '—' : (
+            <div className="file-list">
+              {letter.pieces.map((p) => (
+                <div key={p.id} className="file-row">
+                  {p.hasFile
+                    ? <button type="button" className="btn-link" onClick={() => openPiece(p.id)}>{p.nom}</button>
+                    : <span>{p.nom}</span>}
+                  <span className="muted">{p.taille ? fmtSize(p.taille) : ''}{p.hasFile ? '' : ' (' + t('detail.demoFile') + ')'}</span>
+                </div>
               ))}
-            </select>
-            <button className="btn btn-primary" onClick={saveStatus}>{t('common.save')}</button>
+            </div>
+          )
+        )}
+      </div>
+
+      <div className="card">
+        <h2 className="card-title">{t('detail.commissionHisto')}</h2>
+        {(letter.commissionHisto || []).length === 0 ? (
+          <div className="muted">{t('detail.noHisto')}</div>
+        ) : (
+          <div className="histo">
+            {[...letter.commissionHisto].reverse().map((h) => (
+              <div key={h.id} className="histo-item">
+                <span className={'histo-dot dot-' + h.type} />
+                <div>
+                  <div>{t('event.' + h.type)} <strong>— {committeeName(h.committee)}</strong></div>
+                  {h.note && <div className="muted">{h.note}</div>}
+                  <div className="muted small">{fmtDateTime(h.date)} — {h.byName || '—'}</div>
+                </div>
+              </div>
+            ))}
           </div>
-          <div className="muted">{fmtDateTime(letter.createdAt)}</div>
-        </div>
+        )}
+      </div>
+
+      {canManage && (
+        <>
+          <div className="card">
+            <h2 className="card-title">{t('detail.committeeActions')}</h2>
+            <div className="status-actions">
+              <select value={committee} onChange={(e) => setCommittee(e.target.value)}>
+                <option value="">{t('commission.none')}</option>
+                {committees.map((c) => (
+                  <option key={c.id} value={c.id}>{c.nom}</option>
+                ))}
+              </select>
+              <button className="btn btn-primary" onClick={assignCommittee} disabled={busy}>{t('detail.transmit')}</button>
+            </div>
+            {letter.commission && (
+              <div className="status-actions">
+                <button className="btn btn-secondary" onClick={() => addEvent('recu_comite')} disabled={busy}>{t('detail.markReceived')}</button>
+                <button className="btn btn-secondary" onClick={() => addEvent('traite_comite')} disabled={busy}>{t('detail.markTreated')}</button>
+              </div>
+            )}
+            <label className="field">
+              <span>{t('detail.note')}</span>
+              <textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder={t('detail.notePlaceholder')} />
+            </label>
+          </div>
+
+          <div className="card">
+            <h2 className="card-title">{t('detail.actions')}</h2>
+            <div className="status-actions">
+              <select value={statut} onChange={(e) => setStatut(e.target.value)}>
+                {['recu', 'enregistre', 'en_cours', 'traite', 'transmis', 'archive'].map((s) => (
+                  <option key={s} value={s}>{t('status.' + s)}</option>
+                ))}
+              </select>
+              <button className="btn btn-primary" onClick={saveStatus}>{t('common.save')}</button>
+            </div>
+            <div className="muted">{fmtDateTime(letter.createdAt)}</div>
+          </div>
+        </>
       )}
+      {error && <div className="form-error">{error}</div>}
     </div>
   );
 }

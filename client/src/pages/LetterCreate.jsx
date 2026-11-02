@@ -12,7 +12,7 @@ export default function LetterCreate() {
     setBusy(true);
     setError('');
     try {
-      const d = await api.createLetter(data);
+      const d = await api.createLetterWithFiles(data, data.files || []);
       navigate('/lettres/' + d.item.id, { replace: true });
     } catch (e) {
       setError(e.message || 'Erreur');

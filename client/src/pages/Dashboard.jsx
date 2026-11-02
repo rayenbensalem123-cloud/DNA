@@ -8,6 +8,7 @@ export default function Dashboard() {
   const { t } = useLanguage();
   const [stats, setStats] = useState(null);
   const [recent, setRecent] = useState([]);
+  const [committees, setCommittees] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -18,6 +19,9 @@ export default function Dashboard() {
       .finally(() => { if (!cancelled) setLoading(false); });
     api.listLetters({ limit: 6, sort: 'date' })
       .then((d) => { if (!cancelled) { setRecent(d.items); } })
+      .catch(() => {});
+    api.committees()
+      .then((d) => { if (!cancelled) { setCommittees(d.items || []); } })
       .catch(() => {});
     return () => { cancelled = true; };
   }, []);
@@ -33,6 +37,8 @@ export default function Dashboard() {
 
   const maxCat = Math.max(1, ...Object.entries(stats?.parCategorie || {}).map(([, v]) => v));
   const maxStat = Math.max(1, ...Object.values(stats?.parStatut || {}));
+  const parCommission = stats?.parCommission || {};
+  const maxCommission = Math.max(1, ...committees.map((c) => parCommission[c.id] || 0));
 
   return (
     <div className="page">
@@ -100,14 +106,25 @@ export default function Dashboard() {
             </div>
 
             <div className="card">
-              <h2 className="card-title">{t('dashboard.total')} — {t('categorie.administration')}</h2>
-              {Object.entries(stats?.parCategorie || {}).slice(0, 6).map(([cat, count]) => (
-                <div key={cat} className="bar-row">
-                  <div className="bar-label">{t('categorie.' + cat)}</div>
-                  <div className="bar-track"><div className="bar-fill blue" style={{ width: (count / maxCat) * 100 + '%' }} /></div>
-                  <div className="bar-value">{count}</div>
+              <h2 className="card-title">{t('dashboard.parCommission')}</h2>
+              {committees.length === 0 && <div className="muted">{t('common.loading')}</div>}
+              {committees.map((c) => {
+                const count = parCommission[c.id] || 0;
+                return (
+                  <div key={c.id} className="bar-row">
+                    <div className="bar-label" title={c.nom}>{c.nom}</div>
+                    <div className="bar-track"><div className="bar-fill purple" style={{ width: (count / maxCommission) * 100 + '%' }} /></div>
+                    <div className="bar-value">{count}</div>
+                  </div>
+                );
+              })}
+              {parCommission.non_assigne > 0 && (
+                <div className="bar-row">
+                  <div className="bar-label">{t('commission.none')}</div>
+                  <div className="bar-track"><div className="bar-fill slate" style={{ width: (parCommission.non_assigne / maxCommission) * 100 + '%' }} /></div>
+                  <div className="bar-value">{parCommission.non_assigne}</div>
                 </div>
-              ))}
+              )}
             </div>
           </div>
 

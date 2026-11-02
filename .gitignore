@@ -1,6 +1,7 @@
 node_modules/
 client/dist/
 server/data/db.json
+server/data/uploads/
 *.log
 .DS_Store
 Thumbs.db

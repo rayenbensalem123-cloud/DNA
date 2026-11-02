@@ -158,6 +158,32 @@ input:focus, select:focus, textarea:focus { outline: 2px solid #bfdbfe; border-c
 .splash { min-height: 100vh; display: flex; align-items: center; justify-content: center; }
 .splash .brand-title.big { color: #0f172a; }
 
+/* Upload & files */
+.upload-box {
+  display: flex; align-items: center; gap: 12px;
+  border: 2px dashed #cbd5e1; border-radius: 10px; padding: 14px;
+  background: #f8fafc; cursor: pointer;
+}
+.upload-box:hover { border-color: #3b82f6; background: #eff6ff; }
+.upload-box input[type='file'] { font-size: 13px; border: none; padding: 0; }
+.upload-title { font-weight: 600; font-size: 14px; }
+.file-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.file-row { display: flex; align-items: center; gap: 10px; font-size: 13px; background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; }
+.file-name { font-weight: 600; word-break: break-all; }
+.btn-link { background: none; border: none; padding: 0; color: var(--primary); cursor: pointer; font-size: 13px; font-weight: 600; text-decoration: underline; }
+.btn-link:hover { color: var(--primary-dark); }
+
+/* Committee tracking timeline */
+.histo { display: flex; flex-direction: column; gap: 12px; }
+.histo-item { display: flex; gap: 10px; align-items: flex-start; }
+.histo-item > div { min-width: 0; }
+.histo-dot { width: 10px; height: 10px; border-radius: 999px; margin-top: 5px; flex-shrink: 0; background: #94a3b8; }
+.dot-assigne { background: #8b5cf6; }
+.dot-recu_comite { background: #f59e0b; }
+.dot-traite_comite { background: #22c55e; }
+.dot-note { background: #64748b; }
+.small { font-size: 12px; }
+
 @media (max-width: 800px) {
   .sidebar { width: 70px; padding: 16px 8px; }
   .brand-sub, .nav-link, .sidebar-footer { font-size: 0; }

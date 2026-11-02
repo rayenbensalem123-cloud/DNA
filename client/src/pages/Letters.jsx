@@ -9,9 +9,14 @@ export default function Letters() {
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [committees, setCommittees] = useState([]);
   const [filters, setFilters] = useState({
-    q: '', direction: '', statut: '', type: '', categorie: '', priorite: '', from: '', to: '',
+    q: '', direction: '', statut: '', type: '', categorie: '', priorite: '', commission: '', from: '', to: '',
   });
+
+  const committeeName = (id) => (committees.find((c) => c.id === id)?.nom) || '—';
+
+  useEffect(() => { api.committees().then((d) => setCommittees(d.items || [])).catch(() => {}); }, []);
 
   const fetchData = async (f) => {
     setLoading(true);
@@ -77,6 +82,12 @@ export default function Letters() {
             <option value="urgente">{t('priorite.urgente')}</option>
             <option value="confidentielle">{t('priorite.confidentielle')}</option>
           </select>
+          <select value={filters.commission} onChange={(e) => set('commission', e.target.value)}>
+            <option value="">{t('filter.all')}</option>
+            {committees.map((c) => (
+              <option key={c.id} value={c.id}>{c.nom}</option>
+            ))}
+          </select>
         </div>
 
         {loading ? <div className="card-pad">{t('common.loading')}</div> : (
@@ -84,8 +95,8 @@ export default function Letters() {
             <table className="table">
               <thead>
                 <tr>
-                  <th>{t('letters.ref')}</th><th>{t('letters.objet')}</th><th>{t('letters.direction')}</th>
-                  <th>{t('letters.type')}</th><th>{t('letters.categorie')}</th><th>{t('letters.statut')}</th>
+                  <th>{t('letters.ref')}</th><th>{t('letters.numero')}</th><th>{t('letters.objet')}</th><th>{t('letters.direction')}</th>
+                  <th>{t('letters.commission')}</th><th>{t('letters.statut')}</th>
                   <th>{t('letters.priorite')}</th><th>{t('letters.date')}</th>
                 </tr>
               </thead>
@@ -93,10 +104,10 @@ export default function Letters() {
                 {items.map((l) => (
                   <tr key={l.id} className="row-link" onClick={() => (window.location.href = '/lettres/' + l.id)}>
                     <td className="mono">{l.ref}</td>
+                    <td className="mono">{l.numeroLettre || '—'}</td>
                     <td>{l.objet}</td>
                     <td>{t('direction.' + (l.direction || 'entrant'))}</td>
-                    <td>{t('type.' + (l.type || 'autre'))}</td>
-                    <td>{t('categorie.' + (l.categorie || 'autre'))}</td>
+                    <td>{committeeName(l.commission)}</td>
                     <td><span className={'badge statut-' + l.statut}>{t('status.' + (l.statut || 'recu'))}</span></td>
                     <td>{t('priorite.' + (l.priorite || 'normale'))}</td>
                     <td>{fmtDate(l.dateEmission)}</td>

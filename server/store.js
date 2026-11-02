@@ -5,6 +5,13 @@ import crypto from 'node:crypto';
 const DATA_DIR = path.join(process.cwd(), 'server', 'data');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 
+export const COMMITTEES = [
+  { id: 'cna', nom: "Comité National d'Arbitrage" },
+  { id: 'discipline', nom: 'Commission de Discipline' },
+  { id: 'appel', nom: "Commission d'Appel" },
+  { id: 'administration', nom: 'Administration' },
+];
+
 export function hashPassword(password) {
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = crypto.scryptSync(password, salt, 64).toString('hex');
@@ -112,6 +119,25 @@ function seed() {
   return { users, letters, seq: letters.length + 1 };
 }
 
+function migrate(db) {
+  let changed = false;
+  if (!Array.isArray(db.committees)) {
+    db.committees = COMMITTEES.map((c) => ({ ...c }));
+    changed = true;
+  }
+  for (const l of db.letters) {
+    if (l.numeroLettre === undefined) { l.numeroLettre = l.ref || ''; changed = true; }
+    if (l.commission === undefined) { l.commission = null; changed = true; }
+    if (!Array.isArray(l.commissionHisto)) { l.commissionHisto = []; changed = true; }
+    if (Array.isArray(l.pieces)) {
+      for (const p of l.pieces) {
+        if (!p.id) { p.id = 'p' + Math.random().toString(36).slice(2, 10); changed = true; }
+      }
+    }
+  }
+  if (changed) saveDB(db);
+}
+
 let cache = null;
 
 export function getDB() {
@@ -122,6 +148,7 @@ export function getDB() {
   } catch (e) { db = null; }
   if (!db) { db = seed(); }
   cache = db;
+  migrate(db);
   saveDB(db);
   return db;
 }
