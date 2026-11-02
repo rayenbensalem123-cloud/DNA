@@ -22,6 +22,7 @@ const MIME = {
   '.jpeg': 'image/jpeg',
   '.ico': 'image/x-icon',
   '.woff2': 'font/woff2',
+  '.webp': 'image/webp',
   '.txt': 'text/plain; charset=utf-8',
 };
 

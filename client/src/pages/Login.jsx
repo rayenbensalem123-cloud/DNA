@@ -3,12 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth';
 import { useLanguage } from '../i18n';
 
-const DEMO = [
-  { username: 'admin', password: 'admin123', role: 'admin', label: 'Administrateur' },
-  { username: 'agent', password: 'agent123', role: 'agent', label: 'Agent' },
-  { username: 'lecture', password: 'lecture123', role: 'lecture', label: 'Lecteur' },
-];
-
 export default function Login() {
   const { login } = useAuth();
   const { t } = useLanguage();
@@ -32,13 +26,17 @@ export default function Login() {
     }
   };
 
-  const fill = (u, p) => { setUsername(u); setPassword(p); setError(''); };
-
   return (
     <div className="login-page">
       <div className="login-card">
         <div className="login-brand">
-          <div className="brand-title big">Bureau Ordre</div>
+          <img
+            className="brand-logo big"
+            src="/logo-ftf.webp"
+            alt="Fédération Tunisienne de Football"
+            onError={(e) => { e.currentTarget.style.display = 'none'; }}
+          />
+          <div className="brand-title big">{t('app.name')}</div>
           <div className="brand-sub">{t('auth.subtitle')}</div>
         </div>
         <form onSubmit={submit} className="login-form">
@@ -55,17 +53,6 @@ export default function Login() {
             {busy ? t('common.loading') : t('actions.login')}
           </button>
         </form>
-        <div className="demo-accounts">
-          <div className="demo-title">{t('auth.demo')}</div>
-          <div className="demo-list">
-            {DEMO.map((d) => (
-              <button key={d.username} type="button" className="demo-account" onClick={() => fill(d.username, d.password)}>
-                <span className="demo-user">{d.username}</span>
-                <span className="demo-role">{d.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
       </div>
     </div>
   );

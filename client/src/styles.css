@@ -1,14 +1,14 @@
 :root {
-  --bg: #f1f5f9;
+  --bg: #f5f5f6;
   --card: #ffffff;
   --border: #e2e8f0;
   --text: #0f172a;
   --muted: #64748b;
-  --primary: #1d4ed8;
-  --primary-dark: #1e40af;
-  --sidebar-bg: #0f172a;
+  --primary: #e30613;
+  --primary-dark: #b00510;
+  --sidebar-bg: #101820;
   --sidebar-text: #cbd5e1;
-  --sidebar-active: #1e293b;
+  --sidebar-active: #22100f;
   --danger: #b91c1c;
 }
 
@@ -33,7 +33,9 @@ h2.card-title { font-size: 16px; margin: 0 0 12px; }
   display: flex; flex-direction: column; padding: 20px 12px;
   position: sticky; top: 0; height: 100vh; flex-shrink: 0;
 }
-.brand { padding: 0 8px; }
+.brand { padding: 0 8px; display: flex; flex-direction: column; align-items: center; text-align: center; }
+.brand-logo { width: 72px; height: 72px; border-radius: 50%; background: #fff; margin-bottom: 10px; object-fit: contain; }
+.brand-logo.big { width: 96px; height: 96px; background: #fff; display: block; margin: 0 auto 10px; }
 .brand-title { font-size: 22px; font-weight: 700; color: #fff; }
 .brand-title.big { font-size: 34px; text-align: center; margin-bottom: 4px; }
 .brand-sub { color: #94a3b8; font-size: 12px; }
@@ -114,7 +116,7 @@ input, select, textarea {
   padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 14px;
   font-family: inherit; background: #fff; color: var(--text);
 }
-input:focus, select:focus, textarea:focus { outline: 2px solid #bfdbfe; border-color: #3b82f6; }
+input:focus, select:focus, textarea:focus { outline: 2px solid #f3b6ba; border-color: #e30613; }
 .field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600; color: #334155; }
 .field.full { grid-column: 1 / -1; }
 .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 12px; }
@@ -136,7 +138,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid #bfdbfe; border-c
 .btn-block { width: 100%; }
 
 /* Login */
-.login-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #0f172a, #1e293b); padding: 20px; }
+.login-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #101820 0%, #35090b 60%, #e30613 160%); padding: 20px; }
 .login-card { background: #fff; border-radius: 16px; padding: 32px; width: 100%; max-width: 420px; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35); }
 .login-brand { text-align: center; margin-bottom: 20px; }
 .login-form { display: flex; flex-direction: column; gap: 12px; }

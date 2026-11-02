@@ -1,8 +1,8 @@
 import { createContext, useContext, useState, createElement } from 'react';
 
 const fr = {
-  'app.name': 'Bureau Ordre',
-  'app.tagline': 'Registre officiel de correspondance',
+  'app.name': "Bureau d'Ordre — DNA",
+  'app.tagline': "Direction Nationale de l'Arbitrage — FTF",
   'nav.dashboard': 'Tableau de bord',
   'nav.lettres': 'Lettres officielles',
   'nav.reception': "Tout ce qui est reçu",
@@ -14,12 +14,11 @@ const fr = {
   'actions.back': 'Retour',
   'actions.save': 'Enregistrer',
 
-  'auth.title': 'Bureau Ordre',
-  'auth.subtitle': 'Plateforme de registre officiel',
+  'auth.title': "Bureau d'Ordre — DNA",
+  'auth.subtitle': `Direction Nationale de l'Arbitrage — Fédération Tunisienne de Football`,
   'auth.username': 'Identifiant',
   'auth.password': 'Mot de passe',
   'auth.error': 'Identifiants invalides',
-  'auth.demo': 'Comptes démonstration',
   'auth.role.admin': 'Administrateur',
   'auth.role.agent': 'Agent',
   'auth.role.lecture': 'Lecteur',
@@ -161,8 +160,8 @@ const fr = {
 };
 
 const en = {
-  'app.name': 'Bureau Order',
-  'app.tagline': 'Official correspondence register',
+  'app.name': "Bureau d'Ordre — DNA",
+  'app.tagline': 'National Refereeing Directorate — TFF',
   'nav.dashboard': 'Dashboard',
   'nav.lettres': 'Official letters',
   'nav.reception': 'All received',
@@ -174,12 +173,11 @@ const en = {
   'actions.back': 'Back',
   'actions.save': 'Save',
 
-  'auth.title': 'Bureau Order',
-  'auth.subtitle': 'Official registry platform',
+  'auth.title': "Bureau d'Ordre — DNA",
+  'auth.subtitle': 'National Refereeing Directorate — Tunisian Football Federation',
   'auth.username': 'Username',
   'auth.password': 'Password',
   'auth.error': 'Invalid credentials',
-  'auth.demo': 'Demo accounts',
   'auth.role.admin': 'Administrator',
   'auth.role.agent': 'Agent',
   'auth.role.lecture': 'Reader',

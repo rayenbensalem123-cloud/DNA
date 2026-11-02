@@ -16,7 +16,13 @@ export default function Layout() {
     <div className="layout">
       <aside className="sidebar">
         <div className="brand">
-          <div className="brand-title">Bureau Ordre</div>
+          <img
+            className="brand-logo"
+            src="/logo-ftf.webp"
+            alt="Fédération Tunisienne de Football"
+            onError={(e) => { e.currentTarget.style.display = 'none'; }}
+          />
+          <div className="brand-title">{t('app.name')}</div>
           <div className="brand-sub">{t('app.tagline')}</div>
         </div>
         <nav className="nav">
@@ -30,7 +36,7 @@ export default function Layout() {
             {t('nav.reception')}
           </NavLink>
         </nav>
-        <div className="sidebar-footer">Bureau Ordre © 2026</div>
+        <div className="sidebar-footer">{t('app.name')} © 2026</div>
       </aside>
       <div className="main">
         <header className="topbar">
