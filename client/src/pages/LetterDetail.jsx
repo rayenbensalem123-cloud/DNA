@@ -4,6 +4,8 @@ import { api } from '../api';
 import { useAuth } from '../auth';
 import { useLanguage } from '../i18n';
 import { fmtDate, fmtDateTime, fmtSize } from '../utils';
+import Modal from '../components/Modal';
+import LetterForm from '../components/LetterForm';
 
 export default function LetterDetail() {
   const { id } = useParams();
@@ -18,6 +20,9 @@ export default function LetterDetail() {
   const [committee, setCommittee] = useState('');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editError, setEditError] = useState('');
+  const [notice, setNotice] = useState(null); // { kind: 'ok' | 'warn', text }
 
   const committeeName = (cid) => (committees.find((c) => c.id === cid)?.nom) || cid || '—';
 
@@ -26,19 +31,51 @@ export default function LetterDetail() {
     setLoading(true);
     setError('');
     api.committees().then((d) => { if (!cancelled) setCommittees(d.items || []); }).catch(() => {});
-    // The list endpoint is the only read endpoint; find by id from a full scan.
-    api.listLetters({ limit: 500, sort: 'date' })
+    api.getLetter(id)
       .then((d) => {
         if (cancelled) return;
-        const found = d.items.find((l) => l.id === id) || null;
+        const found = d.item || null;
         setLetter(found);
         setStatut(found ? found.statut : '');
         setCommittee(found ? (found.commission || '') : '');
         setLoading(false);
       })
-      .catch(() => { if (!cancelled) { setError('Erreur'); setLoading(false); } });
+      .catch((e) => { if (!cancelled) { setLetter(null); setError(e.message || 'Erreur'); setLoading(false); } });
     return () => { cancelled = true; };
   }, [id]);
+
+  const applyLetter = (item) => {
+    setLetter(item);
+    setStatut(item.statut);
+    setCommittee(item.commission || '');
+  };
+
+  const openEdit = () => { setEditError(''); setNotice(null); setEditing(true); };
+
+  // Saves the edited fields and uploads the newly added files.
+  // If saving the fields fails, the error is thrown so the pop-up shows it and stays open.
+  // If only some files fail, the edit is kept, the pop-up closes and the message names those files.
+  const saveEdit = async (data) => {
+    const { files, ...fields } = data;
+    const { item, failed } = await api.updateLetterWithFiles(letter.id, fields, files || []);
+    applyLetter(item);
+    setError('');
+    setEditing(false);
+    if (failed.length) {
+      setNotice({ kind: 'warn', text: t('edit.partialFail', { files: failed.map((x) => `${x.name} (${x.message})`).join(', ') }) });
+    } else {
+      setNotice({ kind: 'ok', text: t('edit.saved') });
+    }
+  };
+
+  const removePiece = async (piece) => {
+    setEditError('');
+    try {
+      await api.deletePiece(letter.id, piece.id);
+      const d = await api.getLetter(letter.id);
+      applyLetter(d.item);
+    } catch (e) { setEditError(e.message || 'Erreur'); }
+  };
 
   const saveStatus = async () => {
     if (!letter) return;
@@ -110,9 +147,11 @@ export default function LetterDetail() {
         <h1>{t('detail.title')} — {letter.ref}</h1>
         <div className="page-actions">
           <button className="btn btn-secondary" onClick={() => navigate('/lettres')}>{t('detail.back')}</button>
+          {canManage && <button className="btn btn-primary" onClick={openEdit}>{t('detail.edit')}</button>}
           {canManage && <button className="btn btn-danger" onClick={remove}>{t('detail.delete')}</button>}
         </div>
       </div>
+      {notice && <div className={'form-notice' + (notice.kind === 'warn' ? ' warn' : '')}>{notice.text}</div>}
       <div className="card">
         {info('detail.ref', letter.ref)}
         {info('detail.numero', letter.numeroLettre || '—')}
@@ -204,6 +243,26 @@ export default function LetterDetail() {
         </>
       )}
       {error && <div className="form-error">{error}</div>}
+
+      {editing && (
+        <Modal title={t('edit.title')} onClose={() => setEditing(false)} closeLabel={t('common.close')}>
+          <LetterForm
+            mode="modal"
+            initial={letter}
+            submitLabel={t('edit.save')}
+            onSubmit={saveEdit}
+            onCancel={() => setEditing(false)}
+            existingPieces={letter.pieces || []}
+            onOpenPiece={async (p) => {
+              setEditError('');
+              try { await api.openPiece(letter.id, p.id); } catch (e) { setEditError(e.message || 'Erreur'); }
+            }}
+            onDeletePiece={removePiece}
+            canDeletePieces={user?.role === 'admin'}
+            error={editError}
+          />
+        </Modal>
+      )}
     </div>
   );
 }

@@ -5,16 +5,22 @@ export const setToken = (t) => localStorage.setItem(TOKEN_KEY, t);
 export const clearToken = () => localStorage.removeItem(TOKEN_KEY);
 
 async function req(path, { method = 'GET', body } = {}) {
-  const res = await fetch(path, {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  let res;
+  try {
+    res = await fetch(path, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch (e) {
+    throw new Error('Connexion au serveur impossible');
+  }
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || 'Erreur');
+  // Always say what failed: the server's message when there is one, otherwise the HTTP status.
+  if (!res.ok) throw new Error(data.error || `Erreur (${res.status})`);
   return data;
 }
 
@@ -36,6 +42,7 @@ export const api = {
     const qs = new URLSearchParams(params).toString();
     return req('/api/letters' + (qs ? `?${qs}` : ''));
   },
+  getLetter: (id) => req('/api/letters/' + id),
   createLetter: (data) => req('/api/letters', { method: 'POST', body: data }),
   updateLetter: (id, data) => req('/api/letters/' + id, { method: 'PATCH', body: data }),
   deleteLetter: (id) => req('/api/letters/' + id, { method: 'DELETE' }),
@@ -50,6 +57,26 @@ export const api = {
       await req(`/api/letters/${d.item.id}/pieces`, { method: 'POST', body: { filename: f.name, dataBase64: b64 } });
     }
     return d;
+  },
+  // Saves the letter's fields, then uploads the new files one by one. A file that fails does not
+  // undo the saved edit: it is reported in `failed` so the caller can tell the user which ones.
+  updateLetterWithFiles: async (id, fields, files = []) => {
+    const saved = await req('/api/letters/' + id, { method: 'PATCH', body: fields });
+    const failed = [];
+    for (const f of files) {
+      try {
+        const b64 = await fileToBase64(f);
+        await req(`/api/letters/${id}/pieces`, { method: 'POST', body: { filename: f.name, dataBase64: b64 } });
+      } catch (e) {
+        failed.push({ name: f.name, message: e.message || 'Erreur' });
+      }
+    }
+    let item = saved.item;
+    if (files.length) {
+      // re-read the letter so the attachment list is up to date; the edit itself is already saved
+      try { item = (await req('/api/letters/' + id)).item; } catch (e) { /* keep the saved copy */ }
+    }
+    return { item, failed };
   },
   openPiece: async (letterId, pieceId) => {
     const res = await fetch(`/api/letters/${letterId}/pieces/${pieceId}`, {

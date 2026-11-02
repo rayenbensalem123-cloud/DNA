@@ -175,6 +175,33 @@ input:focus, select:focus, textarea:focus { outline: 2px solid #f3b6ba; border-c
 .btn-link { background: none; border: none; padding: 0; color: var(--primary); cursor: pointer; font-size: 13px; font-weight: 600; text-decoration: underline; }
 .btn-link:hover { color: var(--primary-dark); }
 
+.file-row .file-delete { margin-left: auto; }
+.btn-sm { padding: 4px 10px; font-size: 12px; }
+
+/* Notices */
+.form-notice { background: #ecfdf5; color: #047857; padding: 10px 12px; border-radius: 8px; font-size: 13px; margin-bottom: 16px; }
+.form-notice.warn { background: #fffbeb; color: #92400e; }
+
+/* Modal (edit letter) */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 100; padding: 20px;
+  background: rgba(15, 23, 42, 0.55);
+  display: flex; align-items: center; justify-content: center;
+}
+.modal {
+  background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+  width: 100%; max-width: 780px; max-height: calc(100vh - 40px);
+  display: flex; flex-direction: column; box-shadow: 0 25px 60px rgba(0, 0, 0, 0.35);
+}
+.modal-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--border); }
+.modal-header h2 { margin: 0; font-size: 18px; }
+.modal-close { background: none; border: none; font-size: 28px; line-height: 1; cursor: pointer; color: var(--muted); padding: 0 8px; border-radius: 6px; }
+.modal-close:hover { color: var(--text); background: #f1f5f9; }
+.modal-form { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.modal-body { padding: 16px 20px; overflow-y: auto; display: grid; grid-template-columns: 1fr; gap: 12px; min-height: 0; }
+.modal-error { padding: 0 20px 12px; }
+.modal-footer { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 20px; border-top: 1px solid var(--border); }
+
 /* Committee tracking timeline */
 .histo { display: flex; flex-direction: column; gap: 12px; }
 .histo-item { display: flex; gap: 10px; align-items: flex-start; }

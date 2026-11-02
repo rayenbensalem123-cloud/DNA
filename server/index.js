@@ -36,12 +36,32 @@ function send(res, status, data, extraHeaders = {}) {
   res.end(body);
 }
 
-function readBody(req, limitMB = 10) {
+class HttpError extends Error {
+  constructor(status, message) { super(message); this.status = status; }
+}
+
+// Reads a JSON body. If it is too large we keep draining it (without storing it) and
+// answer 413 once the upload has finished, so the browser receives a clear message
+// instead of a dropped connection. Absurdly large uploads are cut off.
+function readBody(req, limitMB = 10, tooLargeMessage = 'Requête trop volumineuse') {
   return new Promise((resolve, reject) => {
     const chunks = [];
+    const limit = limitMB * 1024 * 1024;
     let size = 0;
-    req.on('data', (c) => { size += c.length; if (size > limitMB * 1024 * 1024) { reject(new Error('Payload too large')); req.destroy(); return; } chunks.push(c); });
-    req.on('end', () => { try { resolve(chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {}); } catch (e) { resolve({}); } });
+    let tooLarge = false;
+    req.on('data', (c) => {
+      size += c.length;
+      if (size > limit * 4) { req.destroy(); return; }
+      if (tooLarge) return;
+      if (size > limit) { tooLarge = true; chunks.length = 0; return; }
+      chunks.push(c);
+    });
+    req.on('end', () => {
+      if (tooLarge) return reject(new HttpError(413, tooLargeMessage));
+      if (!chunks.length) return resolve({});
+      try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); }
+      catch (e) { reject(new HttpError(400, 'Requête invalide')); }
+    });
     req.on('error', reject);
   });
 }
@@ -80,6 +100,28 @@ function sanitizeFilename(name) {
   return base.replace(/[^\w., ()\-\u00C0-\u017F]/g, '_').slice(0, 120) || 'document.pdf';
 }
 
+function cleanParty(p, fallback) {
+  if (p === undefined) return fallback;
+  if (typeof p === 'string') return { nom: p, fonction: '', service: '' };
+  if (!p || typeof p !== 'object') return { nom: '', fonction: '', service: '' };
+  return { nom: String(p.nom || ''), fonction: String(p.fonction || ''), service: String(p.service || '') };
+}
+
+function validDate(v) {
+  return v === undefined || v === null || v === '' || !Number.isNaN(new Date(v).getTime());
+}
+
+const ALLOWED_UPLOAD_EXT = ['.pdf', '.jpg', '.jpeg', '.png'];
+const MAX_PIECES_PER_LETTER = 20;
+
+// The file's real content must match its extension (a renamed .exe is not a PDF).
+function matchesFileType(ext, buf) {
+  if (ext === '.pdf') return buf.subarray(0, 1024).includes('%PDF');
+  if (ext === '.png') return buf.length > 8 && buf[0] === 0x89 && buf.toString('latin1', 1, 4) === 'PNG';
+  if (ext === '.jpg' || ext === '.jpeg') return buf.length > 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
+  return false;
+}
+
 function nextRef(db) {
   const year = new Date().getFullYear();
   const count = db.letters.filter((l) => (l.ref || '').startsWith(`BO-${year}-`)).length + 1;
@@ -105,6 +147,11 @@ const server = http.createServer(async (req, res) => {
   try {
     await route(req, res);
   } catch (e) {
+    if (e instanceof HttpError) {
+      if (!res.headersSent) send(res, e.status, { error: e.message });
+      else res.end();
+      return;
+    }
     console.error('Request error', req.url, e);
     if (!res.headersSent) send(res, 500, { error: 'Erreur serveur' });
     else res.end();
@@ -252,28 +299,45 @@ async function route(req, res) {
       const letter = db.letters.find((l) => l.id === id);
       if (!letter) return send(res, 404, { error: 'Lettre introuvable' });
       const body = await readBody(req);
+
+      // Validate everything first so a rejected edit never leaves a half-applied change.
+      // A value is only checked when it actually changes, so older records stay editable.
+      const changed = (key) => body[key] !== undefined && body[key] !== letter[key];
+      if (changed('direction') && !['entrant', 'sortant'].includes(body.direction)) return send(res, 400, { error: 'Direction invalide' });
+      if (changed('type') && !isValidType(body.type)) return send(res, 400, { error: 'Type invalide' });
+      if (changed('categorie') && !isValidCategorie(body.categorie)) return send(res, 400, { error: 'Catégorie invalide' });
+      if (changed('priorite') && !isValidPriorite(body.priorite)) return send(res, 400, { error: 'Importance invalide' });
+      if (body.objet !== undefined && !String(body.objet).trim()) return send(res, 400, { error: 'L\'objet est obligatoire' });
+      if (!validDate(body.dateEmission) || !validDate(body.dateReception)) return send(res, 400, { error: 'Date invalide' });
+      const nextRefValue = body.ref !== undefined ? String(body.ref).trim().slice(0, 40) : '';
+      if (nextRefValue && nextRefValue !== letter.ref && db.letters.some((l) => l.id !== letter.id && l.ref === nextRefValue)) {
+        return send(res, 400, { error: 'Cette référence est déjà utilisée' });
+      }
       const nextStatut = body.statut !== undefined ? body.statut : letter.statut;
       if (!isValidStatut(nextStatut)) return send(res, 400, { error: 'Statut invalide' });
       const prevCommission = letter.commission || null;
       const nextCommission = body.commission !== undefined ? (body.commission || null) : prevCommission;
       if (!isValidCommission(db, nextCommission)) return send(res, 400, { error: 'Comité invalide' });
-      if (body.ref) letter.ref = body.ref;
+
+      if (nextRefValue) letter.ref = nextRefValue;
       if (body.numeroLettre !== undefined) letter.numeroLettre = String(body.numeroLettre || '');
+      // Attachments are NOT editable here: they only change through the /pieces endpoints,
+      // so an edit can never wipe or forge the list of stored files.
       Object.assign(letter, {
         direction: body.direction !== undefined ? body.direction : letter.direction,
         type: body.type !== undefined ? body.type : letter.type,
         categorie: body.categorie !== undefined ? body.categorie : letter.categorie,
-        objet: body.objet !== undefined ? body.objet : letter.objet,
-        resume: body.resume !== undefined ? body.resume : letter.resume,
+        objet: body.objet !== undefined ? String(body.objet).trim() : letter.objet,
+        resume: body.resume !== undefined ? String(body.resume || '') : letter.resume,
         priorite: body.priorite !== undefined ? body.priorite : letter.priorite,
         statut: nextStatut,
-        expediteur: body.expediteur !== undefined ? body.expediteur : letter.expediteur,
-        destinataire: body.destinataire !== undefined ? body.destinataire : letter.destinataire,
-        dateEmission: body.dateEmission !== undefined ? body.dateEmission : letter.dateEmission,
-        dateReception: body.dateReception !== undefined ? body.dateReception : letter.dateReception,
-        pieces: body.pieces !== undefined ? body.pieces : letter.pieces,
+        expediteur: cleanParty(body.expediteur, letter.expediteur),
+        destinataire: cleanParty(body.destinataire, letter.destinataire),
+        dateEmission: body.dateEmission !== undefined ? (body.dateEmission || letter.dateEmission) : letter.dateEmission,
+        dateReception: body.dateReception !== undefined ? (body.dateReception || null) : letter.dateReception,
       });
       letter.commission = nextCommission;
+      if (!Array.isArray(letter.commissionHisto)) letter.commissionHisto = [];
       if (nextCommission && nextCommission !== prevCommission) {
         letter.commissionHisto.push({
           id: 'h' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
@@ -392,15 +456,20 @@ async function route(req, res) {
       const user = requireAuth(req, res);
       if (!user) return;
       if (!['admin', 'agent'].includes(user.role)) return send(res, 403, { error: 'Droits insuffisants' });
-      let body;
-      try { body = await readBody(req, 14); } catch (e) { return send(res, 413, { error: 'Fichier trop volumineux (max ~10 Mo)' }); }
+      // ~14 MB of JSON = a 10 MB file once base64-encoded. Too large -> clean 413 reply.
+      const body = await readBody(req, 14, 'Fichier trop volumineux (max 10 Mo)');
       const filename = sanitizeFilename(body.filename);
-      if (!/^[A-Za-z0-9+/=\s]+$/.test(String(body.dataBase64 || ''))) return send(res, 400, { error: 'Données base64 invalides' });
+      const ext = path.extname(filename).toLowerCase();
+      if (!ALLOWED_UPLOAD_EXT.includes(ext)) return send(res, 400, { error: 'Type de fichier non autorisé (PDF, JPG ou PNG uniquement)' });
+      if (!/^[A-Za-z0-9+/=\s]+$/.test(String(body.dataBase64 || ''))) return send(res, 400, { error: 'Données du fichier invalides' });
       const buf = Buffer.from(String(body.dataBase64), 'base64');
       if (!buf.length) return send(res, 400, { error: 'Fichier vide' });
       if (buf.length > 10 * 1024 * 1024) return send(res, 413, { error: 'Fichier trop volumineux (max 10 Mo)' });
+      if (!matchesFileType(ext, buf)) return send(res, 400, { error: 'Le contenu du fichier ne correspond pas à son type (' + ext + ')' });
+      if (!Array.isArray(letter.pieces)) letter.pieces = [];
+      if (letter.pieces.length >= MAX_PIECES_PER_LETTER) return send(res, 400, { error: 'Nombre maximal de pièces jointes atteint (' + MAX_PIECES_PER_LETTER + ')' });
       fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-      const storedAs = letterId + '-' + Date.now().toString(36) + '-' + filename.replace(/[^.\w]/g, '_');
+      const storedAs = letterId + '-' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex') + '-' + filename.replace(/[^.\w]/g, '_');
       fs.writeFileSync(path.join(UPLOAD_DIR, storedAs), buf);
       const piece = { id: 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8), nom: filename, taille: buf.length, storedAs };
       letter.pieces.push(piece);
