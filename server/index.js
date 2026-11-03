@@ -244,7 +244,15 @@ async function route(req, res) {
     const user = requireAuth(req, res);
     if (!user) return;
     const db = getDB();
-    const lettres = db.letters;
+    const isAdmin = user.role === 'admin';
+    const myCommission = user.commission || null;
+    let lettres = db.letters;
+    if (!isAdmin) {
+      lettres = lettres.filter((l) => {
+        if (myCommission) return l.commission === myCommission || (Array.isArray(l.commissionHisto) && l.commissionHisto.some((h) => h.committee === myCommission));
+        return l.createdBy === user.id;
+      });
+    }
     const parStatut = {};
     const parCategorie = {};
     const parType = {};
@@ -289,6 +297,9 @@ async function route(req, res) {
     const from = url.searchParams.get('from') ? new Date(url.searchParams.get('from')).toISOString() : null;
     const to = url.searchParams.get('to') ? new Date(url.searchParams.get('to') + 'T23:59:59.999Z').toISOString() : null;
 
+    const isAdmin = user.role === 'admin';
+    const myCommission = user.commission || null;
+
     let items = db.letters.filter((l) => {
       if (direction && (l.direction || 'entrant') !== direction) return false;
       if (statut && (l.statut || 'recu') !== statut) return false;
@@ -303,6 +314,14 @@ async function route(req, res) {
         const hay = [l.ref, l.numeroLettre, l.objet, l.resume, l.expediteur?.nom || '', l.destinataire?.nom || '', l.expediteur?.fonction || '', l.destinataire?.fonction || '', l.service || '']
           .join(' ').toLowerCase();
         if (!hay.includes(q)) return false;
+      }
+      // Committee-based access control: non-admins only see their own letters
+      // (received by their committee or created/sent by them). Admin sees all.
+      if (!isAdmin) {
+        const mine = myCommission
+          ? (l.commission === myCommission || (Array.isArray(l.commissionHisto) && l.commissionHisto.some((h) => h.committee === myCommission)))
+          : (l.createdBy === user.id);
+        if (!mine) return false;
       }
       return true;
     });
@@ -335,6 +354,13 @@ async function route(req, res) {
       if (!user) return;
       const letter = db.letters.find((l) => l.id === id);
       if (!letter) return send(res, 404, { error: 'Lettre introuvable' });
+      // access control
+      if (user.role !== 'admin') {
+        const mine = user.commission
+          ? (letter.commission === user.commission || (Array.isArray(letter.commissionHisto) && letter.commissionHisto.some((h) => h.committee === user.commission)))
+          : (letter.createdBy === user.id);
+        if (!mine) return send(res, 404, { error: 'Lettre introuvable' });
+      }
       return send(res, 200, { item: publicLetter(letter) });
     }
 
@@ -344,6 +370,12 @@ async function route(req, res) {
       if (!['admin', 'agent'].includes(user.role)) return send(res, 403, { error: 'Droits insuffisants' });
       const letter = db.letters.find((l) => l.id === id);
       if (!letter) return send(res, 404, { error: 'Lettre introuvable' });
+      if (user.role !== 'admin') {
+        const mine = user.commission
+          ? (letter.commission === user.commission || (Array.isArray(letter.commissionHisto) && letter.commissionHisto.some((h) => h.committee === user.commission)))
+          : (letter.createdBy === user.id);
+        if (!mine) return send(res, 404, { error: 'Lettre introuvable' });
+      }
       const body = await readBody(req);
       const nextStatut = body.statut !== undefined ? body.statut : letter.statut;
       if (!isValidStatut(nextStatut)) return send(res, 400, { error: 'Statut invalide' });
@@ -462,11 +494,18 @@ async function route(req, res) {
     const db = getDB();
     const letter = db.letters.find((l) => l.id === eventsMatch[1]);
     if (!letter) return send(res, 404, { error: 'Lettre introuvable' });
+    // access control
+    if (user.role !== 'admin') {
+      const mine = user.commission
+        ? (letter.commission === user.commission || (Array.isArray(letter.commissionHisto) && letter.commissionHisto.some((h) => h.committee === user.commission)))
+        : (letter.createdBy === user.id);
+      if (!mine) return send(res, 404, { error: 'Lettre introuvable' });
+    }
     const body = await readBody(req);
     const type = String(body.type || '');
     if (!COMMISSION_EVENTS.includes(type)) return send(res, 400, { error: 'Type d\'événement invalide' });
     const canManage = ['admin', 'agent'].includes(user.role);
-    const canUpdateCommitteeStatus = user.role === 'lecture' && ['vu_comite', 'traite_comite'].includes(type);
+    const canUpdateCommitteeStatus = user.role === 'lecture' && ['vu_comite', 'traite_comite'].includes(type) && letter.commission === user.commission;
     if (!canManage && !canUpdateCommitteeStatus) return send(res, 403, { error: 'Droits insuffisants' });
     if (type !== 'note' && !letter.commission) return send(res, 400, { error: 'Aucun comité assigné' });
     if (type === 'vu_comite' && (letter.commissionHisto || []).some((h) => h.type === 'vu_comite')) return send(res, 200, { item: publicLetter(letter) });
@@ -496,6 +535,13 @@ async function route(req, res) {
     const letterId = completedUploadMatch[1];
     const letter = db.letters.find((item) => item.id === letterId);
     if (!letter) return send(res, 404, { error: 'Lettre introuvable' });
+    // access control: non-admins may only touch their own letters
+    if (user.role !== 'admin') {
+      const mine = user.commission
+        ? (letter.commission === user.commission || (Array.isArray(letter.commissionHisto) && letter.commissionHisto.some((h) => h.committee === user.commission)))
+        : (letter.createdBy === user.id);
+      if (!mine) return send(res, 404, { error: 'Lettre introuvable' });
+    }
     const body = await readBody(req, 1);
     const pathnameForBlob = String(body.pathname || '');
     const filename = sanitizeFilename(body.filename);
@@ -530,6 +576,12 @@ async function route(req, res) {
       const user = requireAuth(req, res);
       if (!user) return;
       if (!['admin', 'agent'].includes(user.role)) return send(res, 403, { error: 'Droits insuffisants' });
+      if (user.role !== 'admin') {
+        const mine = user.commission
+          ? (letter.commission === user.commission || (Array.isArray(letter.commissionHisto) && letter.commissionHisto.some((h) => h.committee === user.commission)))
+          : (letter.createdBy === user.id);
+        if (!mine) return send(res, 404, { error: 'Lettre introuvable' });
+      }
       let body;
       try { body = await readBody(req, 14); } catch (e) { return send(res, 413, { error: 'Fichier trop volumineux (max ~10 Mo)' }); }
       const filename = sanitizeFilename(body.filename);
@@ -560,12 +612,24 @@ async function route(req, res) {
     if (method === 'GET' && !pieceId) {
       const user = requireAuth(req, res);
       if (!user) return;
+      if (user.role !== 'admin') {
+        const mine = user.commission
+          ? (letter.commission === user.commission || (Array.isArray(letter.commissionHisto) && letter.commissionHisto.some((h) => h.committee === user.commission)))
+          : (letter.createdBy === user.id);
+        if (!mine) return send(res, 404, { error: 'Lettre introuvable' });
+      }
       return send(res, 200, { items: (letter.pieces || []).map((p) => ({ id: p.id, nom: p.nom, taille: p.taille, hasFile: !!p.storedAs })) });
     }
 
     if (method === 'GET' && pieceId) {
       const user = requireAuth(req, res);
       if (!user) return;
+      if (user.role !== 'admin') {
+        const mine = user.commission
+          ? (letter.commission === user.commission || (Array.isArray(letter.commissionHisto) && letter.commissionHisto.some((h) => h.committee === user.commission)))
+          : (letter.createdBy === user.id);
+        if (!mine) return send(res, 404, { error: 'Fichier non disponible' });
+      }
       const piece = (letter.pieces || []).find((p) => p.id === pieceId);
       if (!piece || !piece.storedAs) return send(res, 404, { error: 'Fichier non disponible' });
       if (process.env.VERCEL) {

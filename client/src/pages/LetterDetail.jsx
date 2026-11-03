@@ -39,7 +39,8 @@ export default function LetterDetail() {
         setCommittee(found ? (found.commission || '') : '');
         setLoading(false);
         const alreadySeen = (found?.commissionHisto || []).some((h) => h.type === 'vu_comite' || h.type === 'recu_comite');
-        if (found?.commission && !alreadySeen && canHandleCommittee) {
+        const canAutoSee = canHandleCommittee && (user?.role !== 'lecture' || found?.commission === user?.commission);
+        if (found?.commission && !alreadySeen && canAutoSee) {
           api.addCommissionEvent(found.id, { type: 'vu_comite' })
             .then((updated) => { if (!cancelled) setLetter(updated.item); })
             .catch(() => {});
