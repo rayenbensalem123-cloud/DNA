@@ -114,6 +114,8 @@ const fr = {
   'detail.back': 'Retour à la liste',
 
   'event.assigne': 'Transmis au comité',
+  'event.transfert': 'Transféré vers un autre comité',
+  'event.retire': 'Retiré du comité',
   'event.recu_comite': 'Vu par le comité',
   'event.vu_comite': 'Vu par le comité',
   'event.traite_comite': 'Terminé et archivé',
@@ -274,6 +276,8 @@ const en = {
   'detail.back': 'Back to list',
 
   'event.assigne': 'Transmitted to committee',
+  'event.transfert': 'Transferred to another committee',
+  'event.retire': 'Removed from committee',
   'event.recu_comite': 'Seen by committee',
   'event.vu_comite': 'Seen by committee',
   'event.traite_comite': 'Completed and archived',

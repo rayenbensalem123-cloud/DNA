@@ -368,12 +368,16 @@ async function route(req, res) {
         pieces: body.pieces !== undefined ? body.pieces : letter.pieces,
       });
       letter.commission = nextCommission;
-      if (nextCommission && nextCommission !== prevCommission) {
+      if (nextCommission !== prevCommission) {
+        const eventType = prevCommission && nextCommission ? 'transfert'
+          : prevCommission && !nextCommission ? 'retire'
+          : 'assigne';
         letter.commissionHisto.push({
           id: 'h' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
           date: new Date().toISOString(),
-          type: 'assigne',
+          type: eventType,
           committee: nextCommission,
+          fromCommittee: prevCommission || null,
           by: user.id, byName: user.name,
           note: String(body.commissionNote || ''),
         });
@@ -420,7 +424,7 @@ async function route(req, res) {
     if (!isValidStatut(statut)) return send(res, 400, { error: 'Statut invalide' });
     const commission = body.commission || null;
     const commissionHisto = commission
-      ? [{ id: 'h' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8), date: new Date().toISOString(), type: 'assigne', committee: commission, by: user.id, byName: user.name, note: '' }]
+      ? [{ id: 'h' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8), date: new Date().toISOString(), type: 'assigne', committee: commission, fromCommittee: null, by: user.id, byName: user.name, note: '' }]
       : [];
     const lettre = {
       id: 'l' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),

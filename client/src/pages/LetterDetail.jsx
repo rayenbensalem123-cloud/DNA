@@ -177,7 +177,7 @@ export default function LetterDetail() {
               <div key={h.id} className="histo-item">
                 <span className={'histo-dot dot-' + h.type} />
                 <div>
-                  <div>{t('event.' + h.type)} <strong>— {committeeName(h.committee)}</strong></div>
+                  <div>{t('event.' + h.type)} {h.type === 'transfert' && h.fromCommittee ? <strong>— {committees.find((c) => c.id === h.fromCommittee)?.nom || h.fromCommittee} → {committeeName(h.committee)}</strong> : h.type === 'retire' && h.fromCommittee ? <strong>— {committees.find((c) => c.id === h.fromCommittee)?.nom || h.fromCommittee} (retiré)</strong> : <strong>— {committeeName(h.committee)}</strong>}</div>
                   {h.note && <div className="muted">{h.note}</div>}
                   <div className="muted small">{fmtDateTime(h.date)} — {h.byName || '—'}</div>
                 </div>
