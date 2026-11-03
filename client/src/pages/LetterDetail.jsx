@@ -144,7 +144,7 @@ export default function LetterDetail() {
         {info('detail.direction', t('direction.' + (letter.direction || 'entrant')))}
         {info('detail.type', t('type.' + (letter.type || 'autre')))}
         {info('detail.categorie', t('categorie.' + (letter.categorie || 'autre')))}
-        {info('detail.statut', t('status.' + (letter.statut || 'recu')))}
+        {info('detail.statut', <>{t('status.' + (letter.statut || 'recu'))}{(letter.commissionHisto || []).some((h) => h.type === 'transfert') && <span className="badge badge-transfert" style={{ marginLeft: 8 }}>{t('badge.transferred')}</span>}</>)}
         {info('detail.priorite', t('priorite.' + (letter.priorite || 'normale')))}
         {info('detail.commission', letter.commission ? committeeName(letter.commission) : '—')}
         {info('detail.expediteur', [letter.expediteur?.nom, letter.expediteur?.fonction, letter.expediteur?.service].filter(Boolean).join(' — ') || '—')}

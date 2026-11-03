@@ -96,7 +96,7 @@ export default function Letters() {
                     <td>{l.objet}</td>
                     <td>{t('direction.' + (l.direction || 'entrant'))}</td>
                     <td>{committeeName(l.commission)}</td>
-                    <td><span className={'badge statut-' + l.statut}>{t('status.' + (l.statut || 'recu'))}</span></td>
+                    <td><span className={'badge statut-' + l.statut}>{t('status.' + (l.statut || 'recu'))}</span>{(l.commissionHisto || []).some((h) => h.type === 'transfert') && <span className="badge badge-transfert" style={{ marginLeft: 6 }}>{t('badge.transferred')}</span>}</td>
                     <td>{t('priorite.' + (l.priorite || 'normale'))}</td>
                     <td>{fmtDate(l.dateEmission)}</td>
                   </tr>

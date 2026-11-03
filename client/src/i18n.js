@@ -41,6 +41,7 @@ const fr = {
   'status.transmis': 'Envoyé au comité',
   'status.vu': 'Vu par le comité',
   'status.archive': 'Archivé',
+  'badge.transferred': 'Transféré',
 
   'type.officielle': 'Officielle',
   'type.arrete': 'Arrêté',
@@ -203,6 +204,7 @@ const en = {
   'status.transmis': 'Sent to committee',
   'status.vu': 'Seen by committee',
   'status.archive': 'Archived',
+  'badge.transferred': 'Transferred',
 
   'type.officielle': 'Official',
   'type.arrete': 'Decree',

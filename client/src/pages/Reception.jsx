@@ -34,7 +34,7 @@ export default function Reception() {
               <tr key={l.id} className="row-link" onClick={() => navigate('/lettres/' + l.id)}>
                 <td className="mono">{l.numeroLettre || '—'}</td><td>{l.objet}</td>
                 <td>{l.expediteur?.nom || '—'}</td><td>{committeeName(l.commission)}</td>
-                <td><span className={'badge statut-' + l.statut}>{t('status.' + (l.statut || 'recu'))}</span></td><td>{fmtDate(l.dateReception || l.createdAt)}</td>
+                <td><span className={'badge statut-' + l.statut}>{t('status.' + (l.statut || 'recu'))}</span>{(l.commissionHisto || []).some((h) => h.type === 'transfert') && <span className="badge badge-transfert" style={{ marginLeft: 6 }}>{t('badge.transferred')}</span>}</td><td>{fmtDate(l.dateReception || l.createdAt)}</td>
               </tr>
             ))}{items.length === 0 && <tr><td colSpan={6} className="empty-cell">{t('letters.empty')}</td></tr>}</tbody>
           </table></div>

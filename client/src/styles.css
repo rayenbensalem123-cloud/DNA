@@ -129,6 +129,7 @@ h2.card-title { font-size: 16px; margin: 0 0 12px; }
 .statut-transmis { background: #312742; color: #c4a8ff; }
 .statut-vu { background: #203744; color: #8fd6ed; }
 .statut-archive { background: #30292c; color: #b9adb0; }
+.badge-transfert { background: #312742; color: #c4a8ff; margin-left: 4px; }
 .badge.priorite-urgente { background: #491d26; color: #ff9ba7; }
 .badge.priorite-confidentielle { background: #46341f; color: #f3c176; }
 
@@ -380,6 +381,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid rgba(230,0,27,.26
 :root[data-theme='light'] .row-link:hover td { background: #fff6f7; }
 :root[data-theme='light'] .statut-recu,
 :root[data-theme='light'] .statut-archive { background: #f0edef; color: #5d5357; }
+:root[data-theme='light'] .badge-transfert { background: #eee8fa; color: #6847a7; }
 :root[data-theme='light'] .statut-enregistre { background: #ffe1e5; color: #a90018; }
 :root[data-theme='light'] .statut-en_cours { background: #fff1d8; color: #93600d; }
 :root[data-theme='light'] .statut-traite { background: #e2f6ea; color: #1a7445; }

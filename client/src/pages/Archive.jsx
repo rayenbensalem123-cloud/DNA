@@ -118,7 +118,7 @@ export default function Archive() {
                   <td><div className="letter-subject">{letter.objet}</div>{letter.personneConcernee && <div className="letter-subline">{letter.personneConcernee}</div>}</td>
                   {!committeeId && <td><span className="committee-pill">{committees.find((committee) => committee.id === letter.commission)?.nom || 'Sans comité'}</span></td>}
                   <td><span className={'direction-pill direction-' + (letter.direction || 'entrant')}><i />{t('direction.' + (letter.direction || 'entrant'))}</span></td>
-                  <td><span className={'badge statut-' + letter.statut}>{t('status.' + (letter.statut || 'recu'))}</span></td>
+                  <td><span className={'badge statut-' + letter.statut}>{t('status.' + (letter.statut || 'recu'))}</span>{(letter.commissionHisto || []).some((h) => h.type === 'transfert') && <span className="badge badge-transfert" style={{ marginLeft: 6 }}>{t('badge.transferred')}</span>}</td>
                   <td><span className={'priority-pill priority-' + (letter.priorite || 'normale')}>{t('priorite.' + (letter.priorite || 'normale'))}</span></td>
                   <td className="date-cell">{fmtDate(letter.dateReception || letter.dateEmission)}</td>
                 </tr>
