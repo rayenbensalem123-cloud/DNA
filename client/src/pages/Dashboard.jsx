@@ -10,6 +10,7 @@ export default function Dashboard() {
   const [stats, setStats] = useState(null);
   const [recent, setRecent] = useState([]);
   const [openLetters, setOpenLetters] = useState([]);
+  const [overdueLetters, setOverdueLetters] = useState([]);
   const [committees, setCommittees] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -33,18 +34,21 @@ export default function Dashboard() {
           .filter((letter) => (letter.statut || 'recu') !== 'archive')
           .sort((a, b) => new Date(b.dateReception || b.dateEmission || b.createdAt) - new Date(a.dateReception || a.dateEmission || a.createdAt));
         setOpenLetters(open);
+        const overdue = (letters.items || [])
+          .filter((letter) => (letter.statut || 'recu') !== 'archive' && new Date(letter.dateReception || letter.dateEmission || letter.createdAt) < startOfWeek)
+          .sort((a, b) => new Date(a.dateReception || a.dateEmission || a.createdAt) - new Date(b.dateReception || b.dateEmission || b.createdAt));
+        setOverdueLetters(overdue);
       })
       .catch(() => {})
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, []);
 
-  const pending = Math.max(0, (stats?.total || 0) - (stats?.parStatut?.archive || 0));
   const cards = [
     { label: 'Total', value: stats?.total ?? '—', href: '/archive', tone: 'total' },
     { label: 'Entrants', value: stats?.entrants ?? '—', href: '/archive?direction=entrant', tone: 'green' },
     { label: 'Sortants', value: stats?.sortants ?? '—', href: '/archive?direction=sortant', tone: 'purple' },
-    { label: 'À traiter', value: loading ? '—' : pending, href: '/archive?bucket=pending', tone: 'amber' },
+    { label: 'Archivés', value: loading ? '—' : (stats?.parStatut?.archive ?? 0), href: '/archive?statut=archive', tone: 'amber' },
     { label: 'Urgents', value: stats?.urgentes ?? '—', href: '/archive?priorite=urgente', tone: 'red' },
   ];
 
@@ -86,6 +90,24 @@ export default function Dashboard() {
             <tbody>{recent.map((l) => <tr key={l.scanKey} className="row-link" onClick={() => navigate('/lettres/' + l.id)}>
               <td><div className="letter-subject">{l.objet}</div></td><td><span className="file-pill">▤ {l.scannedFile}</span></td><td><span className={'direction-pill direction-' + (l.direction || 'entrant')}><i />{t('direction.' + (l.direction || 'entrant'))}</span></td><td className="date-cell">{fmtDate(l.scannedAt)}</td>
             </tr>)}{recent.length === 0 && <tr><td colSpan={4} className="empty-cell scan-empty">Aucun fichier numérisé cette semaine</td></tr>}</tbody>
+          </table></div>
+        )}
+      </div>
+      <div className="card overdue-card">
+        <div className="card-head-row"><div><h2 className="card-title">Courriers en retard (non archivés)</h2><div className="muted">{overdueLetters.length} courrier{overdueLetters.length === 1 ? '' : 's'} des semaines précédentes non clôturé{overdueLetters.length === 1 ? '' : 's'}</div></div><Link className="btn btn-secondary" to="/archive?bucket=pending">Voir tout <span aria-hidden="true">→</span></Link></div>
+        {loading ? <div className="card-pad">{t('common.loading')}</div> : (
+          <div className="table-wrap"><table className="table overdue-table">
+            <thead><tr><th>{t('letters.numero')}</th><th>{t('letters.objet')}</th><th>Comité</th><th>Statut</th><th>{t('letters.priorite')}</th><th>Depuis</th></tr></thead>
+            <tbody>{overdueLetters.map((letter) => (
+              <tr key={letter.id} className="row-link" onClick={() => navigate('/lettres/' + letter.id)}>
+                <td className="mono">{letter.numeroLettre || '—'}</td>
+                <td><div className="letter-subject">{letter.objet}</div></td>
+                <td><span className="committee-pill">{committees.find((c) => c.id === letter.commission)?.nom || 'Sans comité'}</span></td>
+                <td><span className={'badge statut-' + (letter.statut || 'recu')}>{t('status.' + (letter.statut || 'recu'))}</span>{(letter.commissionHisto || []).some((h) => h.type === 'transfert') && <span className="badge badge-transfert" style={{ marginLeft: 6 }}>{t('badge.transferred')}</span>}</td>
+                <td><span className={'priority-pill priority-' + (letter.priorite || 'normale')}>{t('priorite.' + (letter.priorite || 'normale'))}</span></td>
+                <td className="date-cell">{fmtDate(letter.dateReception || letter.dateEmission)}</td>
+              </tr>
+            ))}{overdueLetters.length === 0 && <tr><td colSpan={6} className="empty-cell">Aucun courrier en retard</td></tr>}</tbody>
           </table></div>
         )}
       </div>

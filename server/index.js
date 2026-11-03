@@ -257,9 +257,12 @@ async function route(req, res) {
     const parCategorie = {};
     const parType = {};
     const parCommission = {};
-    let recusCeMois = 0, archivesCeMois = 0, traiteCeMois = 0, urgentes = 0;
+    let recusCetteSaison = 0, archivesCetteSaison = 0, urgentes = 0;
     const now = new Date();
-    const debutMois = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    const seasonStart = now.getMonth() >= 8
+      ? new Date(now.getFullYear(), 8, 1)
+      : new Date(now.getFullYear() - 1, 8, 1);
+    const debutSaison = seasonStart.toISOString();
     for (const l of lettres) {
       const k = l.statut || 'recu';
       parStatut[k] = (parStatut[k] || 0) + 1;
@@ -269,16 +272,16 @@ async function route(req, res) {
       parType[tk] = (parType[tk] || 0) + 1;
       const mk = l.commission || 'non_assigne';
       parCommission[mk] = (parCommission[mk] || 0) + 1;
-      if ((l.direction || 'entrant') === 'entrant' && (l.dateReception || l.createdAt) >= debutMois) recusCeMois++;
-      if (l.statut === 'archive' && (l.dateEmission || l.createdAt) >= debutMois) archivesCeMois++;
-      if (l.statut === 'traite' && (l.dateEmission || l.createdAt) >= debutMois) traiteCeMois++;
+      if ((l.direction || 'entrant') === 'entrant' && (l.dateReception || l.createdAt) >= debutSaison) recusCetteSaison++;
+      if (l.statut === 'archive' && (l.dateEmission || l.createdAt) >= debutSaison) archivesCetteSaison++;
+      if (l.priorite === 'urgente') urgentes++;
       if (l.priorite === 'urgente') urgentes++;
     }
     return send(res, 200, {
       total: lettres.length,
       entrants: lettres.filter((l) => (l.direction || 'entrant') === 'entrant').length,
       sortants: lettres.filter((l) => l.direction === 'sortant').length,
-      recusCeMois, archivesCeMois, traiteCeMois, urgentes,
+      recusCetteSaison, archivesCetteSaison, urgentes,
       parStatut, parCategorie, parType, parCommission,
     });
   }
