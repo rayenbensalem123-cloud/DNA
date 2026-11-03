@@ -25,7 +25,7 @@ body {
 :root[data-theme='dark'] body,
 :root:not([data-theme='light']) body,
 :root[data-theme='light'] body {
-  background-image: linear-gradient(rgba(27,20,23,.48), rgba(27,20,23,.48)), url('/referee-background.webp');
+  background-image: linear-gradient(rgba(27,20,23,.48), rgba(27,20,23,.48)), url('/background.webp');
   background-size: cover;
   background-position: center;
   background-attachment: fixed;
