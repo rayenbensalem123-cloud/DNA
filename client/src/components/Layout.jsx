@@ -1,11 +1,14 @@
+import { useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth';
 import { useLanguage } from '../i18n';
+import ChangePassword from './ChangePassword';
 
 export default function Layout() {
   const { user, logout } = useAuth();
   const { t, lang, setLang } = useLanguage();
   const navigate = useNavigate();
+  const [changingPassword, setChangingPassword] = useState(false);
 
   const onLogout = async () => {
     await logout();
@@ -49,6 +52,7 @@ export default function Layout() {
               <div className="user-name">{user?.name}</div>
               <div className="user-role">{t('auth.role.' + (user?.role || ''))}</div>
             </div>
+            <button className="btn btn-ghost" onClick={() => setChangingPassword(true)}>{t('nav.password')}</button>
             <button className="btn btn-ghost" onClick={onLogout}>{t('nav.logout')}</button>
           </div>
         </header>
@@ -56,6 +60,7 @@ export default function Layout() {
           <Outlet />
         </main>
       </div>
+      {changingPassword && <ChangePassword onClose={() => setChangingPassword(false)} />}
     </div>
   );
 }

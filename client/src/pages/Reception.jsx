@@ -10,6 +10,8 @@ export default function Reception() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [committees, setCommittees] = useState([]);
+  const [formKey, setFormKey] = useState(0);
+  const [notice, setNotice] = useState(null); // { kind: 'ok' | 'warn', text }
 
   const committeeName = (id) => (committees.find((c) => c.id === id)?.nom) || '—';
 
@@ -30,9 +32,13 @@ export default function Reception() {
   useEffect(() => { loadReceived(); /* eslint-disable-next-line */ }, []);
 
   const submit = async (data) => {
-    const d = await api.createLetterWithFiles({ ...data, direction: 'entrant' }, data.files || []);
+    const { files, ...fields } = data;
+    const { item, failed } = await api.createLetterWithFiles({ ...fields, direction: 'entrant' }, files || []);
     await loadReceived();
-    return d.item.id;
+    setFormKey((k) => k + 1); // a fresh, empty form, so the same letter is not registered twice by accident
+    setNotice(failed.length
+      ? { kind: 'warn', text: t('create.partialFail', { ref: item.ref, files: failed.map((x) => `${x.name} (${x.message})`).join(', ') }) }
+      : { kind: 'ok', text: t('create.saved', { ref: item.ref }) });
   };
 
   return (
@@ -46,7 +52,8 @@ export default function Reception() {
 
       <div className="card">
         <h2 className="card-title">{t('letters.registerReceived')}</h2>
-        <LetterForm initial={{ statut: 'recu', direction: 'entrant' }} onSubmit={submit} submitLabel={t('letters.registerReceived')} />
+        {notice && <div className={'form-notice' + (notice.kind === 'warn' ? ' warn' : '')}>{notice.text}</div>}
+        <LetterForm key={formKey} initial={{ statut: 'recu', direction: 'entrant' }} onSubmit={submit} submitLabel={t('letters.registerReceived')} />
       </div>
 
       <div className="card">

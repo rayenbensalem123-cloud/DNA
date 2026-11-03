@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../auth';
 import { useLanguage } from '../i18n';
@@ -22,7 +22,14 @@ export default function LetterDetail() {
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editError, setEditError] = useState('');
-  const [notice, setNotice] = useState(null); // { kind: 'ok' | 'warn', text }
+  const location = useLocation();
+  // After creating a letter some files may have failed to attach: the create page passes them along.
+  const createdFailures = location.state?.failed;
+  const [notice, setNotice] = useState(() => (
+    createdFailures && createdFailures.length
+      ? { kind: 'warn', text: t('create.partialFailHere', { files: createdFailures.map((x) => `${x.name} (${x.message})`).join(', ') }) }
+      : null
+  )); // { kind: 'ok' | 'warn', text }
 
   const committeeName = (cid) => (committees.find((c) => c.id === cid)?.nom) || cid || '—';
 

@@ -1,23 +1,16 @@
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import LetterForm from '../components/LetterForm';
 
 export default function LetterCreate() {
   const navigate = useNavigate();
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
 
+  // Errors thrown here are shown inside the form (which stays filled in so nothing has to be retyped).
   const submit = async (data) => {
-    setBusy(true);
-    setError('');
-    try {
-      const d = await api.createLetterWithFiles(data, data.files || []);
-      navigate('/lettres/' + d.item.id, { replace: true });
-    } catch (e) {
-      setError(e.message || 'Erreur');
-      setBusy(false);
-    }
+    const { files, ...fields } = data;
+    const { item, failed } = await api.createLetterWithFiles(fields, files || []);
+    // The letter exists now, even if some file could not be attached: open it, and say which ones failed.
+    navigate('/lettres/' + item.id, { replace: true, state: { failed } });
   };
 
   return (
@@ -26,7 +19,6 @@ export default function LetterCreate() {
         <h1>Nouvelle correspondance</h1>
       </div>
       <LetterForm onSubmit={submit} submitLabel="Enregistrer" />
-      {error && <div className="form-error">{error}</div>}
     </div>
   );
 }
