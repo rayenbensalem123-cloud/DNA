@@ -9,14 +9,17 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const [stats, setStats] = useState(null);
   const [recent, setRecent] = useState([]);
+  const [openLetters, setOpenLetters] = useState([]);
+  const [committees, setCommittees] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([api.stats(), api.listLetters({ limit: 500, sort: 'date' })])
-      .then(([summary, letters]) => {
+    Promise.all([api.stats(), api.listLetters({ limit: 500, sort: 'date' }), api.committees()])
+      .then(([summary, letters, committeesData]) => {
         if (cancelled) return;
         setStats(summary);
+        setCommittees(committeesData.items || []);
         const now = new Date();
         const startOfWeek = new Date(now);
         startOfWeek.setHours(0, 0, 0, 0);
@@ -26,6 +29,10 @@ export default function Dashboard() {
           .map((piece) => ({ ...letter, scannedFile: piece.nom, scannedAt: piece.uploadedAt, scanKey: `${letter.id}-${piece.id}` })))
           .sort((a, b) => new Date(b.scannedAt) - new Date(a.scannedAt));
         setRecent(scanned);
+        const open = (letters.items || [])
+          .filter((letter) => (letter.statut || 'recu') !== 'archive')
+          .sort((a, b) => new Date(b.dateReception || b.dateEmission || b.createdAt) - new Date(a.dateReception || a.dateEmission || a.createdAt));
+        setOpenLetters(open);
       })
       .catch(() => {})
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -51,6 +58,25 @@ export default function Dashboard() {
           <div className="stat-card-top"><div className="stat-label">{card.label}</div><span className="stat-arrow" aria-hidden="true">↗</span></div>
           <div className="stat-value">{loading ? '—' : card.value}</div>
         </Link>)}
+      </div>
+      <div className="card open-letters-card">
+        <div className="card-head-row"><div><h2 className="card-title">Courriers en cours</h2><div className="muted">{openLetters.length} courrier{openLetters.length === 1 ? '' : 's'} non archivé{openLetters.length === 1 ? '' : 's'}</div></div><Link className="btn btn-secondary" to="/archive?bucket=pending">Voir tout <span aria-hidden="true">→</span></Link></div>
+        {loading ? <div className="card-pad">{t('common.loading')}</div> : (
+          <div className="table-wrap"><table className="table open-letters-table">
+            <thead><tr><th>{t('letters.numero')}</th><th>{t('letters.objet')}</th><th>{t('letters.direction')}</th><th>Comité</th><th>Statut</th><th>{t('letters.priorite')}</th><th>{t('letters.date')}</th></tr></thead>
+            <tbody>{openLetters.map((letter) => (
+              <tr key={letter.id} className="row-link" onClick={() => navigate('/lettres/' + letter.id)}>
+                <td className="mono">{letter.numeroLettre || '—'}</td>
+                <td><div className="letter-subject">{letter.objet}</div>{letter.personneConcernee && <div className="letter-subline">{letter.personneConcernee}</div>}</td>
+                <td><span className={'direction-pill direction-' + (letter.direction || 'entrant')}><i />{t('direction.' + (letter.direction || 'entrant'))}</span></td>
+                <td><span className="committee-pill">{committees.find((c) => c.id === letter.commission)?.nom || 'Sans comité'}</span></td>
+                <td><span className={'badge statut-' + (letter.statut || 'recu')}>{t('status.' + (letter.statut || 'recu'))}</span></td>
+                <td><span className={'priority-pill priority-' + (letter.priorite || 'normale')}>{t('priorite.' + (letter.priorite || 'normale'))}</span></td>
+                <td className="date-cell">{fmtDate(letter.dateReception || letter.dateEmission)}</td>
+              </tr>
+            ))}{openLetters.length === 0 && <tr><td colSpan={7} className="empty-cell">Aucun courrier en cours</td></tr>}</tbody>
+          </table></div>
+        )}
       </div>
       <div className="card scan-card">
           <div className="card-head-row"><div className="scan-heading"><span className="scan-heading-icon" aria-hidden="true">▤</span><div><h2 className="card-title">Courriers numérisés cette semaine</h2><div className="muted">Les fichiers ajoutés depuis lundi</div></div></div><Link className="btn btn-secondary" to="/archive">Voir l’archive <span aria-hidden="true">→</span></Link></div>
