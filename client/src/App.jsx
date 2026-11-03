@@ -27,9 +27,15 @@ function Protected({ children }) {
   if (hasSessionToken && (loading || !minimumLoadingTimePassed)) return (
     <main className="loading-screen" role="status" aria-live="polite">
       <section className="loading-center">
-        <img className="loading-emblem" src="/federation-tunisienne-logo.webp" alt="" />
+        <div className="loading-emblem-wrap">
+          <div className="loading-ring" />
+          <img className="loading-emblem" src="/federation-tunisienne-logo.webp" alt="" />
+        </div>
         <h1 className="loading-brand-title">Direction Nationale d’Arbitrage</h1>
-        <div className="loading-progress-line"><i /></div>
+        <p className="loading-brand-sub">Fédération Tunisienne de Football</p>
+        <div className="loading-dots" aria-hidden="true">
+          <span /><span /><span />
+        </div>
         <span className="loading-label">Chargement…</span>
       </section>
     </main>
