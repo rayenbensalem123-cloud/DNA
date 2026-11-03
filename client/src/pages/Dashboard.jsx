@@ -1,150 +1,68 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { useLanguage } from '../i18n';
 import { fmtDate } from '../utils';
 
 export default function Dashboard() {
   const { t } = useLanguage();
+  const navigate = useNavigate();
   const [stats, setStats] = useState(null);
   const [recent, setRecent] = useState([]);
-  const [committees, setCommittees] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
-    api.stats()
-      .then((d) => { if (!cancelled) { setStats(d); } })
+    Promise.all([api.stats(), api.listLetters({ limit: 500, sort: 'date' })])
+      .then(([summary, letters]) => {
+        if (cancelled) return;
+        setStats(summary);
+        const now = new Date();
+        const startOfWeek = new Date(now);
+        startOfWeek.setHours(0, 0, 0, 0);
+        startOfWeek.setDate(startOfWeek.getDate() - ((startOfWeek.getDay() + 6) % 7));
+        const scanned = (letters.items || []).flatMap((letter) => (letter.pieces || [])
+          .filter((piece) => piece.hasFile && piece.uploadedAt && new Date(piece.uploadedAt) >= startOfWeek && new Date(piece.uploadedAt) <= now)
+          .map((piece) => ({ ...letter, scannedFile: piece.nom, scannedAt: piece.uploadedAt, scanKey: `${letter.id}-${piece.id}` })))
+          .sort((a, b) => new Date(b.scannedAt) - new Date(a.scannedAt));
+        setRecent(scanned);
+      })
       .catch(() => {})
       .finally(() => { if (!cancelled) setLoading(false); });
-    api.listLetters({ limit: 6, sort: 'date' })
-      .then((d) => { if (!cancelled) { setRecent(d.items); } })
-      .catch(() => {});
-    api.committees()
-      .then((d) => { if (!cancelled) { setCommittees(d.items || []); } })
-      .catch(() => {});
     return () => { cancelled = true; };
   }, []);
 
-  const cards = stats ? [
-    { label: t('dashboard.total'), value: stats.total, tone: 'blue' },
-    { label: t('dashboard.entrants'), value: stats.entrants, tone: 'green' },
-    { label: t('dashboard.sortants'), value: stats.sortants, tone: 'purple' },
-    { label: t('dashboard.enAttente'), value: (stats?.total || 0) - (stats?.parStatut?.archive || 0), tone: 'amber' },
-    { label: t('dashboard.archive'), value: stats.archivesCeMois, tone: 'gray' },
-    { label: t('dashboard.urgent'), value: stats.urgentes, tone: 'red' },
-  ] : [];
-
-  const maxCat = Math.max(1, ...Object.entries(stats?.parCategorie || {}).map(([, v]) => v));
-  const maxStat = Math.max(1, ...Object.values(stats?.parStatut || {}));
-  const parCommission = stats?.parCommission || {};
-  const maxCommission = Math.max(1, ...committees.map((c) => parCommission[c.id] || 0));
+  const pending = Math.max(0, (stats?.total || 0) - (stats?.parStatut?.archive || 0) - (stats?.parStatut?.traite || 0));
+  const cards = [
+    { label: 'Total', value: stats?.total ?? '—', href: '/archive', tone: 'total' },
+    { label: 'Entrants', value: stats?.entrants ?? '—', href: '/archive?direction=entrant', tone: 'green' },
+    { label: 'Sortants', value: stats?.sortants ?? '—', href: '/archive?direction=sortant', tone: 'purple' },
+    { label: 'À traiter', value: loading ? '—' : pending, href: '/archive?bucket=pending', tone: 'amber' },
+    { label: 'Urgents', value: stats?.urgentes ?? '—', href: '/archive?priorite=urgente', tone: 'red' },
+  ];
 
   return (
-    <div className="page">
-      <div className="page-header">
-        <h1>{t('dashboard.title')}</h1>
-        <div className="page-actions">
-          <Link className="btn btn-secondary" to="/lettres/nouveau">{t('letters.create')}</Link>
-          <Link className="btn btn-primary" to="/reception">{t('letters.registerReceived')}</Link>
-        </div>
+    <div className="page dashboard-page">
+      <header className="page-header page-title-header">
+        <div className="page-title-copy"><span className="page-title-kicker">Accueil</span><h1>Tableau de bord</h1></div>
+      </header>
+      <div className="stat-grid">
+        {cards.map((card) => <Link key={card.label} to={card.href} className={'stat-card tone-' + card.tone} style={{ textDecoration: 'none' }}>
+          <div className="stat-card-top"><div className="stat-label">{card.label}</div><span className="stat-arrow" aria-hidden="true">↗</span></div>
+          <div className="stat-value">{loading ? '—' : card.value}</div>
+        </Link>)}
       </div>
-
-      {loading ? <div className="card">{t('common.loading')}</div> : (
-        <>
-          <div className="stat-grid">
-            {cards.map((c) => (
-              <div key={c.label} className={'stat-card tone-' + c.tone}>
-                <div className="stat-value">{c.value}</div>
-                <div className="stat-label">{c.label}</div>
-              </div>
-            ))}
-          </div>
-
-          <div className="dash-columns">
-            <div className="card">
-              <h2 className="card-title">{t('dashboard.total')} — {t('dashboard.receivedMonth')}</h2>
-              <div className="bar-row">
-                <div className="bar-label">{t('dashboard.entrants')}</div>
-                <div className="bar-track"><div className="bar-fill green" style={{ width: (stats?.entrants || 0) + '%' }} /></div>
-                <div className="bar-value">{stats?.entrants || 0}</div>
-              </div>
-              <div className="bar-row">
-                <div className="bar-label">{t('dashboard.sortants')}</div>
-                <div className="bar-track"><div className="bar-fill purple" style={{ width: (stats?.sortants || 0) + '%' }} /></div>
-                <div className="bar-value">{stats?.sortants || 0}</div>
-              </div>
-              <div className="bar-row">
-                <div className="bar-label">{t('dashboard.receivedMonth')}</div>
-                <div className="bar-track"><div className="bar-fill blue" style={{ width: ((stats?.recusCeMois || 0) / Math.max(1, stats?.total || 1)) * 100 + '%' }} /></div>
-                <div className="bar-value">{stats?.recusCeMois || 0}</div>
-              </div>
-            </div>
-
-            <div className="card">
-              <h2 className="card-title">{t('dashboard.enAttente')}</h2>
-              <div className="bar-row">
-                <div className="bar-label">{t('status.recu')}</div>
-                <div className="bar-track"><div className="bar-fill slate" style={{ width: (stats?.parStatut?.recu || 0) + '%' }} /></div>
-                <div className="bar-value">{stats?.parStatut?.recu || 0}</div>
-              </div>
-              <div className="bar-row">
-                <div className="bar-label">{t('status.enregistre')}</div>
-                <div className="bar-track"><div className="bar-fill blue" style={{ width: (stats?.parStatut?.enregistre || 0) + '%' }} /></div>
-                <div className="bar-value">{stats?.parStatut?.enregistre || 0}</div>
-              </div>
-              <div className="bar-row">
-                <div className="bar-label">{t('status.en_cours')}</div>
-                <div className="bar-track"><div className="bar-fill amber" style={{ width: (stats?.parStatut?.en_cours || 0) + '%' }} /></div>
-                <div className="bar-value">{stats?.parStatut?.en_cours || 0}</div>
-              </div>
-              <div className="bar-row">
-                <div className="bar-label">{t('status.traite')}</div>
-                <div className="bar-track"><div className="bar-fill green" style={{ width: (stats?.parStatut?.traite || 0) + '%' }} /></div>
-                <div className="bar-value">{stats?.parStatut?.traite || 0}</div>
-              </div>
-            </div>
-
-            <div className="card">
-              <h2 className="card-title">{t('dashboard.parCommission')}</h2>
-              {committees.length === 0 && <div className="muted">{t('common.loading')}</div>}
-              {committees.map((c) => {
-                const count = parCommission[c.id] || 0;
-                return (
-                  <div key={c.id} className="bar-row">
-                    <div className="bar-label" title={c.nom}>{c.nom}</div>
-                    <div className="bar-track"><div className="bar-fill purple" style={{ width: (count / maxCommission) * 100 + '%' }} /></div>
-                    <div className="bar-value">{count}</div>
-                  </div>
-                );
-              })}
-              {parCommission.non_assigne > 0 && (
-                <div className="bar-row">
-                  <div className="bar-label">{t('commission.none')}</div>
-                  <div className="bar-track"><div className="bar-fill slate" style={{ width: (parCommission.non_assigne / maxCommission) * 100 + '%' }} /></div>
-                  <div className="bar-value">{parCommission.non_assigne}</div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="card">
-            <h2 className="card-title">{t('letters.title')}</h2>
-            <table className="table">
-              <thead>
-                <tr><th>{t('letters.ref')}</th><th>{t('letters.objet')}</th><th>{t('letters.statut')}</th><th>{t('letters.date')}</th></tr>
-              </thead>
-              <tbody>
-                {recent.map((l) => (
-                  <tr key={l.id} className="row-link" onClick={() => (window.location.href = '/lettres/' + l.id)}>
-                    <td>{l.ref}</td><td>{l.objet}</td><td><span className={'badge statut-' + l.statut}>{t('status.' + l.statut)}</span></td><td>{fmtDate(l.dateEmission)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
+      <div className="card scan-card">
+          <div className="card-head-row"><div className="scan-heading"><span className="scan-heading-icon" aria-hidden="true">▤</span><div><h2 className="card-title">Courriers numérisés cette semaine</h2><div className="muted">Les fichiers ajoutés depuis lundi</div></div></div><Link className="btn btn-secondary" to="/archive">Voir l’archive <span aria-hidden="true">→</span></Link></div>
+        {loading ? <div className="card-pad">{t('common.loading')}</div> : (
+          <div className="table-wrap"><table className="table scan-table">
+            <thead><tr><th>{t('letters.objet')}</th><th>Fichier numérisé</th><th>{t('letters.direction')}</th><th>Ajouté le</th></tr></thead>
+            <tbody>{recent.map((l) => <tr key={l.scanKey} className="row-link" onClick={() => navigate('/lettres/' + l.id)}>
+              <td><div className="letter-subject">{l.objet}</div></td><td><span className="file-pill">▤ {l.scannedFile}</span></td><td><span className={'direction-pill direction-' + (l.direction || 'entrant')}><i />{t('direction.' + (l.direction || 'entrant'))}</span></td><td className="date-cell">{fmtDate(l.scannedAt)}</td>
+            </tr>)}{recent.length === 0 && <tr><td colSpan={4} className="empty-cell scan-empty">Aucun fichier numérisé cette semaine</td></tr>}</tbody>
+          </table></div>
+        )}
+      </div>
     </div>
   );
 }

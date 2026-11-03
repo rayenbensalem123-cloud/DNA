@@ -6,7 +6,16 @@
   "description": "Plateforme de registre du bureau ordre - lettres officielles et correspondance",
   "scripts": {
     "start": "node server/index.js",
-    "server": "node server/index.js"
+    "server": "node server/index.js",
+    "build": "npm --prefix client run build"
   },
-  "dependencies": {}
+  "dependencies": {
+    "@neondatabase/serverless": "^1.2.0",
+    "@vercel/blob": "^2.8.2",
+    "@vitejs/plugin-react": "^4.3.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.28.2",
+    "vite": "^5.4.8"
+  }
 }

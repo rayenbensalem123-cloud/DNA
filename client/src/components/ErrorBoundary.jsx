@@ -22,7 +22,8 @@ export default class ErrorBoundary extends Component {
         <div className="splash">
           <div className="login-card">
             <div className="login-brand">
-              <div className="brand-title big">Bureau Ordre</div>
+              <img className="login-emblem" src="/federation-tunisienne-logo.webp" alt="" />
+              <div className="brand-title big">Bureau d’ordre</div>
               <div className="brand-sub">Erreur de chargement</div>
             </div>
             <div className="form-error">{String(message)}</div>
@@ -33,3 +34,4 @@ export default class ErrorBoundary extends Component {
     return this.props.children;
   }
 }
+

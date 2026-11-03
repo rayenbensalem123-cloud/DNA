@@ -28,32 +28,36 @@ export default function Login() {
 
   return (
     <div className="login-page">
-      <div className="login-card">
-        <div className="login-brand">
-          <img
-            className="brand-logo big"
-            src="/logo-ftf.webp"
-            alt="Fédération Tunisienne de Football"
-            onError={(e) => { e.currentTarget.style.display = 'none'; }}
-          />
-          <div className="brand-title big">{t('app.name')}</div>
-          <div className="brand-sub">{t('auth.subtitle')}</div>
-        </div>
-        <form onSubmit={submit} className="login-form">
-          <label>
-            {t('auth.username')}
-            <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" required />
-          </label>
-          <label>
-            {t('auth.password')}
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required />
-          </label>
-          {error && <div className="form-error">{error}</div>}
-          <button className="btn btn-primary btn-block" disabled={busy}>
-            {busy ? t('common.loading') : t('actions.login')}
-          </button>
-        </form>
-      </div>
+      <main className="login-card">
+        <section className="login-identity" aria-label="Fédération Tunisienne de Football">
+          <div className="identity-brand">
+            <img className="login-emblem" src="/federation-tunisienne-logo.webp" alt="Emblème de la Fédération Tunisienne de Football" />
+          </div>
+          <div className="identity-copy">
+            <h1>Direction Nationale<br />d’Arbitrage</h1>
+          </div>
+        </section>
+        <section className="login-panel">
+          <div className="login-welcome">
+            <h2>Bienvenue</h2>
+          </div>
+          <form onSubmit={submit} className="login-form">
+            <label>
+              <span>{t('auth.username')}</span>
+              <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" required />
+            </label>
+            <label>
+              <span>{t('auth.password')}</span>
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required />
+            </label>
+            {error && <div className="form-error" role="alert">{error}</div>}
+            <button className="btn btn-primary btn-block login-submit" disabled={busy}>
+              <span>{busy ? t('common.loading') : t('actions.login')}</span>
+            </button>
+          </form>
+        </section>
+      </main>
     </div>
   );
 }
+

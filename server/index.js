@@ -2,14 +2,12 @@ import http from 'node:http';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import fs from 'node:fs';
-import { getDB, saveDB, verifyPassword } from './store.js';
+import { getDB, saveDB, verifyPassword, hashPassword, initializeDB, getSessionSecret } from './store.js';
 
 const PORT = process.env.PORT || 3001;
 const CLIENT_DIST = path.join(process.cwd(), 'client', 'dist');
 const UPLOAD_DIR = path.join(process.cwd(), 'server', 'data', 'uploads');
 const TOKEN_TTL = 1000 * 60 * 60 * 8; // 8h
-
-const sessions = new Map(); // token -> { userId, expiresAt }
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -22,7 +20,6 @@ const MIME = {
   '.jpeg': 'image/jpeg',
   '.ico': 'image/x-icon',
   '.woff2': 'font/woff2',
-  '.webp': 'image/webp',
   '.txt': 'text/plain; charset=utf-8',
 };
 
@@ -36,45 +33,30 @@ function send(res, status, data, extraHeaders = {}) {
   res.end(body);
 }
 
-class HttpError extends Error {
-  constructor(status, message) { super(message); this.status = status; }
-}
-
-// Reads a JSON body. If it is too large we keep draining it (without storing it) and
-// answer 413 once the upload has finished, so the browser receives a clear message
-// instead of a dropped connection. Absurdly large uploads are cut off.
-function readBody(req, limitMB = 10, tooLargeMessage = 'Requête trop volumineuse') {
+function readBody(req, limitMB = 10) {
   return new Promise((resolve, reject) => {
     const chunks = [];
-    const limit = limitMB * 1024 * 1024;
     let size = 0;
-    let tooLarge = false;
-    req.on('data', (c) => {
-      size += c.length;
-      if (size > limit * 4) { req.destroy(); return; }
-      if (tooLarge) return;
-      if (size > limit) { tooLarge = true; chunks.length = 0; return; }
-      chunks.push(c);
-    });
-    req.on('end', () => {
-      if (tooLarge) return reject(new HttpError(413, tooLargeMessage));
-      if (!chunks.length) return resolve({});
-      try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); }
-      catch (e) { reject(new HttpError(400, 'Requête invalide')); }
-    });
+    req.on('data', (c) => { size += c.length; if (size > limitMB * 1024 * 1024) { reject(new Error('Payload too large')); req.destroy(); return; } chunks.push(c); });
+    req.on('end', () => { try { resolve(chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {}); } catch (e) { resolve({}); } });
     req.on('error', reject);
   });
 }
 
-function publicUser(u) { return { id: u.id, username: u.username, name: u.name, role: u.role }; }
+function publicUser(u) { return { id: u.id, username: u.username, name: u.name, role: u.role, commission: u.commission || null, createdAt: u.createdAt }; }
 
 function authUser(req) {
   const h = req.headers.authorization || '';
   const token = h.startsWith('Bearer ') ? h.slice(7) : null;
   if (!token) return null;
-  const s = sessions.get(token);
-  if (!s) return null;
-  if (s.expiresAt < Date.now()) { sessions.delete(token); return null; }
+  const [payload, signature, extra] = token.split('.');
+  if (!payload || !signature || extra) return null;
+  const expected = crypto.createHmac('sha256', getSessionSecret()).update(payload).digest('base64url');
+  const a = Buffer.from(signature), b = Buffer.from(expected);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  let s;
+  try { s = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')); } catch { return null; }
+  if (!s.userId || s.expiresAt < Date.now()) return null;
   const db = getDB();
   const user = db.users.find((u) => u.id === s.userId) || null;
   return user || null;
@@ -87,39 +69,17 @@ function requireAuth(req, res, next) {
   return user;
 }
 
-function isValidStatut(s) { return ['recu', 'enregistre', 'en_cours', 'traite', 'transmis', 'archive'].includes(s); }
+function isValidStatut(s) { return ['recu', 'enregistre', 'en_cours', 'traite', 'transmis', 'vu', 'archive'].includes(s); }
 function isValidType(t) { return ['officielle', 'arrete', 'decret', 'note', 'courrier', 'mandat', 'autre'].includes(t); }
 function isValidCategorie(c) { return ['administration', 'juridique', 'finances', 'rh', 'communication', 'securite', 'autre'].includes(c); }
 function isValidPriorite(p) { return ['normale', 'urgente', 'confidentielle'].includes(p); }
 function isValidCommission(db, c) { return !c || (Array.isArray(db.committees) && db.committees.some((x) => x.id === c)); }
 
-const COMMISSION_EVENTS = ['recu_comite', 'traite_comite', 'note'];
+const COMMISSION_EVENTS = ['recu_comite', 'vu_comite', 'traite_comite', 'note'];
 
 function sanitizeFilename(name) {
   const base = path.basename(String(name || 'document.pdf'));
   return base.replace(/[^\w., ()\-\u00C0-\u017F]/g, '_').slice(0, 120) || 'document.pdf';
-}
-
-function cleanParty(p, fallback) {
-  if (p === undefined) return fallback;
-  if (typeof p === 'string') return { nom: p, fonction: '', service: '' };
-  if (!p || typeof p !== 'object') return { nom: '', fonction: '', service: '' };
-  return { nom: String(p.nom || ''), fonction: String(p.fonction || ''), service: String(p.service || '') };
-}
-
-function validDate(v) {
-  return v === undefined || v === null || v === '' || !Number.isNaN(new Date(v).getTime());
-}
-
-const ALLOWED_UPLOAD_EXT = ['.pdf', '.jpg', '.jpeg', '.png'];
-const MAX_PIECES_PER_LETTER = 20;
-
-// The file's real content must match its extension (a renamed .exe is not a PDF).
-function matchesFileType(ext, buf) {
-  if (ext === '.pdf') return buf.subarray(0, 1024).includes('%PDF');
-  if (ext === '.png') return buf.length > 8 && buf[0] === 0x89 && buf.toString('latin1', 1, 4) === 'PNG';
-  if (ext === '.jpg' || ext === '.jpeg') return buf.length > 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
-  return false;
 }
 
 function nextRef(db) {
@@ -130,13 +90,19 @@ function nextRef(db) {
 
 function publicLetter(l) {
   const { id, createdAt, updatedAt, createdBy, ...rest } = l;
+  const uploadedAt = (piece) => {
+    if (piece.uploadedAt) return piece.uploadedAt;
+    const stamp = String(piece.storedAs || '').split('-')[1];
+    const milliseconds = parseInt(stamp, 36);
+    return Number.isFinite(milliseconds) && milliseconds > 0 ? new Date(milliseconds).toISOString() : null;
+  };
   return {
     ...rest,
     id, createdAt, updatedAt, createdBy,
     numeroLettre: l.numeroLettre || '',
     commission: l.commission || null,
     commissionHisto: Array.isArray(l.commissionHisto) ? l.commissionHisto : [],
-    pieces: (l.pieces || []).map((p) => ({ id: p.id, nom: p.nom, taille: p.taille, hasFile: !!p.storedAs })),
+    pieces: (l.pieces || []).map((p) => ({ id: p.id, nom: p.nom, taille: p.taille, uploadedAt: uploadedAt(p), hasFile: !!p.storedAs })),
   };
 }
 
@@ -147,18 +113,14 @@ const server = http.createServer(async (req, res) => {
   try {
     await route(req, res);
   } catch (e) {
-    if (e instanceof HttpError) {
-      if (!res.headersSent) send(res, e.status, { error: e.message });
-      else res.end();
-      return;
-    }
     console.error('Request error', req.url, e);
-    if (!res.headersSent) send(res, 500, { error: 'Erreur serveur' });
+    if (!res.headersSent) send(res, e.status || 500, { error: e.status === 409 ? e.message : 'Erreur serveur' });
     else res.end();
   }
 });
 
 async function route(req, res) {
+  await initializeDB();
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
   const pathname = url.pathname;
   const method = req.method;
@@ -170,15 +132,16 @@ async function route(req, res) {
     if (!user || !verifyPassword(String(body.password || ''), user.password)) {
       return send(res, 401, { error: 'Identifiants invalides' });
     }
-    const token = crypto.randomBytes(32).toString('hex');
-    sessions.set(token, { userId: user.id, expiresAt: Date.now() + TOKEN_TTL });
+    const payload = Buffer.from(JSON.stringify({ userId: user.id, expiresAt: Date.now() + TOKEN_TTL })).toString('base64url');
+    const signature = crypto.createHmac('sha256', getSessionSecret()).update(payload).digest('base64url');
+    const token = `${payload}.${signature}`;
     return send(res, 200, { token, user: publicUser(user) });
   }
 
   if (pathname === '/api/logout' && method === 'POST') {
     const h = req.headers.authorization || '';
     const token = h.startsWith('Bearer ') ? h.slice(7) : null;
-    if (token) sessions.delete(token);
+    // The signed token expires after eight hours; logout clears it on the client.
     return send(res, 200, { ok: true });
   }
 
@@ -188,11 +151,93 @@ async function route(req, res) {
     return send(res, 200, { user: publicUser(user) });
   }
 
+  if (pathname === '/api/users' && (method === 'GET' || method === 'POST')) {
+    const user = requireAuth(req, res);
+    if (!user) return;
+    if (user.role !== 'admin') return send(res, 403, { error: 'Droits insuffisants' });
+    const db = getDB();
+    if (method === 'GET') return send(res, 200, { items: db.users.map(publicUser) });
+    const body = await readBody(req);
+    const username = String(body.username || '').trim().toLowerCase();
+    const name = String(body.name || '').trim();
+    const password = String(body.password || '');
+    const commission = body.commission ? String(body.commission) : null;
+    if (username.length < 3 || !/^[a-z0-9._-]+$/.test(username)) return send(res, 400, { error: 'Identifiant invalide (3 caractères minimum, lettres, chiffres, . _ -)' });
+    if (db.users.some((u) => u.username === username)) return send(res, 409, { error: 'Cet identifiant existe déjà' });
+    if (!name) return send(res, 400, { error: 'Le nom est obligatoire' });
+    if (password.length < 8) return send(res, 400, { error: 'Le mot de passe doit contenir au moins 8 caractères' });
+    if (!isValidCommission(db, commission)) return send(res, 400, { error: 'Comité invalide' });
+    const created = { id: 'u' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex'), username, name, password: hashPassword(password), role: 'lecture', commission, createdAt: new Date().toISOString() };
+    db.users.push(created);
+    await saveDB(db);
+    return send(res, 201, { item: publicUser(created) });
+  }
+
+  const userMatch = pathname.match(/^\/api\/users\/([^/]+)$/);
+  if (userMatch && method === 'PATCH') {
+    const user = requireAuth(req, res);
+    if (!user) return;
+    if (user.role !== 'admin') return send(res, 403, { error: 'Droits insuffisants' });
+    const db = getDB();
+    const target = db.users.find((u) => u.id === decodeURIComponent(userMatch[1]));
+    if (!target) return send(res, 404, { error: 'Compte introuvable' });
+    const body = await readBody(req);
+    const name = String(body.name ?? target.name).trim();
+    const commission = body.commission === undefined ? (target.commission || null) : (body.commission ? String(body.commission) : null);
+    const password = body.password === undefined ? '' : String(body.password);
+    if (!name) return send(res, 400, { error: 'Le nom est obligatoire' });
+    if (!isValidCommission(db, commission)) return send(res, 400, { error: 'Comité invalide' });
+    if (password && password.length < 8) return send(res, 400, { error: 'Le mot de passe doit contenir au moins 8 caractères' });
+    target.name = name;
+    target.commission = commission;
+    if (password) target.password = hashPassword(password);
+    await saveDB(db);
+    return send(res, 200, { item: publicUser(target) });
+  }
+
   if (pathname === '/api/committees' && method === 'GET') {
     const user = requireAuth(req, res);
     if (!user) return;
     const db = getDB();
     return send(res, 200, { items: db.committees });
+  }
+
+  if (pathname === '/api/blob-upload' && method === 'POST') {
+    let body;
+    try { body = await readBody(req, 1); }
+    catch { return send(res, 400, { error: 'Requête de téléversement invalide' }); }
+    try {
+      const { handleUpload } = await import('@vercel/blob/client');
+      const result = await handleUpload({
+        request: req,
+        body,
+        onBeforeGenerateToken: async (pathnameForBlob, clientPayload) => {
+          const user = authUser(req);
+          if (!user || !['admin', 'agent'].includes(user.role)) throw new Error('Droits insuffisants pour ajouter un fichier');
+          let details;
+          try { details = JSON.parse(clientPayload || '{}'); } catch { throw new Error('Informations du fichier invalides'); }
+          const letterId = String(details.letterId || '');
+          const filename = sanitizeFilename(details.filename);
+          const extension = path.extname(filename).toLowerCase();
+          const letter = getDB().letters.find((item) => item.id === letterId);
+          if (!letter) throw new Error('Lettre introuvable');
+          if (!['.pdf', '.jpg', '.jpeg', '.png'].includes(extension)) throw new Error('Format non pris en charge');
+          // Vercel Blob may add a random suffix to the pathname, and the client
+          // normalizes spaces in filenames. Validate the letter prefix and
+          // extension instead of requiring an exact filename suffix.
+          if (!pathnameForBlob.startsWith(`${letterId}-`) || path.extname(pathnameForBlob).toLowerCase() !== extension) throw new Error('Chemin de fichier invalide');
+          return {
+            allowedContentTypes: ['application/pdf', 'image/jpeg', 'image/png'],
+            maximumSizeInBytes: 25 * 1024 * 1024,
+            addRandomSuffix: true,
+          };
+        },
+        onUploadCompleted: async () => {},
+      });
+      return send(res, 200, result);
+    } catch (error) {
+      return send(res, 400, { error: error.message || 'Téléversement impossible' });
+    }
   }
 
   if (pathname === '/api/stats' && method === 'GET') {
@@ -250,7 +295,8 @@ async function route(req, res) {
       if (type && (l.type || 'autre') !== type) return false;
       if (categorie && (l.categorie || 'autre') !== categorie) return false;
       if (priorite && (l.priorite || 'normale') !== priorite) return false;
-      if (commission && ((l.commission || '') !== commission)) return false;
+      if (commission === 'non_assigne' && l.commission) return false;
+      if (commission && commission !== 'non_assigne' && ((l.commission || '') !== commission)) return false;
       if (from && (l.dateEmission || l.createdAt) < from) return false;
       if (to && (l.dateEmission || l.createdAt) > to) return false;
       if (q) {
@@ -299,45 +345,29 @@ async function route(req, res) {
       const letter = db.letters.find((l) => l.id === id);
       if (!letter) return send(res, 404, { error: 'Lettre introuvable' });
       const body = await readBody(req);
-
-      // Validate everything first so a rejected edit never leaves a half-applied change.
-      // A value is only checked when it actually changes, so older records stay editable.
-      const changed = (key) => body[key] !== undefined && body[key] !== letter[key];
-      if (changed('direction') && !['entrant', 'sortant'].includes(body.direction)) return send(res, 400, { error: 'Direction invalide' });
-      if (changed('type') && !isValidType(body.type)) return send(res, 400, { error: 'Type invalide' });
-      if (changed('categorie') && !isValidCategorie(body.categorie)) return send(res, 400, { error: 'Catégorie invalide' });
-      if (changed('priorite') && !isValidPriorite(body.priorite)) return send(res, 400, { error: 'Importance invalide' });
-      if (body.objet !== undefined && !String(body.objet).trim()) return send(res, 400, { error: 'L\'objet est obligatoire' });
-      if (!validDate(body.dateEmission) || !validDate(body.dateReception)) return send(res, 400, { error: 'Date invalide' });
-      const nextRefValue = body.ref !== undefined ? String(body.ref).trim().slice(0, 40) : '';
-      if (nextRefValue && nextRefValue !== letter.ref && db.letters.some((l) => l.id !== letter.id && l.ref === nextRefValue)) {
-        return send(res, 400, { error: 'Cette référence est déjà utilisée' });
-      }
       const nextStatut = body.statut !== undefined ? body.statut : letter.statut;
       if (!isValidStatut(nextStatut)) return send(res, 400, { error: 'Statut invalide' });
       const prevCommission = letter.commission || null;
       const nextCommission = body.commission !== undefined ? (body.commission || null) : prevCommission;
       if (!isValidCommission(db, nextCommission)) return send(res, 400, { error: 'Comité invalide' });
-
-      if (nextRefValue) letter.ref = nextRefValue;
+      if (body.ref) letter.ref = body.ref;
       if (body.numeroLettre !== undefined) letter.numeroLettre = String(body.numeroLettre || '');
-      // Attachments are NOT editable here: they only change through the /pieces endpoints,
-      // so an edit can never wipe or forge the list of stored files.
       Object.assign(letter, {
         direction: body.direction !== undefined ? body.direction : letter.direction,
         type: body.type !== undefined ? body.type : letter.type,
         categorie: body.categorie !== undefined ? body.categorie : letter.categorie,
-        objet: body.objet !== undefined ? String(body.objet).trim() : letter.objet,
-        resume: body.resume !== undefined ? String(body.resume || '') : letter.resume,
+        objet: body.objet !== undefined ? body.objet : letter.objet,
+        personneConcernee: body.personneConcernee !== undefined ? String(body.personneConcernee || '') : (letter.personneConcernee || ''),
+        resume: body.resume !== undefined ? body.resume : letter.resume,
         priorite: body.priorite !== undefined ? body.priorite : letter.priorite,
         statut: nextStatut,
-        expediteur: cleanParty(body.expediteur, letter.expediteur),
-        destinataire: cleanParty(body.destinataire, letter.destinataire),
-        dateEmission: body.dateEmission !== undefined ? (body.dateEmission || letter.dateEmission) : letter.dateEmission,
-        dateReception: body.dateReception !== undefined ? (body.dateReception || null) : letter.dateReception,
+        expediteur: body.expediteur !== undefined ? body.expediteur : letter.expediteur,
+        destinataire: body.destinataire !== undefined ? body.destinataire : letter.destinataire,
+        dateEmission: body.dateEmission !== undefined ? body.dateEmission : letter.dateEmission,
+        dateReception: body.dateReception !== undefined ? body.dateReception : letter.dateReception,
+        pieces: body.pieces !== undefined ? body.pieces : letter.pieces,
       });
       letter.commission = nextCommission;
-      if (!Array.isArray(letter.commissionHisto)) letter.commissionHisto = [];
       if (nextCommission && nextCommission !== prevCommission) {
         letter.commissionHisto.push({
           id: 'h' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
@@ -350,7 +380,7 @@ async function route(req, res) {
         if (body.statut === undefined) letter.statut = 'transmis';
       }
       letter.updatedAt = new Date().toISOString();
-      saveDB(db);
+      await saveDB(db);
       const updated = db.letters.find((l) => l.id === id);
       return send(res, 200, { item: publicLetter(updated) });
     }
@@ -363,14 +393,18 @@ async function route(req, res) {
       if (!letter) return send(res, 404, { error: 'Lettre introuvable' });
       for (const p of letter.pieces || []) {
         if (p.storedAs) {
-          const fp = path.join(UPLOAD_DIR, p.storedAs);
-          try { if (fs.existsSync(fp)) fs.unlinkSync(fp); } catch (e) { /* ignore */ }
+          if (process.env.VERCEL) {
+            try { const { del } = await import('@vercel/blob'); await del(p.storedAs); } catch (e) { /* ignore */ }
+          } else {
+            const fp = path.join(UPLOAD_DIR, p.storedAs);
+            try { if (fs.existsSync(fp)) fs.unlinkSync(fp); } catch (e) { /* ignore */ }
+          }
         }
       }
       const idx = db.letters.findIndex((l) => l.id === id);
       if (idx < 0) return send(res, 404, { error: 'Lettre introuvable' });
       db.letters.splice(idx, 1);
-      saveDB(db);
+      await saveDB(db);
       return send(res, 200, { ok: true });
     }
   }
@@ -378,7 +412,7 @@ async function route(req, res) {
   if (pathname === '/api/letters' && method === 'POST') {
     const user = requireAuth(req, res);
     if (!user) return;
-    if (!['admin', 'agent'].includes(user.role)) return send(res, 403, { error: 'Droits insuffisants' });
+    if (user.role !== 'admin') return send(res, 403, { error: 'Droits insuffisants' });
     const body = await readBody(req);
     const db = getDB();
     if (!isValidCommission(db, body.commission || null)) return send(res, 400, { error: 'Comité invalide' });
@@ -396,6 +430,7 @@ async function route(req, res) {
       type: isValidType(body.type) ? body.type : 'courrier',
       categorie: isValidCategorie(body.categorie) ? body.categorie : 'autre',
       objet: String(body.objet || ''),
+      personneConcernee: String(body.personneConcernee || ''),
       resume: String(body.resume || ''),
       priorite: isValidPriorite(body.priorite) ? body.priorite : 'normale',
       statut,
@@ -411,7 +446,7 @@ async function route(req, res) {
       createdBy: user.id,
     };
     db.letters.push(lettre);
-    saveDB(db);
+    await saveDB(db);
     return send(res, 201, { item: publicLetter(lettre) });
   }
 
@@ -420,14 +455,17 @@ async function route(req, res) {
   if (eventsMatch && method === 'POST') {
     const user = requireAuth(req, res);
     if (!user) return;
-    if (!['admin', 'agent'].includes(user.role)) return send(res, 403, { error: 'Droits insuffisants' });
     const db = getDB();
     const letter = db.letters.find((l) => l.id === eventsMatch[1]);
     if (!letter) return send(res, 404, { error: 'Lettre introuvable' });
     const body = await readBody(req);
     const type = String(body.type || '');
     if (!COMMISSION_EVENTS.includes(type)) return send(res, 400, { error: 'Type d\'événement invalide' });
+    const canManage = ['admin', 'agent'].includes(user.role);
+    const canUpdateCommitteeStatus = user.role === 'lecture' && ['vu_comite', 'traite_comite'].includes(type);
+    if (!canManage && !canUpdateCommitteeStatus) return send(res, 403, { error: 'Droits insuffisants' });
     if (type !== 'note' && !letter.commission) return send(res, 400, { error: 'Aucun comité assigné' });
+    if (type === 'vu_comite' && letter.statut !== 'transmis') return send(res, 200, { item: publicLetter(letter) });
     const event = {
       id: 'h' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
       date: new Date().toISOString(),
@@ -437,14 +475,46 @@ async function route(req, res) {
       note: String(body.note || ''),
     };
     letter.commissionHisto.push(event);
-    if (type === 'recu_comite') letter.statut = 'en_cours';
-    if (type === 'traite_comite') letter.statut = 'traite';
+    if (type === 'recu_comite' || type === 'vu_comite') letter.statut = 'vu';
+    if (type === 'traite_comite') letter.statut = 'archive';
     letter.updatedAt = new Date().toISOString();
-    saveDB(db);
+    await saveDB(db);
     return send(res, 200, { item: publicLetter(db.letters.find((l) => l.id === letter.id)) });
   }
 
   // Attachments (scanned letter PDF): upload / stream / delete
+  const completedUploadMatch = /^\/api\/letters\/([A-Za-z0-9_-]+)\/pieces\/complete$/.exec(pathname);
+  if (completedUploadMatch && method === 'POST') {
+    const user = requireAuth(req, res);
+    if (!user) return;
+    if (!['admin', 'agent'].includes(user.role)) return send(res, 403, { error: 'Droits insuffisants' });
+    const db = getDB();
+    const letterId = completedUploadMatch[1];
+    const letter = db.letters.find((item) => item.id === letterId);
+    if (!letter) return send(res, 404, { error: 'Lettre introuvable' });
+    const body = await readBody(req, 1);
+    const pathnameForBlob = String(body.pathname || '');
+    const filename = sanitizeFilename(body.filename);
+    const extension = path.extname(filename).toLowerCase();
+    if (!pathnameForBlob.startsWith(`${letterId}-`) || path.extname(pathnameForBlob).toLowerCase() !== extension) return send(res, 400, { error: 'Chemin de fichier invalide' });
+    if (!['.pdf', '.jpg', '.jpeg', '.png'].includes(extension)) return send(res, 400, { error: 'Format non pris en charge' });
+    try {
+      const { head } = await import('@vercel/blob');
+      const blob = await head(pathnameForBlob, { access: 'private' });
+      if (blob.size > 25 * 1024 * 1024) return send(res, 413, { error: 'Fichier trop volumineux (25 Mo maximum)' });
+      let piece = (letter.pieces || []).find((item) => item.storedAs === pathnameForBlob);
+      if (!piece) {
+        piece = { id: 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8), nom: filename, taille: blob.size, storedAs: pathnameForBlob, uploadedAt: new Date().toISOString() };
+        letter.pieces.push(piece);
+        letter.updatedAt = new Date().toISOString();
+        await saveDB(db);
+      }
+      return send(res, 201, { item: { id: piece.id, nom: piece.nom, taille: piece.taille, hasFile: true } });
+    } catch (error) {
+      return send(res, 400, { error: error.message || 'Fichier téléversé, mais rattachement à la lettre impossible' });
+    }
+  }
+
   const piecesMatch = /^\/api\/letters\/([A-Za-z0-9_-]+)\/pieces(?:\/([A-Za-z0-9_-]+))?$/.exec(pathname);
   if (piecesMatch) {
     const [_, letterId, pieceId] = piecesMatch;
@@ -456,25 +526,30 @@ async function route(req, res) {
       const user = requireAuth(req, res);
       if (!user) return;
       if (!['admin', 'agent'].includes(user.role)) return send(res, 403, { error: 'Droits insuffisants' });
-      // ~14 MB of JSON = a 10 MB file once base64-encoded. Too large -> clean 413 reply.
-      const body = await readBody(req, 14, 'Fichier trop volumineux (max 10 Mo)');
+      let body;
+      try { body = await readBody(req, 14); } catch (e) { return send(res, 413, { error: 'Fichier trop volumineux (max ~10 Mo)' }); }
       const filename = sanitizeFilename(body.filename);
-      const ext = path.extname(filename).toLowerCase();
-      if (!ALLOWED_UPLOAD_EXT.includes(ext)) return send(res, 400, { error: 'Type de fichier non autorisé (PDF, JPG ou PNG uniquement)' });
-      if (!/^[A-Za-z0-9+/=\s]+$/.test(String(body.dataBase64 || ''))) return send(res, 400, { error: 'Données du fichier invalides' });
+      if (!/^[A-Za-z0-9+/=\s]+$/.test(String(body.dataBase64 || ''))) return send(res, 400, { error: 'Données base64 invalides' });
       const buf = Buffer.from(String(body.dataBase64), 'base64');
       if (!buf.length) return send(res, 400, { error: 'Fichier vide' });
       if (buf.length > 10 * 1024 * 1024) return send(res, 413, { error: 'Fichier trop volumineux (max 10 Mo)' });
-      if (!matchesFileType(ext, buf)) return send(res, 400, { error: 'Le contenu du fichier ne correspond pas à son type (' + ext + ')' });
-      if (!Array.isArray(letter.pieces)) letter.pieces = [];
-      if (letter.pieces.length >= MAX_PIECES_PER_LETTER) return send(res, 400, { error: 'Nombre maximal de pièces jointes atteint (' + MAX_PIECES_PER_LETTER + ')' });
+      const storedAs = letterId + '-' + Date.now().toString(36) + '-' + filename.replace(/[^.\w]/g, '_');
+      const uploadedAt = new Date().toISOString();
+      if (process.env.VERCEL) {
+        const { put } = await import('@vercel/blob');
+        const blob = await put(storedAs, buf, { access: 'private', contentType: filename.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream', addRandomSuffix: true });
+        const piece = { id: 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8), nom: filename, taille: buf.length, storedAs: blob.pathname, uploadedAt };
+        letter.pieces.push(piece);
+        letter.updatedAt = new Date().toISOString();
+        await saveDB(db);
+        return send(res, 201, { item: { id: piece.id, nom: piece.nom, taille: piece.taille, hasFile: true }, letters: db.letters.length });
+      }
       fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-      const storedAs = letterId + '-' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex') + '-' + filename.replace(/[^.\w]/g, '_');
       fs.writeFileSync(path.join(UPLOAD_DIR, storedAs), buf);
-      const piece = { id: 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8), nom: filename, taille: buf.length, storedAs };
+      const piece = { id: 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8), nom: filename, taille: buf.length, storedAs, uploadedAt };
       letter.pieces.push(piece);
       letter.updatedAt = new Date().toISOString();
-      saveDB(db);
+      await saveDB(db);
       return send(res, 201, { item: { id: piece.id, nom: piece.nom, taille: piece.taille, hasFile: true }, letters: db.letters.length });
     }
 
@@ -489,6 +564,17 @@ async function route(req, res) {
       if (!user) return;
       const piece = (letter.pieces || []).find((p) => p.id === pieceId);
       if (!piece || !piece.storedAs) return send(res, 404, { error: 'Fichier non disponible' });
+      if (process.env.VERCEL) {
+        const { get } = await import('@vercel/blob');
+        const blob = await get(piece.storedAs, { access: 'private' });
+        if (!blob || blob.statusCode !== 200) return send(res, 404, { error: 'Fichier non disponible' });
+        const ext = path.extname(piece.nom).toLowerCase();
+        const mime = ext === '.pdf' ? 'application/pdf' : ext === '.png' ? 'image/png' : (ext === '.jpg' || ext === '.jpeg') ? 'image/jpeg' : 'application/octet-stream';
+        res.writeHead(200, { 'Content-Type': mime, 'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(piece.nom)}` });
+        const { Readable } = await import('node:stream');
+        Readable.fromWeb(blob.stream).pipe(res);
+        return;
+      }
       const filePath = path.join(UPLOAD_DIR, piece.storedAs);
       if (!fs.existsSync(filePath)) return send(res, 404, { error: 'Fichier non disponible' });
       const ext = path.extname(piece.storedAs).toLowerCase();
@@ -511,11 +597,15 @@ async function route(req, res) {
       if (idx < 0) return send(res, 404, { error: 'Fichier introuvable' });
       const [removed] = letter.pieces.splice(idx, 1);
       if (removed && removed.storedAs) {
-        const fp = path.join(UPLOAD_DIR, removed.storedAs);
-        try { if (fs.existsSync(fp)) fs.unlinkSync(fp); } catch (e) { /* ignore */ }
+        if (process.env.VERCEL) {
+          try { const { del } = await import('@vercel/blob'); await del(removed.storedAs); } catch (e) { /* ignore */ }
+        } else {
+          const fp = path.join(UPLOAD_DIR, removed.storedAs);
+          try { if (fs.existsSync(fp)) fs.unlinkSync(fp); } catch (e) { /* ignore */ }
+        }
       }
       letter.updatedAt = new Date().toISOString();
-      saveDB(db);
+      await saveDB(db);
       return send(res, 200, { ok: true });
     }
   }
@@ -537,6 +627,9 @@ async function route(req, res) {
   return send(res, 404, { error: 'Not found' });
 }
 
-server.listen(PORT, () => {
+if (!process.env.VERCEL) server.listen(PORT, () => {
   console.log(`Bureau Ordre server listening on http://localhost:${PORT}`);
 });
+
+
+export { route };

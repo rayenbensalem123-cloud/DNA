@@ -4,7 +4,6 @@ import { api } from '../api';
 import { useAuth } from '../auth';
 import { useLanguage } from '../i18n';
 import { fmtDate, fmtDateTime, fmtSize } from '../utils';
-import Modal from '../components/Modal';
 import LetterForm from '../components/LetterForm';
 
 export default function LetterDetail() {
@@ -12,17 +11,17 @@ export default function LetterDetail() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { t } = useLanguage();
+  const canManage = user?.role === 'admin' || user?.role === 'agent';
+  const canEdit = user?.role === 'admin';
+  const canHandleCommittee = canManage || user?.role === 'lecture';
   const [letter, setLetter] = useState(null);
   const [committees, setCommittees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [statut, setStatut] = useState('');
   const [committee, setCommittee] = useState('');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [editError, setEditError] = useState('');
-  const [notice, setNotice] = useState(null); // { kind: 'ok' | 'warn', text }
 
   const committeeName = (cid) => (committees.find((c) => c.id === cid)?.nom) || cid || '—';
 
@@ -31,60 +30,50 @@ export default function LetterDetail() {
     setLoading(true);
     setError('');
     api.committees().then((d) => { if (!cancelled) setCommittees(d.items || []); }).catch(() => {});
-    api.getLetter(id)
+    // The list endpoint is the only read endpoint; find by id from a full scan.
+    api.listLetters({ limit: 500, sort: 'date' })
       .then((d) => {
         if (cancelled) return;
-        const found = d.item || null;
+        const found = d.items.find((l) => l.id === id) || null;
         setLetter(found);
-        setStatut(found ? found.statut : '');
         setCommittee(found ? (found.commission || '') : '');
         setLoading(false);
+        if (found?.commission && found.statut === 'transmis' && canHandleCommittee) {
+          api.addCommissionEvent(found.id, { type: 'vu_comite' })
+            .then((updated) => { if (!cancelled) setLetter(updated.item); })
+            .catch(() => {});
+        }
       })
-      .catch((e) => { if (!cancelled) { setLetter(null); setError(e.message || 'Erreur'); setLoading(false); } });
+      .catch(() => { if (!cancelled) { setError('Erreur'); setLoading(false); } });
     return () => { cancelled = true; };
-  }, [id]);
+  }, [id, canHandleCommittee]);
 
-  const applyLetter = (item) => {
-    setLetter(item);
-    setStatut(item.statut);
-    setCommittee(item.commission || '');
-  };
+  useEffect(() => {
+    if (!editing) return undefined;
+    const onKeyDown = (event) => { if (event.key === 'Escape' && !busy) setEditing(false); };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [editing, busy]);
 
-  const openEdit = () => { setEditError(''); setNotice(null); setEditing(true); };
-
-  // Saves the edited fields and uploads the newly added files.
-  // If saving the fields fails, the error is thrown so the pop-up shows it and stays open.
-  // If only some files fail, the edit is kept, the pop-up closes and the message names those files.
-  const saveEdit = async (data) => {
-    const { files, ...fields } = data;
-    const { item, failed } = await api.updateLetterWithFiles(letter.id, fields, files || []);
-    applyLetter(item);
+  const saveEdits = async (data) => {
+    setBusy(true);
     setError('');
-    setEditing(false);
-    if (failed.length) {
-      setNotice({ kind: 'warn', text: t('edit.partialFail', { files: failed.map((x) => `${x.name} (${x.message})`).join(', ') }) });
-    } else {
-      setNotice({ kind: 'ok', text: t('edit.saved') });
-    }
-  };
-
-  const removePiece = async (piece) => {
-    setEditError('');
     try {
-      await api.deletePiece(letter.id, piece.id);
-      const d = await api.getLetter(letter.id);
-      applyLetter(d.item);
-    } catch (e) { setEditError(e.message || 'Erreur'); }
-  };
-
-  const saveStatus = async () => {
-    if (!letter) return;
-    try {
-      const d = await api.updateLetter(letter.id, { statut, commission: committee || null });
-      setLetter(d.item);
-      setStatut(d.item.statut);
-      setCommittee(d.item.commission || '');
+      const { files = [], ...changes } = data;
+      if ((changes.commission || null) !== (letter.commission || null)) {
+        changes.statut = changes.commission ? 'transmis' : 'recu';
+      }
+      await api.updateLetter(letter.id, changes);
+      for (const file of files) {
+        await api.uploadPieceDirect(letter.id, file);
+      }
+      const refreshed = await api.listLetters({ limit: 500, sort: 'date' });
+      const updated = refreshed.items.find((item) => item.id === letter.id);
+      if (updated) setLetter(updated);
+      setCommittee(updated?.commission || changes.commission || '');
+      setEditing(false);
     } catch (e) { setError(e.message || 'Erreur'); }
+    finally { setBusy(false); }
   };
 
   const assignCommittee = async () => {
@@ -93,10 +82,9 @@ export default function LetterDetail() {
     setError('');
     try {
       const changed = (committee || null) !== (letter.commission || null);
-      const nextStatut = changed ? (committee ? 'transmis' : 'recu') : statut;
+      const nextStatut = changed ? (committee ? 'transmis' : 'recu') : letter.statut;
       const d = await api.updateLetter(letter.id, { commission: committee || null, statut: nextStatut });
       setLetter(d.item);
-      setStatut(d.item.statut);
     } catch (e) { setError(e.message || 'Erreur'); }
     setBusy(false);
   };
@@ -108,7 +96,6 @@ export default function LetterDetail() {
     try {
       const d = await api.addCommissionEvent(letter.id, { type, note });
       setLetter(d.item);
-      setStatut(d.item.statut);
       setNote('');
     } catch (e) { setError(e.message || 'Erreur'); }
     setBusy(false);
@@ -118,7 +105,7 @@ export default function LetterDetail() {
     if (!letter) return;
     try {
       await api.deleteLetter(letter.id);
-      navigate('/lettres');
+      navigate('/archive');
     } catch (e) { setError(e.message || 'Erreur'); }
   };
 
@@ -132,8 +119,6 @@ export default function LetterDetail() {
   if (error && !letter) return <div className="page"><div className="card">{error}</div></div>;
   if (!letter) return <div className="page"><div className="card">Introuvable</div></div>;
 
-  const canManage = user?.role === 'admin' || user?.role === 'agent';
-
   const info = (key, value) => (
     <div key={key} className="detail-row">
       <div className="detail-label">{t(key)}</div>
@@ -144,16 +129,14 @@ export default function LetterDetail() {
   return (
     <div className="page page-narrow">
       <div className="page-header">
-        <h1>{t('detail.title')} — {letter.ref}</h1>
+        <div className="page-title-copy"><span className="page-title-kicker">Correspondance</span><h1>{t('detail.title')}</h1></div>
         <div className="page-actions">
-          <button className="btn btn-secondary" onClick={() => navigate('/lettres')}>{t('detail.back')}</button>
-          {canManage && <button className="btn btn-primary" onClick={openEdit}>{t('detail.edit')}</button>}
+          <button className="btn btn-secondary" onClick={() => navigate('/archive')}>{t('detail.back')}</button>
+          {canEdit && <button className="btn btn-primary" onClick={() => { setError(''); setEditing(true); }}>Modifier</button>}
           {canManage && <button className="btn btn-danger" onClick={remove}>{t('detail.delete')}</button>}
         </div>
       </div>
-      {notice && <div className={'form-notice' + (notice.kind === 'warn' ? ' warn' : '')}>{notice.text}</div>}
       <div className="card">
-        {info('detail.ref', letter.ref)}
         {info('detail.numero', letter.numeroLettre || '—')}
         {info('detail.objet', letter.objet)}
         {info('detail.resume', letter.resume)}
@@ -203,66 +186,38 @@ export default function LetterDetail() {
         )}
       </div>
 
-      {canManage && (
+      {canHandleCommittee && (
         <>
-          <div className="card">
+          {(canManage || letter.commission) && <div className="card">
             <h2 className="card-title">{t('detail.committeeActions')}</h2>
-            <div className="status-actions">
-              <select value={committee} onChange={(e) => setCommittee(e.target.value)}>
-                <option value="">{t('commission.none')}</option>
-                {committees.map((c) => (
-                  <option key={c.id} value={c.id}>{c.nom}</option>
-                ))}
-              </select>
-              <button className="btn btn-primary" onClick={assignCommittee} disabled={busy}>{t('detail.transmit')}</button>
-            </div>
+            {canManage && <div className="status-actions">
+                <select value={committee} onChange={(e) => setCommittee(e.target.value)}>
+                  <option value="">{t('commission.none')}</option>
+                  {committees.map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}
+                </select>
+                <button className="btn btn-primary" onClick={assignCommittee} disabled={busy}>{t('detail.transmit')}</button>
+              </div>}
             {letter.commission && (
               <div className="status-actions">
-                <button className="btn btn-secondary" onClick={() => addEvent('recu_comite')} disabled={busy}>{t('detail.markReceived')}</button>
-                <button className="btn btn-secondary" onClick={() => addEvent('traite_comite')} disabled={busy}>{t('detail.markTreated')}</button>
+                {letter.statut !== 'archive' && <button className="btn btn-primary" onClick={() => addEvent('traite_comite')} disabled={busy}>{t('detail.markTreated')}</button>}
               </div>
             )}
-            <label className="field">
+            {canManage && <label className="field">
               <span>{t('detail.note')}</span>
               <textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder={t('detail.notePlaceholder')} />
-            </label>
-          </div>
+            </label>}
+          </div>}
 
-          <div className="card">
-            <h2 className="card-title">{t('detail.actions')}</h2>
-            <div className="status-actions">
-              <select value={statut} onChange={(e) => setStatut(e.target.value)}>
-                {['recu', 'enregistre', 'en_cours', 'traite', 'transmis', 'archive'].map((s) => (
-                  <option key={s} value={s}>{t('status.' + s)}</option>
-                ))}
-              </select>
-              <button className="btn btn-primary" onClick={saveStatus}>{t('common.save')}</button>
-            </div>
-            <div className="muted">{fmtDateTime(letter.createdAt)}</div>
-          </div>
         </>
       )}
       {error && <div className="form-error">{error}</div>}
-
-      {editing && (
-        <Modal title={t('edit.title')} onClose={() => setEditing(false)} closeLabel={t('common.close')}>
-          <LetterForm
-            mode="modal"
-            initial={letter}
-            submitLabel={t('edit.save')}
-            onSubmit={saveEdit}
-            onCancel={() => setEditing(false)}
-            existingPieces={letter.pieces || []}
-            onOpenPiece={async (p) => {
-              setEditError('');
-              try { await api.openPiece(letter.id, p.id); } catch (e) { setEditError(e.message || 'Erreur'); }
-            }}
-            onDeletePiece={removePiece}
-            canDeletePieces={user?.role === 'admin'}
-            error={editError}
-          />
-        </Modal>
-      )}
+      {editing && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setEditing(false); }}>
+        <section className="modal" role="dialog" aria-modal="true" aria-labelledby="letter-edit-title">
+          <header className="modal-head"><h2 id="letter-edit-title">Modifier le courrier</h2><button type="button" className="modal-close" onClick={() => setEditing(false)} aria-label="Fermer" disabled={busy}>×</button></header>
+          <LetterForm initialLetter={letter} onSubmit={saveEdits} onCancel={() => setEditing(false)} busy={busy} error={error} />
+        </section>
+      </div>}
     </div>
   );
 }
+

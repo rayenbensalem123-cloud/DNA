@@ -36,3 +36,4 @@ export function toInputDate(iso) {
   const dd = String(d.getDate()).padStart(2, '0');
   return `${d.getFullYear()}-${mm}-${dd}`;
 }
+

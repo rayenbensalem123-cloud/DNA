@@ -1,8 +1,8 @@
 import { createContext, useContext, useState, createElement } from 'react';
 
 const fr = {
-  'app.name': "Bureau d'Ordre — DNA",
-  'app.tagline': "Direction Nationale de l'Arbitrage — FTF",
+  'app.name': 'Bureau d’ordre',
+  'app.tagline': 'Registre officiel de correspondance',
   'nav.dashboard': 'Tableau de bord',
   'nav.lettres': 'Lettres officielles',
   'nav.reception': "Tout ce qui est reçu",
@@ -14,11 +14,12 @@ const fr = {
   'actions.back': 'Retour',
   'actions.save': 'Enregistrer',
 
-  'auth.title': "Bureau d'Ordre — DNA",
-  'auth.subtitle': `Direction Nationale de l'Arbitrage — Fédération Tunisienne de Football`,
+  'auth.title': 'Bureau d’ordre',
+  'auth.subtitle': 'Plateforme de registre officiel',
   'auth.username': 'Identifiant',
   'auth.password': 'Mot de passe',
   'auth.error': 'Identifiants invalides',
+  'auth.demo': 'Comptes démonstration',
   'auth.role.admin': 'Administrateur',
   'auth.role.agent': 'Agent',
   'auth.role.lecture': 'Lecteur',
@@ -37,7 +38,8 @@ const fr = {
   'status.enregistre': 'Enregistré',
   'status.en_cours': 'En cours',
   'status.traite': 'Traité',
-  'status.transmis': 'Transmis',
+  'status.transmis': 'Envoyé au comité',
+  'status.vu': 'Vu par le comité',
   'status.archive': 'Archivé',
 
   'type.officielle': 'Officielle',
@@ -67,7 +69,6 @@ const fr = {
   'letters.received': "Tout ce qui est reçu",
   'letters.new': 'Nouvelle lettre',
   'letters.filter': 'Filtres',
-  'letters.ref': 'Réf.',
   'letters.numero': 'N° courrier',
   'letters.objet': 'Objet',
   'letters.direction': 'Direction',
@@ -85,7 +86,6 @@ const fr = {
   'letters.destinataire': 'Destinataire',
 
   'detail.title': 'Détail de la lettre',
-  'detail.ref': 'Référence',
   'detail.numero': 'Numéro du courrier',
   'detail.direction': 'Direction',
   'detail.type': 'Type',
@@ -106,7 +106,7 @@ const fr = {
   'detail.committeeActions': 'Transmission et suivi comité',
   'detail.transmit': 'Transmettre / mettre à jour le comité',
   'detail.markReceived': 'Reçu par le comité',
-  'detail.markTreated': 'Traité par le comité',
+  'detail.markTreated': 'Terminer et archiver',
   'detail.note': 'Note',
   'detail.notePlaceholder': 'Note de suivi (optionnel)',
   'detail.actions': 'Actions',
@@ -114,8 +114,9 @@ const fr = {
   'detail.back': 'Retour à la liste',
 
   'event.assigne': 'Transmis au comité',
-  'event.recu_comite': 'Reçu par le comité',
-  'event.traite_comite': 'Traité par le comité',
+  'event.recu_comite': 'Vu par le comité',
+  'event.vu_comite': 'Vu par le comité',
+  'event.traite_comite': 'Terminé et archivé',
   'event.note': 'Note',
 
   'form.title': 'Nouvelle correspondance',
@@ -154,27 +155,14 @@ const fr = {
   'common.cancel': 'Annuler',
   'common.back': 'Retour',
   'common.close': 'Fermer',
-  'detail.edit': 'Modifier',
-  'edit.title': 'Modifier le courrier',
-  'edit.save': 'Enregistrer la lettre',
-  'edit.saved': 'Modifications enregistrées.',
-  'edit.partialFail': "Modifications enregistrées, mais ces fichiers n'ont pas pu être ajoutés : {files}. Cliquez sur « Modifier » pour réessayer.",
-  'edit.currentFiles': 'Fichiers déjà joints',
-  'edit.noFiles': 'Aucun fichier joint.',
-  'edit.addFiles': 'Ajouter des fichiers (PDF)',
-  'edit.removeFile': 'Supprimer',
-  'edit.confirmRemoveFile': 'Supprimer définitivement « {name} » ?',
-  'form.statutEdit': 'Statut',
-  'form.fileBadType': 'Type de fichier non accepté (PDF, JPG ou PNG) —',
-
   'common.createdBy': 'Créé par',
   'common.created': 'Créé le',
   'filter.all': 'Tous',
 };
 
 const en = {
-  'app.name': "Bureau d'Ordre — DNA",
-  'app.tagline': 'National Refereeing Directorate — TFF',
+  'app.name': 'Bureau of Orders',
+  'app.tagline': 'Official correspondence register',
   'nav.dashboard': 'Dashboard',
   'nav.lettres': 'Official letters',
   'nav.reception': 'All received',
@@ -186,11 +174,12 @@ const en = {
   'actions.back': 'Back',
   'actions.save': 'Save',
 
-  'auth.title': "Bureau d'Ordre — DNA",
-  'auth.subtitle': 'National Refereeing Directorate — Tunisian Football Federation',
+  'auth.title': 'Bureau of Orders',
+  'auth.subtitle': 'Official registry platform',
   'auth.username': 'Username',
   'auth.password': 'Password',
   'auth.error': 'Invalid credentials',
+  'auth.demo': 'Demo accounts',
   'auth.role.admin': 'Administrator',
   'auth.role.agent': 'Agent',
   'auth.role.lecture': 'Reader',
@@ -209,7 +198,8 @@ const en = {
   'status.enregistre': 'Registered',
   'status.en_cours': 'In progress',
   'status.traite': 'Processed',
-  'status.transmis': 'Sent',
+  'status.transmis': 'Sent to committee',
+  'status.vu': 'Seen by committee',
   'status.archive': 'Archived',
 
   'type.officielle': 'Official',
@@ -239,7 +229,6 @@ const en = {
   'letters.received': 'All received',
   'letters.new': 'New letter',
   'letters.filter': 'Filters',
-  'letters.ref': 'Ref.',
   'letters.numero': 'Letter No.',
   'letters.objet': 'Subject',
   'letters.direction': 'Direction',
@@ -257,7 +246,6 @@ const en = {
   'letters.destinataire': 'Recipient',
 
   'detail.title': 'Letter details',
-  'detail.ref': 'Reference',
   'detail.numero': 'Letter number',
   'detail.direction': 'Direction',
   'detail.type': 'Type',
@@ -278,7 +266,7 @@ const en = {
   'detail.committeeActions': 'Transmission & committee tracking',
   'detail.transmit': 'Transmit / update committee',
   'detail.markReceived': 'Received by committee',
-  'detail.markTreated': 'Processed by committee',
+  'detail.markTreated': 'Complete and archive',
   'detail.note': 'Note',
   'detail.notePlaceholder': 'Tracking note (optional)',
   'detail.actions': 'Actions',
@@ -286,8 +274,9 @@ const en = {
   'detail.back': 'Back to list',
 
   'event.assigne': 'Transmitted to committee',
-  'event.recu_comite': 'Received by committee',
-  'event.traite_comite': 'Processed by committee',
+  'event.recu_comite': 'Seen by committee',
+  'event.vu_comite': 'Seen by committee',
+  'event.traite_comite': 'Completed and archived',
   'event.note': 'Note',
 
   'form.title': 'New correspondence',
@@ -322,19 +311,6 @@ const en = {
   'common.cancel': 'Cancel',
   'common.back': 'Back',
   'common.close': 'Close',
-  'detail.edit': 'Edit',
-  'edit.title': 'Edit letter',
-  'edit.save': 'Save letter',
-  'edit.saved': 'Changes saved.',
-  'edit.partialFail': 'Changes saved, but these files could not be added: {files}. Click “Edit” to try again.',
-  'edit.currentFiles': 'Attached files',
-  'edit.noFiles': 'No attached files.',
-  'edit.addFiles': 'Add files (PDF)',
-  'edit.removeFile': 'Remove',
-  'edit.confirmRemoveFile': 'Permanently remove “{name}”?',
-  'form.statutEdit': 'Status',
-  'form.fileBadType': 'File type not accepted (PDF, JPG or PNG) —',
-
   'common.createdBy': 'Created by',
   'common.created': 'Created',
   'filter.all': 'All',
@@ -351,7 +327,7 @@ export const LanguageContext = createContext({
 });
 
 export function LanguageProvider({ children }) {
-  const [lang, setLangState] = useState(() => localStorage.getItem('bo_lang') || 'fr');
+  const [lang, setLangState] = useState('fr');
   const setLang = (l) => {
     setLangState(l);
     localStorage.setItem('bo_lang', l);
@@ -368,3 +344,4 @@ export function LanguageProvider({ children }) {
 }
 
 export const useLanguage = () => useContext(LanguageContext);
+

@@ -1,18 +1,26 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../api';
+import { useAuth } from '../auth';
 import { useLanguage } from '../i18n';
 import { fmtDate } from '../utils';
 
 export default function Letters() {
   const { t } = useLanguage();
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [committees, setCommittees] = useState([]);
   const [filters, setFilters] = useState({
-    q: '', direction: '', statut: '', type: '', categorie: '', priorite: '', commission: '', from: '', to: '',
+    q: '', direction: '', statut: '', priorite: '', commission: '',
   });
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    setFilters((current) => ({ ...current, direction: params.get('direction') || '', statut: params.get('statut') || '', priorite: params.get('priorite') || '' }));
+  }, [location.search]);
 
   const committeeName = (id) => (committees.find((c) => c.id === id)?.nom) || '—';
 
@@ -39,7 +47,7 @@ export default function Letters() {
       <div className="page-header">
         <h1>{t('nav.lettres')}</h1>
         <div className="page-actions">
-          <Link className="btn btn-primary" to="/lettres/nouveau">{t('letters.create')}</Link>
+          {user?.role === 'admin' && <button className="btn btn-primary" onClick={() => navigate('/?newLetter=1')}>{t('letters.create')}</button>}
         </div>
       </div>
 
@@ -60,22 +68,6 @@ export default function Letters() {
             <option value="transmis">{t('status.transmis')}</option>
             <option value="archive">{t('status.archive')}</option>
           </select>
-          <select value={filters.type} onChange={(e) => set('type', e.target.value)}>
-            <option value="">{t('filter.all')}</option>
-            <option value="officielle">{t('type.officielle')}</option>
-            <option value="arrete">{t('type.arrete')}</option>
-            <option value="decret">{t('type.decret')}</option>
-            <option value="note">{t('type.note')}</option>
-            <option value="courrier">{t('type.courrier')}</option>
-            <option value="mandat">{t('type.mandat')}</option>
-            <option value="autre">{t('type.autre')}</option>
-          </select>
-          <select value={filters.categorie} onChange={(e) => set('categorie', e.target.value)}>
-            <option value="">{t('filter.all')}</option>
-            {Object.keys({ administration: 1, juridique: 1, finances: 1, rh: 1, communication: 1, securite: 1, autre: 1 }).map((c) => (
-              <option key={c} value={c}>{t('categorie.' + c)}</option>
-            ))}
-          </select>
           <select value={filters.priorite} onChange={(e) => set('priorite', e.target.value)}>
             <option value="">{t('filter.all')}</option>
             <option value="normale">{t('priorite.normale')}</option>
@@ -95,15 +87,14 @@ export default function Letters() {
             <table className="table">
               <thead>
                 <tr>
-                  <th>{t('letters.ref')}</th><th>{t('letters.numero')}</th><th>{t('letters.objet')}</th><th>{t('letters.direction')}</th>
+                  <th>{t('letters.numero')}</th><th>{t('letters.objet')}</th><th>{t('letters.direction')}</th>
                   <th>{t('letters.commission')}</th><th>{t('letters.statut')}</th>
                   <th>{t('letters.priorite')}</th><th>{t('letters.date')}</th>
                 </tr>
               </thead>
               <tbody>
                 {items.map((l) => (
-                  <tr key={l.id} className="row-link" onClick={() => (window.location.href = '/lettres/' + l.id)}>
-                    <td className="mono">{l.ref}</td>
+                  <tr key={l.id} className="row-link" onClick={() => navigate('/lettres/' + l.id)}>
                     <td className="mono">{l.numeroLettre || '—'}</td>
                     <td>{l.objet}</td>
                     <td>{t('direction.' + (l.direction || 'entrant'))}</td>
@@ -113,13 +104,14 @@ export default function Letters() {
                     <td>{fmtDate(l.dateEmission)}</td>
                   </tr>
                 ))}
-                {items.length === 0 && <tr><td colSpan={8} className="empty-cell">{t('letters.empty')}</td></tr>}
+                {items.length === 0 && <tr><td colSpan={7} className="empty-cell">{t('letters.empty')}</td></tr>}
               </tbody>
             </table>
           </div>
         )}
-        <div className="card-footer">{t('common.save')} — {total} {t('letters.ref').toLowerCase()}</div>
+        <div className="card-footer">{total} courrier{total === 1 ? '' : 's'}</div>
       </div>
     </div>
   );
 }
+
