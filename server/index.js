@@ -69,7 +69,7 @@ function requireAuth(req, res, next) {
   return user;
 }
 
-function isValidStatut(s) { return ['recu', 'enregistre', 'en_cours', 'traite', 'transmis', 'vu', 'archive'].includes(s); }
+function isValidStatut(s) { return ['recu', 'en_cours', 'archive'].includes(s); }
 function isValidType(t) { return ['officielle', 'arrete', 'decret', 'note', 'courrier', 'mandat', 'autre'].includes(t); }
 function isValidCategorie(c) { return ['administration', 'juridique', 'finances', 'rh', 'communication', 'securite', 'autre'].includes(c); }
 function isValidPriorite(p) { return ['normale', 'urgente', 'confidentielle'].includes(p); }
@@ -377,7 +377,7 @@ async function route(req, res) {
           by: user.id, byName: user.name,
           note: String(body.commissionNote || ''),
         });
-        if (body.statut === undefined) letter.statut = 'transmis';
+        if (body.statut === undefined) letter.statut = 'en_cours';
       }
       letter.updatedAt = new Date().toISOString();
       await saveDB(db);
@@ -416,7 +416,7 @@ async function route(req, res) {
     const body = await readBody(req);
     const db = getDB();
     if (!isValidCommission(db, body.commission || null)) return send(res, 400, { error: 'Comité invalide' });
-    const statut = body.statut || (body.commission ? 'transmis' : 'recu');
+    const statut = body.statut || (body.commission ? 'en_cours' : 'recu');
     if (!isValidStatut(statut)) return send(res, 400, { error: 'Statut invalide' });
     const commission = body.commission || null;
     const commissionHisto = commission
@@ -465,7 +465,7 @@ async function route(req, res) {
     const canUpdateCommitteeStatus = user.role === 'lecture' && ['vu_comite', 'traite_comite'].includes(type);
     if (!canManage && !canUpdateCommitteeStatus) return send(res, 403, { error: 'Droits insuffisants' });
     if (type !== 'note' && !letter.commission) return send(res, 400, { error: 'Aucun comité assigné' });
-    if (type === 'vu_comite' && letter.statut !== 'transmis') return send(res, 200, { item: publicLetter(letter) });
+    if (type === 'vu_comite' && (letter.commissionHisto || []).some((h) => h.type === 'vu_comite')) return send(res, 200, { item: publicLetter(letter) });
     const event = {
       id: 'h' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
       date: new Date().toISOString(),
@@ -475,7 +475,7 @@ async function route(req, res) {
       note: String(body.note || ''),
     };
     letter.commissionHisto.push(event);
-    if (type === 'recu_comite' || type === 'vu_comite') letter.statut = 'vu';
+    if (type === 'recu_comite' || type === 'vu_comite') letter.statut = 'en_cours';
     if (type === 'traite_comite') letter.statut = 'archive';
     letter.updatedAt = new Date().toISOString();
     await saveDB(db);

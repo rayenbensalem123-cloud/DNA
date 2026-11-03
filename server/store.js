@@ -78,6 +78,13 @@ function migrate(db) {
     changed = true;
   }
   for (const l of db.letters) {
+    if (l.statut && !['recu', 'en_cours', 'archive'].includes(l.statut)) {
+      if (l.statut === 'archive') { /* keep */ }
+      else if (l.statut === 'traite') l.statut = 'archive';
+      else l.statut = 'en_cours';
+      changed = true;
+    }
+    if (l.statut === undefined) { l.statut = 'recu'; changed = true; }
     if (l.numeroLettre === undefined) { l.numeroLettre = l.ref || ''; changed = true; }
     if (l.commission === undefined) { l.commission = null; changed = true; }
     if (!Array.isArray(l.commissionHisto)) { l.commissionHisto = []; changed = true; }

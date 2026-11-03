@@ -38,7 +38,8 @@ export default function LetterDetail() {
         setLetter(found);
         setCommittee(found ? (found.commission || '') : '');
         setLoading(false);
-        if (found?.commission && found.statut === 'transmis' && canHandleCommittee) {
+        const alreadySeen = (found?.commissionHisto || []).some((h) => h.type === 'vu_comite' || h.type === 'recu_comite');
+        if (found?.commission && !alreadySeen && canHandleCommittee) {
           api.addCommissionEvent(found.id, { type: 'vu_comite' })
             .then((updated) => { if (!cancelled) setLetter(updated.item); })
             .catch(() => {});
@@ -61,7 +62,7 @@ export default function LetterDetail() {
     try {
       const { files = [], ...changes } = data;
       if ((changes.commission || null) !== (letter.commission || null)) {
-        changes.statut = changes.commission ? 'transmis' : 'recu';
+        changes.statut = changes.commission ? 'en_cours' : 'recu';
       }
       await api.updateLetter(letter.id, changes);
       for (const file of files) {
@@ -82,7 +83,7 @@ export default function LetterDetail() {
     setError('');
     try {
       const changed = (committee || null) !== (letter.commission || null);
-      const nextStatut = changed ? (committee ? 'transmis' : 'recu') : letter.statut;
+      const nextStatut = changed ? (committee ? 'en_cours' : 'recu') : letter.statut;
       const d = await api.updateLetter(letter.id, { commission: committee || null, statut: nextStatut });
       setLetter(d.item);
     } catch (e) { setError(e.message || 'Erreur'); }

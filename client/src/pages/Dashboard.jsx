@@ -39,7 +39,7 @@ export default function Dashboard() {
     return () => { cancelled = true; };
   }, []);
 
-  const pending = Math.max(0, (stats?.total || 0) - (stats?.parStatut?.archive || 0) - (stats?.parStatut?.traite || 0));
+  const pending = Math.max(0, (stats?.total || 0) - (stats?.parStatut?.archive || 0));
   const cards = [
     { label: 'Total', value: stats?.total ?? '—', href: '/archive', tone: 'total' },
     { label: 'Entrants', value: stats?.entrants ?? '—', href: '/archive?direction=entrant', tone: 'green' },

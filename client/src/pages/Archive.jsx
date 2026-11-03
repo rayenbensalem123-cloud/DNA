@@ -36,7 +36,7 @@ export default function Archive() {
       .then((d) => {
         if (cancelled) return;
         const matched = bucket === 'pending'
-          ? (d.items || []).filter((letter) => !['archive', 'traite'].includes(letter.statut || 'recu'))
+          ? (d.items || []).filter((letter) => (letter.statut || 'recu') !== 'archive')
           : (d.items || []);
         setItems(matched);
         setTotal(bucket ? matched.length : d.total || 0);
@@ -103,7 +103,7 @@ export default function Archive() {
             </select>
             <select aria-label="Statut" value={filters.statut} onChange={(event) => set('statut', event.target.value)}>
               <option value="">Tous les statuts</option>
-              {['recu', 'enregistre', 'en_cours', 'transmis', 'vu', 'traite', 'archive'].map((status) => <option key={status} value={status}>{t('status.' + status)}</option>)}
+              {['recu', 'en_cours', 'archive'].map((status) => <option key={status} value={status}>{t('status.' + status)}</option>)}
             </select>
             <select aria-label="Importance" value={filters.priorite} onChange={(event) => set('priorite', event.target.value)}>
               <option value="">Toutes les importances</option><option value="normale">Normale</option><option value="urgente">Urgente</option><option value="confidentielle">Confidentielle</option>

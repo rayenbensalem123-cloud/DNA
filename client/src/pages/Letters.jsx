@@ -62,10 +62,7 @@ export default function Letters() {
           <select value={filters.statut} onChange={(e) => set('statut', e.target.value)}>
             <option value="">{t('filter.all')}</option>
             <option value="recu">{t('status.recu')}</option>
-            <option value="enregistre">{t('status.enregistre')}</option>
             <option value="en_cours">{t('status.en_cours')}</option>
-            <option value="traite">{t('status.traite')}</option>
-            <option value="transmis">{t('status.transmis')}</option>
             <option value="archive">{t('status.archive')}</option>
           </select>
           <select value={filters.priorite} onChange={(e) => set('priorite', e.target.value)}>

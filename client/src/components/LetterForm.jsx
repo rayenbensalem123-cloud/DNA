@@ -92,7 +92,7 @@ export default function LetterForm({ onSubmit, onCancel, busy = false, error = '
       type: form.type,
       categorie: initialLetter?.categorie || (form.objet.toLowerCase().includes('plainte') ? 'juridique' : 'autre'),
       priorite: form.priorite,
-      statut: initialLetter?.statut || (form.commission ? 'transmis' : 'recu'),
+      statut: initialLetter?.statut || (form.commission ? 'en_cours' : 'recu'),
       objet,
       personneConcernee: form.personneConcernee.trim(),
       resume: form.resume.trim(),
