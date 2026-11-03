@@ -44,7 +44,13 @@ function seed() {
     },
   ];
 
-  return { users, letters: [], seq: 1 };
+  return {
+    users,
+    letters: [],
+    seq: 1,
+    committees: COMMITTEES.map((c) => ({ ...c })),
+    secret: crypto.randomBytes(32).toString('hex'),
+  };
 }
 
 const DEMO_SIGNATURES = [
