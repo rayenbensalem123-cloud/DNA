@@ -65,7 +65,10 @@ npm --prefix client run dev  # terminal 2 : http://localhost:5173 (proxy /api)
 
    | Variable | Rôle |
    | -------- | ---- |
-   | `DATABASE_URL` | chaîne de connexion Neon Postgres |
+   | `SUPABASE_URL` | URL du projet Supabase (`https://xxxx.supabase.co`) |
+   | `SUPABASE_SECRET_KEY` | clé secrète Supabase (`sb_secret_...`, Project Settings → API) |
+   | `SUPABASE_SERVICE_ROLE_KEY` | (alternative) clé `service_role` legacy (`eyJ...`) |
+   | `DATABASE_URL` | (optionnel, legacy) chaîne de connexion Neon Postgres |
    | `BLOB_READ_WRITE_TOKEN` | jeton Vercel Blob (store privé) |
    | `SESSION_SECRET` | (recommandé) secret aléatoire long pour signer les sessions |
    | `DNA_ADMIN_PASSWORD` | (optionnel) mot de passe initial du compte `admin` |

@@ -31,8 +31,6 @@ function seed() {
   const iso = (t) => new Date(t).toISOString();
 
   // Official mode: a single administrator account, no demo data.
-  // The password can be set once at install time via DNA_ADMIN_PASSWORD;
-  // it should be changed from the Accounts page after the first login.
   const users = [
     {
       id: 'u1',
@@ -59,9 +57,6 @@ const DEMO_SIGNATURES = [
   { username: 'lecture', name: 'Sara Oufkir' },
 ];
 
-// The public demo build shipped with sample accounts and sample letters.
-// When that data is detected on first boot of the official build, replace it
-// with the official seed (single administrator, empty ledger).
 function isDemoSeed(db) {
   if (!db || !Array.isArray(db.users)) return false;
   const isDemoUser = (signature) => db.users.some((u) => u.username === signature.username && u.name === signature.name);
@@ -97,10 +92,30 @@ function migrate(db) {
 
 let cache = null;
 let dbRevision = null;
-let sqlClient = null;
+let sqlClient = null;        // neon
+let supabaseClient = null;
+
+function backend() {
+  if (process.env.SUPABASE_URL) return 'supabase';
+  if (process.env.DATABASE_URL) return 'neon';
+  return 'file';
+}
+
+function supabaseKey() {
+  return process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+}
+
+async function getSupabase() {
+  if (supabaseClient) return supabaseClient;
+  const { createClient } = await import('@supabase/supabase-js');
+  supabaseClient = createClient(process.env.SUPABASE_URL, supabaseKey(), {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  return supabaseClient;
+}
 
 function database() {
-  if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required for persistent storage');
+  if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required for Neon storage');
   if (!sqlClient) {
     return import('@neondatabase/serverless').then(({ neon }) => {
       sqlClient = neon(process.env.DATABASE_URL);
@@ -111,10 +126,36 @@ function database() {
 }
 
 export async function initializeDB() {
-  if (!process.env.DATABASE_URL) {
+  const b = backend();
+  if (b === 'file') {
     getDB();
     return;
   }
+  if (b === 'supabase') {
+    const sb = await getSupabase();
+    const { data, error } = await sb.from('dna_app_state').select('revision, data').eq('id', 'main').maybeSingle();
+    if (error) throw new Error('Supabase read failed: ' + (error.message || error.code));
+    if (!data) {
+      const initial = seed();
+      migrate(initial);
+      const { error: insErr } = await sb.from('dna_app_state').insert({ id: 'main', revision: 1, data: initial });
+      if (insErr) throw new Error('Supabase insert failed: ' + (insErr.message || insErr.code));
+      cache = initial;
+      dbRevision = 1;
+      return;
+    }
+    cache = typeof data.data === 'string' ? JSON.parse(data.data) : data.data;
+    dbRevision = Number(data.revision);
+    if (isDemoSeed(cache)) {
+      cache = seed();
+      migrate(cache);
+      await saveSupabaseDB(cache);
+      return;
+    }
+    if (migrate(cache)) await saveSupabaseDB(cache);
+    return;
+  }
+  // neon
   const sql = await database();
   await sql`CREATE TABLE IF NOT EXISTS dna_app_state (id text PRIMARY KEY, revision bigint NOT NULL, data jsonb NOT NULL)`;
   const initial = seed();
@@ -125,20 +166,24 @@ export async function initializeDB() {
   dbRevision = Number(rows[0].revision);
   if (isDemoSeed(cache)) {
     cache = seed();
-    await saveDB(cache);
+    migrate(cache);
+    await saveRemoteDB(cache);
     return;
   }
-  if (migrate(cache)) await saveDB(cache);
+  if (migrate(cache)) await saveRemoteDB(cache);
 }
 
 export function getDB() {
   if (cache) return cache;
+  if (backend() !== 'file') {
+    throw new Error('Database not initialized; call initializeDB first');
+  }
   let db = null;
   try {
     if (fs.existsSync(DB_FILE)) db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
   } catch (e) { db = null; }
   if (!db) { db = seed(); }
-  if (isDemoSeed(db)) db = seed();
+  if (isDemoSeed(db)) { db = seed(); }
   cache = db;
   migrate(db);
   saveDB(db);
@@ -147,9 +192,29 @@ export function getDB() {
 
 export function saveDB(db) {
   cache = db;
-  if (process.env.DATABASE_URL) return saveRemoteDB(db);
+  const b = backend();
+  if (b === 'supabase') return saveSupabaseDB(db);
+  if (b === 'neon') return saveRemoteDB(db);
   fs.mkdirSync(DATA_DIR, { recursive: true });
   fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
+}
+
+async function saveSupabaseDB(db) {
+  const sb = await getSupabase();
+  if (dbRevision === null) await initializeDB();
+  const newRevision = (dbRevision || 0) + 1;
+  const { data, error } = await sb.from('dna_app_state')
+    .update({ data: db, revision: newRevision })
+    .eq('id', 'main')
+    .eq('revision', dbRevision)
+    .select('revision');
+  if (error) throw new Error('Supabase update failed: ' + (error.message || error.code));
+  if (!data || !data.length) {
+    const error = new Error('Data changed in another request; reload and retry');
+    error.status = 409;
+    throw error;
+  }
+  dbRevision = Number(data[0].revision);
 }
 
 async function saveRemoteDB(db) {
@@ -164,13 +229,10 @@ async function saveRemoteDB(db) {
   dbRevision = Number(rows[0].revision);
 }
 
-export async function resetDB() { cache = null; await saveDB(seed()); }
+export async function resetDB() { cache = null; dbRevision = null; await saveDB(seed()); }
 
 let sessionSecretCache = null;
 
-// Session tokens are HMAC-signed. Prefer an explicit SESSION_SECRET from the
-// environment; otherwise fall back to a random secret persisted in the database
-// so that sessions survive restarts, cold starts and redeployments.
 export function getSessionSecret() {
   if (sessionSecretCache) return sessionSecretCache;
   if (process.env.SESSION_SECRET) {
@@ -185,4 +247,3 @@ export function getSessionSecret() {
   sessionSecretCache = db.secret;
   return sessionSecretCache;
 }
-
