@@ -63,6 +63,10 @@ export default function Dashboard() {
           <div className="stat-value">{loading ? '—' : card.value}</div>
         </Link>)}
       </div>
+      <div className="season-summary" style={{ display: 'flex', gap: 16, marginBottom: 16, fontSize: 13, color: 'var(--muted)' }}>
+        <span>{t('dashboard.receivedSeason')}: <strong style={{ color: 'var(--text)' }}>{loading ? '—' : (stats?.recusCetteSaison ?? 0)}</strong></span>
+        <span>{t('dashboard.archivedSeason')}: <strong style={{ color: 'var(--text)' }}>{loading ? '—' : (stats?.archivesCetteSaison ?? 0)}</strong></span>
+      </div>
       <div className="card open-letters-card">
         <div className="card-head-row"><div><h2 className="card-title">Courriers en cours</h2><div className="muted">{openLetters.length} courrier{openLetters.length === 1 ? '' : 's'} non archivé{openLetters.length === 1 ? '' : 's'}</div></div><Link className="btn btn-secondary" to="/archive?bucket=pending">Voir tout <span aria-hidden="true">→</span></Link></div>
         {loading ? <div className="card-pad">{t('common.loading')}</div> : (

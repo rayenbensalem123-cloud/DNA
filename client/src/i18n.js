@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, createElement } from 'react';
 
-const fr = {
+  const fr = {
   'app.name': 'Bureau d’ordre',
   'app.tagline': 'Registre officiel de correspondance',
   'nav.dashboard': 'Tableau de bord',
@@ -33,6 +33,8 @@ const fr = {
   'dashboard.receivedMonth': 'Reçus ce mois',
   'dashboard.processedMonth': 'Traités ce mois',
   'dashboard.urgent': 'Urgentes',
+  'dashboard.receivedSeason': 'Reçus cette saison',
+  'dashboard.archivedSeason': 'Archivés cette saison',
 
   'status.recu': 'Reçu',
   'status.enregistre': 'Enregistré',
@@ -196,6 +198,8 @@ const en = {
   'dashboard.receivedMonth': 'Received this month',
   'dashboard.processedMonth': 'Processed this month',
   'dashboard.urgent': 'Urgent',
+  'dashboard.receivedSeason': 'Received this season',
+  'dashboard.archivedSeason': 'Archived this season',
 
   'status.recu': 'Received',
   'status.enregistre': 'Registered',
