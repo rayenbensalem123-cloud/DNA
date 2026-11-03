@@ -1,4 +1,4 @@
-import { route } from '../../../server/index.js';
+import { route } from '../../../../server/index.js';
 
 export default async function handler(req, res) {
   try {
