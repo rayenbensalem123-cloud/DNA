@@ -9,6 +9,7 @@ export default function Login() {
   const navigate = useNavigate();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -27,37 +28,44 @@ export default function Login() {
   };
 
   return (
-    <div className="login-page">
-      <main className="login-card">
-        <section className="login-identity" aria-label="Fédération Tunisienne de Football">
-          <div className="identity-brand">
-            <img className="login-emblem" src="/federation-tunisienne-logo.webp" alt="Emblème de la Fédération Tunisienne de Football" />
-          </div>
-          <div className="identity-copy">
-            <h1>Direction Nationale<br />d’Arbitrage</h1>
-          </div>
-        </section>
-        <section className="login-panel">
-          <div className="login-welcome">
-            <h2>Bienvenue</h2>
-          </div>
-          <form onSubmit={submit} className="login-form">
-            <label>
-              <span>{t('auth.username')}</span>
-              <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" required />
-            </label>
-            <label>
-              <span>{t('auth.password')}</span>
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required />
-            </label>
-            {error && <div className="form-error" role="alert">{error}</div>}
-            <button className="btn btn-primary btn-block login-submit" disabled={busy}>
-              <span>{busy ? t('common.loading') : t('actions.login')}</span>
-            </button>
-          </form>
-        </section>
-      </main>
-    </div>
+    <main className="sign">
+      <section className="sign-stage" aria-label="Direction Nationale d’Arbitrage">
+        <img className="sign-photo" src="/referee-background.webp" alt="" />
+        <div className="sign-shade" />
+        <div className="sign-identity">
+          <img className="sign-emblem" src="/federation-tunisienne-logo.webp" alt="Fédération Tunisienne de Football" />
+          <h1>Direction Nationale<br />d’Arbitrage</h1>
+          <p>Fédération Tunisienne de Football</p>
+        </div>
+      </section>
+
+      <section className="sign-panel">
+        <form onSubmit={submit} className="sign-form">
+          <header>
+            <h2>Connexion</h2>
+            <p>{t('auth.title')} : accédez au registre du courrier.</p>
+          </header>
+
+          <label className="sign-field">
+            <span>{t('auth.username')}</span>
+            <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" autoFocus required />
+          </label>
+
+          <label className="sign-field">
+            <span>{t('auth.password')}</span>
+            <div className="sign-password">
+              <input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required />
+              <button type="button" className="sign-reveal" onClick={() => setShowPassword((v) => !v)} aria-pressed={showPassword}>
+                {showPassword ? 'Masquer' : 'Afficher'}
+              </button>
+            </div>
+          </label>
+
+          {error && <div className="sign-error" role="alert">{error}</div>}
+
+          <button className="sign-submit" disabled={busy}>{busy ? t('common.loading') : t('actions.login')}</button>
+        </form>
+      </section>
+    </main>
   );
 }
-
