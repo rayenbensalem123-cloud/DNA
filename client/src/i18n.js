@@ -155,6 +155,7 @@ import { createContext, useContext, useState, createElement } from 'react';
   'commission.none': 'Aucun comité',
 
   'common.loading': 'Chargement…',
+  'splash.welcome': 'Bienvenue, {name}',
   'common.error': 'Erreur',
   'common.save': 'Enregistrer',
   'common.cancel': 'Annuler',
@@ -316,6 +317,7 @@ const en = {
   'form.required': 'Required field',
 
   'common.loading': 'Loading…',
+  'splash.welcome': 'Welcome, {name}',
   'common.error': 'Error',
   'common.save': 'Save',
   'common.cancel': 'Cancel',

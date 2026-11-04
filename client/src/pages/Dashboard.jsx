@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { useLanguage } from '../i18n';
 import { fmtDate } from '../utils';
+import CountUp from '../components/CountUp';
 
 export default function Dashboard() {
   const { t } = useLanguage();
@@ -60,7 +61,7 @@ export default function Dashboard() {
       <div className="stat-grid">
         {cards.map((card) => <Link key={card.label} to={card.href} className={'stat-card tone-' + card.tone} style={{ textDecoration: 'none' }}>
           <div className="stat-card-top"><div className="stat-label">{card.label}</div><span className="stat-arrow" aria-hidden="true">↗</span></div>
-          <div className="stat-value">{loading ? '—' : card.value}</div>
+          <div className="stat-value">{loading ? '—' : <CountUp value={card.value} />}</div>
         </Link>)}
       </div>
       <div className="season-summary" style={{ display: 'flex', gap: 16, marginBottom: 16, fontSize: 13, color: 'var(--muted)' }}>
