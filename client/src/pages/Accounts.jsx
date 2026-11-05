@@ -4,11 +4,10 @@ import { useAuth } from '../auth';
 
 const emptyAccount = () => ({ name: '', username: '', password: '', commission: '', role: 'agent' });
 const ROLE_HINTS = {
-  agent: 'Voit et traite le courrier de son département, peut en créer et le transférer aux autres départements.',
-  lecture: 'Consulte seulement le courrier de son département.',
-  admin: 'Accès à tout : courrier, comptes et suppressions.',
+  agent: 'Peut envoyer du courrier à n’importe quel comité, mais ne lit que le courrier reçu par son propre comité.',
+  admin: 'Voit tout : courrier de tous les comités, comptes et suppressions.',
 };
-const ROLE_LABELS = { admin: 'Administrateur', agent: 'Département', lecture: 'Lecture seule' };
+const ROLE_LABELS = { admin: 'Administration', agent: 'Comité', lecture: 'Comité' };
 
 export default function Accounts() {
   const { user: me } = useAuth();
@@ -37,7 +36,7 @@ export default function Accounts() {
   const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
   const edit = (account) => {
     setError(''); setNotice('');
-    setForm({ id: account.id, name: account.name, username: account.username, password: '', commission: account.commission || '', role: account.role || 'lecture' });
+    setForm({ id: account.id, name: account.name, username: account.username, password: '', commission: account.commission || '', role: account.role === 'admin' ? 'admin' : 'agent' });
   };
   const save = async (event) => {
     event.preventDefault();
@@ -87,11 +86,10 @@ export default function Accounts() {
             <label className="field">Identifiant<input autoComplete="username" value={form.username} onChange={(e) => update('username', e.target.value)} required minLength={3} disabled={Boolean(form.id)} /></label>
             <label className="field">{form.id ? 'Nouveau mot de passe (facultatif)' : 'Mot de passe'}<input type="password" autoComplete="new-password" value={form.password} onChange={(e) => update('password', e.target.value)} minLength={form.password ? 8 : undefined} required={!form.id} placeholder={form.id ? 'Laisser vide pour conserver' : '8 caractères minimum'} /></label>
             <label className="field">Type de compte<select value={form.role} onChange={(e) => update('role', e.target.value)} disabled={form.id === me?.id}>
-              <option value="agent">Département</option>
-              <option value="lecture">Lecture seule</option>
-              <option value="admin">Administrateur</option>
+              <option value="agent">Comité</option>
+              <option value="admin">Administration</option>
             </select><span className="muted">{ROLE_HINTS[form.role]}</span></label>
-            <label className="field">{form.role === 'admin' ? 'Comité (facultatif)' : 'Département'}<select value={form.commission} required={form.role !== 'admin'} onChange={(e) => update('commission', e.target.value)}><option value="">{form.role === 'admin' ? 'Aucun comité' : '— Choisir un département —'}</option>{committees.map((committee) => <option key={committee.id} value={committee.id}>{committee.nom}</option>)}</select></label>
+            <label className="field">{form.role === 'admin' ? 'Comité (facultatif)' : 'Comité'}<select value={form.commission} required={form.role !== 'admin'} onChange={(e) => update('commission', e.target.value)}><option value="">{form.role === 'admin' ? 'Aucun comité' : '— Choisir un comité —'}</option>{committees.map((committee) => <option key={committee.id} value={committee.id}>{committee.nom}</option>)}</select></label>
           </div>
           {error && <div className="form-error" role="alert">{error}</div>}
           <div className="page-actions"><button className="btn btn-primary" disabled={busy}>{busy ? 'Enregistrement…' : 'Enregistrer'}</button><button className="btn btn-secondary" type="button" onClick={() => { setForm(null); setError(''); }}>Annuler</button></div>
@@ -101,7 +99,7 @@ export default function Accounts() {
       <section className="card account-list-card">
         <div className="account-list-heading"><div><h2 className="card-title">Tous les comptes</h2><div className="muted">{accounts.length} compte{accounts.length === 1 ? '' : 's'}</div></div><input className="account-search" type="search" placeholder="Rechercher un compte…" aria-label="Rechercher un compte" value={query} onChange={(e) => setQuery(e.target.value)} /></div>
         <div className="table-wrap"><table className="table account-table">
-          <thead><tr><th>Nom</th><th>Identifiant</th><th>Type</th><th>Département</th><th></th></tr></thead>
+          <thead><tr><th>Nom</th><th>Identifiant</th><th>Type</th><th>Comité</th><th></th></tr></thead>
           <tbody>{filtered.map((account) => <tr key={account.id}>
             <td className="account-name-cell">{account.name}</td><td className="mono">{account.username}</td><td>{ROLE_LABELS[account.role] || account.role}</td>
             <td>{committees.find((committee) => committee.id === account.commission)?.nom || <span className="muted">Aucun</span>}</td>

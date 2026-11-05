@@ -21,7 +21,7 @@ import { createContext, useContext, useState, createElement } from 'react';
   'auth.error': 'Identifiants invalides',
   'auth.demo': 'Comptes démonstration',
   'auth.role.admin': 'Administrateur',
-  'auth.role.agent': 'Département',
+  'auth.role.agent': 'Comité',
   'auth.role.lecture': 'Lecteur',
 
   'dashboard.title': 'Tableau de bord',
@@ -187,7 +187,7 @@ const en = {
   'auth.error': 'Invalid credentials',
   'auth.demo': 'Demo accounts',
   'auth.role.admin': 'Administrator',
-  'auth.role.agent': 'Department',
+  'auth.role.agent': 'Committee',
   'auth.role.lecture': 'Reader',
 
   'dashboard.title': 'Dashboard',

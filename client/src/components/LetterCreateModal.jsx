@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../api';
+import { useAuth } from '../auth';
 import LetterForm from './LetterForm';
 
 export default function LetterCreateModal({ onClose }) {
@@ -9,6 +10,8 @@ export default function LetterCreateModal({ onClose }) {
   const initialDirection = new URLSearchParams(location.search).get('direction') === 'sortant' ? 'sortant' : 'entrant';
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [sent, setSent] = useState(null);
+  const { user } = useAuth();
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -30,7 +33,12 @@ export default function LetterCreateModal({ onClose }) {
     setError('');
     try {
       const result = await api.createLetterWithFiles(data, data.files || []);
-      navigate('/lettres/' + result.item.id, { replace: true });
+      if (user?.role === 'admin') { navigate('/lettres/' + result.item.id, { replace: true }); return; }
+      // A comité account cannot open a letter it sent to another comité: confirm instead.
+      let name = result.item.commission;
+      try { name = ((await api.committees()).items || []).find((c) => c.id === result.item.commission)?.nom || name; } catch { /* keep id */ }
+      setSent(name);
+      setBusy(false);
     } catch (submitError) {
       setError(submitError.message || 'Erreur');
       setBusy(false);
@@ -44,7 +52,13 @@ export default function LetterCreateModal({ onClose }) {
           <h2 id="letter-modal-title">Nouveau courrier</h2>
           <button type="button" className="modal-close" onClick={close} aria-label="Fermer" disabled={busy}>×</button>
         </header>
-        <LetterForm initialDirection={initialDirection} onSubmit={submit} onCancel={close} busy={busy} error={error} />
+        {sent ? (
+          <div className="sent-panel" role="status">
+            <h3>Lettre envoyée</h3>
+            <p>Le courrier a été envoyé au comité « {sent} ».</p>
+            <div className="page-actions"><button type="button" className="btn btn-primary" onClick={onClose}>Fermer</button></div>
+          </div>
+        ) : <LetterForm initialDirection={initialDirection} onSubmit={submit} onCancel={close} busy={busy} error={error} />}
       </section>
     </div>
   );

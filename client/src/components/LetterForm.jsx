@@ -164,9 +164,9 @@ export default function LetterForm({ onSubmit, onCancel, busy = false, error = '
               <option value="normale">Normale</option><option value="urgente">Urgente</option><option value="confidentielle">Confidentielle</option>
             </select>
           </label>
-          <label className="field"><span>{isAdmin ? 'Comité destinataire' : 'Département (changez-le pour transférer)'}</span>
-            <select value={form.commission} onChange={(event) => set('commission', event.target.value)}>
-              <option value="">{isAdmin ? '— Aucun —' : (initialLetter ? '— Choisir un département —' : 'Mon département (par défaut)')}</option>
+          <label className="field"><span>{isAdmin ? 'Comité destinataire' : (initialLetter ? 'Comité (changez-le pour transférer)' : 'Comité destinataire')}</span>
+            <select value={form.commission} required={!isAdmin && !initialLetter} onChange={(event) => set('commission', event.target.value)}>
+              <option value="">{isAdmin ? '— Aucun —' : '— Choisir un comité —'}</option>
               {committees.map((committee) => <option key={committee.id} value={committee.id}>{committee.nom}</option>)}
             </select>
           </label>

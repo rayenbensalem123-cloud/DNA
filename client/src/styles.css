@@ -572,3 +572,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid rgba(230,0,27,.26
   .card-head-row { align-items: flex-start; }
 }
 
+
+.sent-panel { padding: 8px 4px 4px; }
+.sent-panel h3 { margin: 0 0 6px; }
+.sent-panel p { margin: 0 0 14px; color: var(--muted, #5b6472); }

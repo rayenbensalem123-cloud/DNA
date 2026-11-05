@@ -43,25 +43,31 @@ function readBody(req, limitMB = 10) {
   });
 }
 
-function publicUser(u) { return { id: u.id, username: u.username, name: u.name, role: u.role, commission: u.commission || null, createdAt: u.createdAt }; }
+function publicUser(u) { return { id: u.id, username: u.username, name: u.name, role: u.role === 'admin' ? 'admin' : 'agent', commission: u.commission || null, createdAt: u.createdAt }; }
 
-// ---- Department access -------------------------------------------------------------
-// Admin sees and does everything. A department account sees only the letters that are in its
-// department now, or that passed through it (so it can follow what it sent on). It can only change
-// a letter while the letter is in its department. Accounts without a department see their own letters.
-function letterTouches(letter, committee) {
-  return letter.commission === committee || (Array.isArray(letter.commissionHisto) && letter.commissionHisto.some((h) => h.committee === committee || h.fromCommittee === committee));
+// ---- Access by comité ---------------------------------------------------------------
+// Two kinds of accounts: Administration (role "admin": sees and does everything) and comité accounts
+// (role "agent", older "lecture" accounts behave the same). A comité account can send a letter to any
+// comité, but only reads the letters its own comité received, and only changes a letter while it is in
+// its comité. It cannot see what other comités receive or handle.
+const effectiveRole = (role) => (role === 'admin' ? 'admin' : 'agent');
+function receivedBy(letter, committee) {
+  return letter.commission === committee || (Array.isArray(letter.commissionHisto) && letter.commissionHisto.some((h) => h.committee === committee));
 }
 function canSeeLetter(user, letter) {
   if (user.role === 'admin') return true;
-  return user.commission ? letterTouches(letter, user.commission) : letter.createdBy === user.id;
+  return user.commission ? receivedBy(letter, user.commission) : letter.createdBy === user.id;
 }
 function holdsLetter(user, letter) {
   if (user.role === 'admin') return true;
-  if (user.role !== 'agent') return false;
   return user.commission ? letter.commission === user.commission : letter.createdBy === user.id;
 }
-const NOT_IN_DEPARTMENT = 'Cette lettre n’est plus dans votre département : vous pouvez la consulter mais plus la modifier.';
+// Right after sending, the sender may still attach the scanned files to the letter it just created.
+function justSent(user, letter) {
+  return letter.createdBy === user.id && Date.now() - Date.parse(letter.createdAt || 0) < 15 * 60 * 1000;
+}
+const canAttach = (user, letter) => holdsLetter(user, letter) || justSent(user, letter);
+const NOT_IN_COMMITTEE = 'Cette lettre n’est plus dans votre comité : vous pouvez la consulter mais plus la modifier.';
 
 function authUser(req) {
   const h = req.headers.authorization || '';
@@ -76,8 +82,8 @@ function authUser(req) {
   try { s = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')); } catch { return null; }
   if (!s.userId || s.expiresAt < Date.now()) return null;
   const db = getDB();
-  const user = db.users.find((u) => u.id === s.userId) || null;
-  return user || null;
+  const found = db.users.find((u) => u.id === s.userId) || null;
+  return found ? { ...found, role: effectiveRole(found.role) } : null;
 }
 
 function requireAuth(req, res, next) {
@@ -87,7 +93,8 @@ function requireAuth(req, res, next) {
   return user;
 }
 
-const ROLES = ['admin', 'agent', 'lecture'];
+const ROLES = ['admin', 'agent'];
+const normalizeRole = (r) => (r === 'lecture' ? 'agent' : r);
 function isValidStatut(s) { return ['recu', 'en_cours', 'archive'].includes(s); }
 function isValidType(t) { return ['officielle', 'arrete', 'decret', 'note', 'courrier', 'mandat', 'autre'].includes(t); }
 function isValidCategorie(c) { return ['administration', 'juridique', 'finances', 'rh', 'communication', 'securite', 'autre'].includes(c); }
@@ -186,9 +193,9 @@ async function route(req, res) {
     if (!name) return send(res, 400, { error: 'Le nom est obligatoire' });
     if (password.length < 8) return send(res, 400, { error: 'Le mot de passe doit contenir au moins 8 caractères' });
     if (!isValidCommission(db, commission)) return send(res, 400, { error: 'Comité invalide' });
-    const role = body.role === undefined ? 'agent' : String(body.role);
+    const role = body.role === undefined ? 'agent' : normalizeRole(String(body.role));
     if (!ROLES.includes(role)) return send(res, 400, { error: 'Rôle invalide' });
-    if (role === 'agent' && !commission) return send(res, 400, { error: 'Choisissez le département de ce compte' });
+    if (role === 'agent' && !commission) return send(res, 400, { error: 'Choisissez le comité de ce compte' });
     const created = { id: 'u' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex'), username, name, password: hashPassword(password), role, commission, createdAt: new Date().toISOString() };
     db.users.push(created);
     await saveDB(db);
@@ -210,11 +217,11 @@ async function route(req, res) {
     if (!name) return send(res, 400, { error: 'Le nom est obligatoire' });
     if (!isValidCommission(db, commission)) return send(res, 400, { error: 'Comité invalide' });
     if (password && password.length < 8) return send(res, 400, { error: 'Le mot de passe doit contenir au moins 8 caractères' });
-    const role = body.role === undefined ? target.role : String(body.role);
+    const role = body.role === undefined ? effectiveRole(target.role) : normalizeRole(String(body.role));
     if (!ROLES.includes(role)) return send(res, 400, { error: 'Rôle invalide' });
-    if (role !== target.role && target.id === user.id) return send(res, 400, { error: 'Vous ne pouvez pas changer votre propre rôle' });
+    if (role !== effectiveRole(target.role) && target.id === user.id) return send(res, 400, { error: 'Vous ne pouvez pas changer votre propre rôle' });
     if (target.role === 'admin' && role !== 'admin' && db.users.filter((u) => u.role === 'admin').length <= 1) return send(res, 400, { error: 'Le dernier compte administrateur doit rester administrateur' });
-    if (role === 'agent' && !commission) return send(res, 400, { error: 'Choisissez le département de ce compte' });
+    if (role === 'agent' && !commission) return send(res, 400, { error: 'Choisissez le comité de ce compte' });
     target.name = name;
     target.commission = commission;
     target.role = role;
@@ -264,8 +271,8 @@ async function route(req, res) {
           const extension = path.extname(filename).toLowerCase();
           const letter = getDB().letters.find((item) => item.id === letterId);
           if (!letter) throw new Error('Lettre introuvable');
-          if (!canSeeLetter(user, letter)) throw new Error('Lettre introuvable');
-          if (!holdsLetter(user, letter)) throw new Error(NOT_IN_DEPARTMENT);
+          if (!canAttach(user, letter) && !canSeeLetter(user, letter)) throw new Error('Lettre introuvable');
+          if (!canAttach(user, letter)) throw new Error(NOT_IN_COMMITTEE);
           if (!['.pdf', '.jpg', '.jpeg', '.png'].includes(extension)) throw new Error('Format non pris en charge');
           // Vercel Blob may add a random suffix to the pathname, and the client
           // normalizes spaces in filenames. Validate the letter prefix and
@@ -406,7 +413,7 @@ async function route(req, res) {
       const letter = db.letters.find((l) => l.id === id);
       if (!letter) return send(res, 404, { error: 'Lettre introuvable' });
       if (!canSeeLetter(user, letter)) return send(res, 404, { error: 'Lettre introuvable' });
-      if (!holdsLetter(user, letter)) return send(res, 403, { error: NOT_IN_DEPARTMENT });
+      if (!holdsLetter(user, letter)) return send(res, 403, { error: NOT_IN_COMMITTEE });
       const body = await readBody(req);
       const nextStatut = body.statut !== undefined ? body.statut : letter.statut;
       if (!isValidStatut(nextStatut)) return send(res, 400, { error: 'Statut invalide' });
@@ -482,19 +489,14 @@ async function route(req, res) {
     const body = await readBody(req);
     const db = getDB();
     if (!isValidCommission(db, body.commission || null)) return send(res, 400, { error: 'Comité invalide' });
-    const newEvent = (type, committee, fromCommittee) => ({ id: 'h' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8), date: new Date().toISOString(), type, committee, fromCommittee, by: user.id, byName: user.name, note: '' });
-    // A department account registers the letter in its own department; it can send it straight on to another one.
-    const own = user.role === 'agent' ? (user.commission || null) : null;
-    const commission = body.commission || own || null;
+    // A comité account must say which comité the letter goes to (its own or any other).
+    if (user.role === 'agent' && !body.commission) return send(res, 400, { error: 'Choisissez le comité destinataire' });
+    const commission = body.commission || null;
     const statut = body.statut || (commission ? 'en_cours' : 'recu');
     if (!isValidStatut(statut)) return send(res, 400, { error: 'Statut invalide' });
-    const commissionHisto = [];
-    if (own) {
-      commissionHisto.push(newEvent('assigne', own, null));
-      if (commission !== own) commissionHisto.push(newEvent('transfert', commission, own));
-    } else if (commission) {
-      commissionHisto.push(newEvent('assigne', commission, null));
-    }
+    const commissionHisto = commission
+      ? [{ id: 'h' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8), date: new Date().toISOString(), type: 'assigne', committee: commission, fromCommittee: null, by: user.id, byName: user.name, note: '' }]
+      : [];
     const lettre = {
       id: 'l' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
       ref: body.ref || nextRef(db),
@@ -537,8 +539,7 @@ async function route(req, res) {
     const type = String(body.type || '');
     if (!COMMISSION_EVENTS.includes(type)) return send(res, 400, { error: 'Type d\'événement invalide' });
     const canManage = holdsLetter(user, letter);
-    const canUpdateCommitteeStatus = user.role === 'lecture' && ['vu_comite', 'traite_comite'].includes(type) && letter.commission === user.commission;
-    if (!canManage && !canUpdateCommitteeStatus) return send(res, 403, { error: user.role === 'agent' ? NOT_IN_DEPARTMENT : 'Droits insuffisants' });
+    if (!canManage) return send(res, 403, { error: NOT_IN_COMMITTEE });
     if (type !== 'note' && !letter.commission) return send(res, 400, { error: 'Aucun comité assigné' });
     if (type === 'vu_comite' && (letter.commissionHisto || []).some((h) => h.type === 'vu_comite')) return send(res, 200, { item: publicLetter(letter) });
     const event = {
@@ -568,8 +569,8 @@ async function route(req, res) {
     const letter = db.letters.find((item) => item.id === letterId);
     if (!letter) return send(res, 404, { error: 'Lettre introuvable' });
     // access control: non-admins may only touch their own letters
-    if (!canSeeLetter(user, letter)) return send(res, 404, { error: 'Lettre introuvable' });
-    if (!holdsLetter(user, letter)) return send(res, 403, { error: NOT_IN_DEPARTMENT });
+    if (!canAttach(user, letter) && !canSeeLetter(user, letter)) return send(res, 404, { error: 'Lettre introuvable' });
+    if (!canAttach(user, letter)) return send(res, 403, { error: NOT_IN_COMMITTEE });
     const body = await readBody(req, 1);
     const pathnameForBlob = String(body.pathname || '');
     const filename = sanitizeFilename(body.filename);
@@ -604,8 +605,8 @@ async function route(req, res) {
       const user = requireAuth(req, res);
       if (!user) return;
       if (!['admin', 'agent'].includes(user.role)) return send(res, 403, { error: 'Droits insuffisants' });
-      if (!canSeeLetter(user, letter)) return send(res, 404, { error: 'Lettre introuvable' });
-      if (!holdsLetter(user, letter)) return send(res, 403, { error: NOT_IN_DEPARTMENT });
+      if (!canAttach(user, letter) && !canSeeLetter(user, letter)) return send(res, 404, { error: 'Lettre introuvable' });
+      if (!canAttach(user, letter)) return send(res, 403, { error: NOT_IN_COMMITTEE });
       let body;
       try { body = await readBody(req, 14); } catch (e) { return send(res, 413, { error: 'Fichier trop volumineux (max ~10 Mo)' }); }
       const filename = sanitizeFilename(body.filename);

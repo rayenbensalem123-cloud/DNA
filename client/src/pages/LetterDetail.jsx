@@ -13,12 +13,12 @@ export default function LetterDetail() {
   const { t } = useLanguage();
   const isAdmin = user?.role === 'admin';
   const [letter, setLetter] = useState(null);
-  // A department account can change a letter only while it is in its department.
+  // A comité account can change a letter only while it is in its comité.
   const holdsLetter = (l) => Boolean(l) && (isAdmin || (user?.role === 'agent' && Boolean(user.commission) && l.commission === user.commission));
   const canManage = holdsLetter(letter);
   const canEdit = canManage;
-  const readOnlyDepartment = user?.role === 'agent' && Boolean(letter) && !canManage;
-  const canHandleCommittee = canManage || user?.role === 'lecture';
+  const readOnlyComite = user?.role === 'agent' && Boolean(letter) && !canManage;
+  const canHandleCommittee = canManage;
   const [committees, setCommittees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -43,7 +43,7 @@ export default function LetterDetail() {
         setCommittee(found ? (found.commission || '') : '');
         setLoading(false);
         const alreadySeen = (found?.commissionHisto || []).some((h) => h.type === 'vu_comite' || h.type === 'recu_comite');
-        const canAutoSee = isAdmin || (user?.role === 'agent' ? holdsLetter(found) : (user?.role === 'lecture' && found?.commission === user?.commission));
+        const canAutoSee = isAdmin || holdsLetter(found);
         if (found?.commission && !alreadySeen && canAutoSee) {
           api.addCommissionEvent(found.id, { type: 'vu_comite' })
             .then((updated) => { if (!cancelled) setLetter(updated.item); })
@@ -142,7 +142,7 @@ export default function LetterDetail() {
           {isAdmin && <button className="btn btn-danger" onClick={remove}>{t('detail.delete')}</button>}
         </div>
       </div>
-      {readOnlyDepartment && <div className="account-notice" role="status">Cette lettre est maintenant dans le département « {committeeName(letter.commission)} ». Vous pouvez la consulter, mais plus la modifier.</div>}
+      {readOnlyComite && <div className="account-notice" role="status">Cette lettre est maintenant dans le comité « {committeeName(letter.commission)} ». Vous pouvez la consulter, mais plus la modifier.</div>}
       <div className="card">
         {info('detail.numero', letter.numeroLettre || '—')}
         {info('detail.objet', letter.objet)}
