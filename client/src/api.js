@@ -36,6 +36,7 @@ export const api = {
   users: () => req('/api/users'),
   createUser: (data) => req('/api/users', { method: 'POST', body: data }),
   updateUser: (id, data) => req('/api/users/' + encodeURIComponent(id), { method: 'PATCH', body: data }),
+  deleteUser: (id) => req('/api/users/' + encodeURIComponent(id), { method: 'DELETE' }),
   addCommissionEvent: (id, body) => req(`/api/letters/${id}/commission-events`, { method: 'POST', body }),
   uploadPiece: (id, filename, dataBase64) => req(`/api/letters/${id}/pieces`, { method: 'POST', body: { filename, dataBase64 } }),
   uploadPieceDirect: async (id, file, onUploadProgress) => {

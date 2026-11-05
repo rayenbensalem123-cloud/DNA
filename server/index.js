@@ -195,6 +195,21 @@ async function route(req, res) {
     return send(res, 200, { item: publicUser(target) });
   }
 
+  if (userMatch && method === 'DELETE') {
+    const user = requireAuth(req, res);
+    if (!user) return;
+    if (user.role !== 'admin') return send(res, 403, { error: 'Droits insuffisants' });
+    const db = getDB();
+    const id = decodeURIComponent(userMatch[1]);
+    const target = db.users.find((u) => u.id === id);
+    if (!target) return send(res, 404, { error: 'Compte introuvable' });
+    if (target.id === user.id) return send(res, 400, { error: 'Vous ne pouvez pas supprimer votre propre compte' });
+    if (target.role === 'admin' && db.users.filter((u) => u.role === 'admin').length <= 1) return send(res, 400, { error: 'Le dernier compte administrateur ne peut pas être supprimé' });
+    db.users = db.users.filter((u) => u.id !== id);
+    await saveDB(db);
+    return send(res, 200, { ok: true });
+  }
+
   if (pathname === '/api/committees' && method === 'GET') {
     const user = requireAuth(req, res);
     if (!user) return;

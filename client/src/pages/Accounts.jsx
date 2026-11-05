@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
+import { useAuth } from '../auth';
 
 const emptyAccount = () => ({ name: '', username: '', password: '', commission: '' });
 
 export default function Accounts() {
+  const { user: me } = useAuth();
+  const [confirmId, setConfirmId] = useState(null);
   const [accounts, setAccounts] = useState([]);
   const [committees, setCommittees] = useState([]);
   const [form, setForm] = useState(null);
@@ -49,6 +52,17 @@ export default function Accounts() {
     finally { setBusy(false); }
   };
 
+  const remove = async (account) => {
+    setBusy(true); setError(''); setNotice('');
+    try {
+      await api.deleteUser(account.id);
+      setConfirmId(null);
+      setNotice(`Compte « ${account.name} » supprimé.`);
+      await load();
+    } catch (e) { setError(e.message); setConfirmId(null); }
+    finally { setBusy(false); }
+  };
+
   return (
     <div className="page accounts-page">
       <header className="page-header page-title-header">
@@ -80,7 +94,16 @@ export default function Accounts() {
           <tbody>{filtered.map((account) => <tr key={account.id}>
             <td className="account-name-cell">{account.name}</td><td className="mono">{account.username}</td>
             <td>{committees.find((committee) => committee.id === account.commission)?.nom || <span className="muted">Aucun</span>}</td>
-            <td><button className="btn btn-secondary account-edit" onClick={() => edit(account)}>Modifier</button></td>
+            <td className="account-actions">{confirmId === account.id
+              ? <span className="account-confirm" role="group" aria-label={`Confirmer la suppression de ${account.name}`}>
+                  <span>Supprimer ce compte ?</span>
+                  <button className="btn btn-danger" type="button" onClick={() => remove(account)} disabled={busy}>Oui, supprimer</button>
+                  <button className="btn btn-secondary" type="button" onClick={() => setConfirmId(null)} disabled={busy}>Annuler</button>
+                </span>
+              : <>
+                  <button className="btn btn-secondary account-edit" onClick={() => edit(account)}>Modifier</button>
+                  {account.id !== me?.id && account.role !== 'admin' && <button className="btn btn-danger account-delete" type="button" onClick={() => { setError(''); setNotice(''); setConfirmId(account.id); }}>Supprimer</button>}
+                </>}</td>
           </tr>)}
           {filtered.length === 0 && <tr><td colSpan="4" className="empty-cell">Aucun compte trouvé.</td></tr>}</tbody>
         </table></div>

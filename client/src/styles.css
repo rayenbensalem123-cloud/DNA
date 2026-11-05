@@ -246,6 +246,9 @@ input:focus, select:focus, textarea:focus { outline: 2px solid rgba(230,0,27,.26
 .login-card { display: grid; grid-template-columns: 1fr; width: min(100%, 460px); min-height: 0; overflow: hidden; border: 1px solid rgba(255,255,255,.12); border-top: 4px solid var(--primary); border-radius: 28px; background: linear-gradient(155deg, rgba(37,29,32,.92), rgba(28,23,25,.92)); box-shadow: 0 40px 100px rgba(0,0,0,.55), 0 0 60px rgba(230,0,27,.12); backdrop-filter: blur(20px); animation: slideUp .5s ease-out; }
 .login-emblem { display: block; width: 92px; height: 92px; flex: 0 0 auto; object-fit: contain; background: #fff; border: 1px solid #f0e4e6; border-radius: 50%; padding: 2px; box-shadow: 0 8px 24px rgba(30,10,14,.12); }
 
+.account-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.account-confirm { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; color: #ffb6c0; }
+
 /* Detail */
 .detail-row { display: grid; grid-template-columns: 180px 1fr; padding: 10px 0; border-bottom: 1px solid #33292d; font-size: 14px; }
 .detail-row:last-child { border-bottom: none; }
