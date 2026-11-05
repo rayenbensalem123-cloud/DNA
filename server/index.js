@@ -103,6 +103,22 @@ function isValidCommission(db, c) { return !c || (Array.isArray(db.committees) &
 
 const COMMISSION_EVENTS = ['recu_comite', 'vu_comite', 'traite_comite', 'note'];
 
+function logActivity(db, user, action, target, details) {
+  if (!Array.isArray(db.activity)) db.activity = [];
+  db.activity.push({ id: 'a' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), date: new Date().toISOString(), userId: user?.id || null, userName: user?.name || '—', userRole: user?.role === 'admin' ? 'admin' : 'agent', commission: user?.commission || null, action, target: String(target || ''), details: details || {} });
+  if (db.activity.length > 3000) db.activity.splice(0, db.activity.length - 3000);
+}
+
+// A letter is "unread" for its current comité until someone in that comité opens it.
+function isUnread(letter) {
+  const histo = Array.isArray(letter.commissionHisto) ? letter.commissionHisto : [];
+  if (!letter.commission) return false;
+  let at = -1;
+  histo.forEach((h, i) => { if ((h.type === 'assigne' || h.type === 'transfert') && h.committee === letter.commission) at = i; });
+  if (at < 0) return false;
+  return !histo.slice(at + 1).some((h) => ['vu_comite', 'recu_comite', 'traite_comite'].includes(h.type) && h.committee === letter.commission);
+}
+
 function sanitizeFilename(name) {
   const base = path.basename(String(name || 'document.pdf'));
   return base.replace(/[^\w., ()\-\u00C0-\u017F]/g, '_').slice(0, 120) || 'document.pdf';
@@ -161,6 +177,7 @@ async function route(req, res) {
     const payload = Buffer.from(JSON.stringify({ userId: user.id, expiresAt: Date.now() + TOKEN_TTL })).toString('base64url');
     const signature = crypto.createHmac('sha256', getSessionSecret()).update(payload).digest('base64url');
     const token = `${payload}.${signature}`;
+    try { logActivity(db, user, 'login', user.username, {}); await saveDB(db); } catch { /* logging must never block sign-in */ }
     return send(res, 200, { token, user: publicUser(user) });
   }
 
@@ -198,6 +215,7 @@ async function route(req, res) {
     if (role === 'agent' && !commission) return send(res, 400, { error: 'Choisissez le comité de ce compte' });
     const created = { id: 'u' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex'), username, name, password: hashPassword(password), role, commission, createdAt: new Date().toISOString() };
     db.users.push(created);
+    logActivity(db, user, 'user.create', created.username, { role: created.role, commission: created.commission });
     await saveDB(db);
     return send(res, 201, { item: publicUser(created) });
   }
@@ -226,6 +244,7 @@ async function route(req, res) {
     target.commission = commission;
     target.role = role;
     if (password) target.password = hashPassword(password);
+    logActivity(db, user, 'user.update', target.username, { role: target.role, commission: target.commission, passwordReset: Boolean(password) });
     await saveDB(db);
     return send(res, 200, { item: publicUser(target) });
   }
@@ -241,8 +260,31 @@ async function route(req, res) {
     if (target.id === user.id) return send(res, 400, { error: 'Vous ne pouvez pas supprimer votre propre compte' });
     if (target.role === 'admin' && db.users.filter((u) => u.role === 'admin').length <= 1) return send(res, 400, { error: 'Le dernier compte administrateur ne peut pas être supprimé' });
     db.users = db.users.filter((u) => u.id !== id);
+    logActivity(db, user, 'user.delete', target.username, {});
     await saveDB(db);
     return send(res, 200, { ok: true });
+  }
+
+  if (pathname === '/api/activity' && method === 'GET') {
+    const user = requireAuth(req, res);
+    if (!user) return;
+    if (user.role !== 'admin') return send(res, 403, { error: 'Droits insuffisants' });
+    const db = getDB();
+    const action = url.searchParams.get('action') || '';
+    const limit = Math.min(parseInt(url.searchParams.get('limit') || '200', 10) || 200, 1000);
+    const items = (db.activity || []).filter((a) => !action || a.action.startsWith(action)).slice(-limit).reverse();
+    return send(res, 200, { items, total: (db.activity || []).length });
+  }
+
+  if (pathname === '/api/notifications' && method === 'GET') {
+    const user = requireAuth(req, res);
+    if (!user) return;
+    const db = getDB();
+    if (user.role === 'admin' || !user.commission) return send(res, 200, { unread: 0, items: [] });
+    const items = db.letters.filter((l) => l.commission === user.commission && isUnread(l))
+      .map((l) => { const h = [...(l.commissionHisto || [])].reverse().find((e) => e.type === 'assigne' || e.type === 'transfert'); return { id: l.id, ref: l.ref, numeroLettre: l.numeroLettre || '', objet: l.objet || '', priorite: l.priorite || 'normale', date: h?.date || l.createdAt, fromCommittee: h?.fromCommittee || null, byName: h?.byName || '' }; })
+      .sort((a, b) => (a.date < b.date ? 1 : -1));
+    return send(res, 200, { unread: items.length, items: items.slice(0, 50) });
   }
 
   if (pathname === '/api/committees' && method === 'GET') {
@@ -388,7 +430,7 @@ async function route(req, res) {
     const start = (page - 1) * limit;
     const pageItems = items.slice(start, start + limit);
 
-    return send(res, 200, { items: pageItems.map(publicLetter), total, page, limit });
+    return send(res, 200, { items: pageItems.map((l) => ({ ...publicLetter(l), unread: !isAdmin && l.commission === user.commission && isUnread(l) })), total, page, limit });
   }
 
   const lettersMatch = /^\/api\/letters\/([A-Za-z0-9_-]+)$/.exec(pathname);
@@ -453,6 +495,7 @@ async function route(req, res) {
         if (body.statut === undefined) letter.statut = 'en_cours';
       }
       letter.updatedAt = new Date().toISOString();
+      logActivity(db, user, nextCommission !== prevCommission ? 'letter.transfer' : 'letter.update', letter.ref, { letterId: letter.id, from: prevCommission, to: nextCommission });
       await saveDB(db);
       const updated = db.letters.find((l) => l.id === id);
       return send(res, 200, { item: publicLetter(updated) });
@@ -477,6 +520,7 @@ async function route(req, res) {
       const idx = db.letters.findIndex((l) => l.id === id);
       if (idx < 0) return send(res, 404, { error: 'Lettre introuvable' });
       db.letters.splice(idx, 1);
+      logActivity(db, user, 'letter.delete', letter.ref, { objet: letter.objet });
       await saveDB(db);
       return send(res, 200, { ok: true });
     }
@@ -519,8 +563,11 @@ async function route(req, res) {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       createdBy: user.id,
+      createdByName: user.name,
+      createdByCommission: user.commission || null,
     };
     db.letters.push(lettre);
+    logActivity(db, user, 'letter.create', lettre.ref, { letterId: lettre.id, to: commission });
     await saveDB(db);
     return send(res, 201, { item: publicLetter(lettre) });
   }
@@ -541,7 +588,7 @@ async function route(req, res) {
     const canManage = holdsLetter(user, letter);
     if (!canManage) return send(res, 403, { error: NOT_IN_COMMITTEE });
     if (type !== 'note' && !letter.commission) return send(res, 400, { error: 'Aucun comité assigné' });
-    if (type === 'vu_comite' && (letter.commissionHisto || []).some((h) => h.type === 'vu_comite')) return send(res, 200, { item: publicLetter(letter) });
+    if (type === 'vu_comite' && !isUnread(letter)) return send(res, 200, { item: publicLetter(letter) });
     const event = {
       id: 'h' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
       date: new Date().toISOString(),
@@ -554,6 +601,7 @@ async function route(req, res) {
     if (type === 'recu_comite' || type === 'vu_comite') letter.statut = 'en_cours';
     if (type === 'traite_comite') letter.statut = 'archive';
     letter.updatedAt = new Date().toISOString();
+    logActivity(db, user, 'letter.event', letter.ref, { letterId: letter.id, type });
     await saveDB(db);
     return send(res, 200, { item: publicLetter(db.letters.find((l) => l.id === letter.id)) });
   }
@@ -586,6 +634,7 @@ async function route(req, res) {
         piece = { id: 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8), nom: filename, taille: blob.size, storedAs: pathnameForBlob, uploadedAt: new Date().toISOString() };
         letter.pieces.push(piece);
         letter.updatedAt = new Date().toISOString();
+        logActivity(db, user, 'piece.add', letter.ref, { letterId: letter.id, file: piece.nom });
         await saveDB(db);
       }
       return send(res, 201, { item: { id: piece.id, nom: piece.nom, taille: piece.taille, hasFile: true } });
@@ -622,6 +671,7 @@ async function route(req, res) {
         const piece = { id: 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8), nom: filename, taille: buf.length, storedAs: blob.pathname, uploadedAt };
         letter.pieces.push(piece);
         letter.updatedAt = new Date().toISOString();
+        logActivity(db, user, 'piece.add', letter.ref, { letterId: letter.id, file: piece.nom });
         await saveDB(db);
         return send(res, 201, { item: { id: piece.id, nom: piece.nom, taille: piece.taille, hasFile: true }, letters: db.letters.length });
       }
@@ -630,6 +680,7 @@ async function route(req, res) {
       const piece = { id: 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8), nom: filename, taille: buf.length, storedAs, uploadedAt };
       letter.pieces.push(piece);
       letter.updatedAt = new Date().toISOString();
+      logActivity(db, user, 'piece.add', letter.ref, { letterId: letter.id, file: piece.nom });
       await saveDB(db);
       return send(res, 201, { item: { id: piece.id, nom: piece.nom, taille: piece.taille, hasFile: true }, letters: db.letters.length });
     }
@@ -688,6 +739,7 @@ async function route(req, res) {
         }
       }
       letter.updatedAt = new Date().toISOString();
+      logActivity(db, user, 'piece.delete', letter.ref, { letterId: letter.id });
       await saveDB(db);
       return send(res, 200, { ok: true });
     }

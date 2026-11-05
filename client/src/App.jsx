@@ -10,6 +10,7 @@ import Dashboard from './pages/Dashboard';
 import Archive from './pages/Archive';
 import LetterDetail from './pages/LetterDetail';
 import Accounts from './pages/Accounts';
+import Activity from './pages/Activity';
 import Splash from './components/Splash';
 import { setHolding, useHolding } from './motion';
 
@@ -89,6 +90,7 @@ export default function App() {
                 <Route path="archive/comites/:committeeId" element={<ErrorBoundary label="archive"><Archive /></ErrorBoundary>} />
                 <Route path="archive" element={<ErrorBoundary label="archive"><Archive /></ErrorBoundary>} />
                 <Route path="comptes" element={<AdminOnly><ErrorBoundary label="accounts"><Accounts /></ErrorBoundary></AdminOnly>} />
+                <Route path="activite" element={<AdminOnly><ErrorBoundary label="activity"><Activity /></ErrorBoundary></AdminOnly>} />
                 <Route path="lettres" element={<Navigate to="/archive" replace />} />
                 <Route path="lettres/nouveau" element={<Navigate to="/?newLetter=1" replace />} />
                 <Route path="lettres/:id" element={<ErrorBoundary label="letterdetail"><LetterDetail /></ErrorBoundary>} />

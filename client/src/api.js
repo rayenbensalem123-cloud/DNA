@@ -33,6 +33,8 @@ export const api = {
   updateLetter: (id, data) => req('/api/letters/' + id, { method: 'PATCH', body: data }),
   deleteLetter: (id) => req('/api/letters/' + id, { method: 'DELETE' }),
   committees: () => req('/api/committees'),
+  activity: (action = '') => req('/api/activity?limit=500' + (action ? '&action=' + encodeURIComponent(action) : '')),
+  notifications: () => req('/api/notifications'),
   users: () => req('/api/users'),
   createUser: (data) => req('/api/users', { method: 'POST', body: data }),
   updateUser: (id, data) => req('/api/users/' + encodeURIComponent(id), { method: 'PATCH', body: data }),

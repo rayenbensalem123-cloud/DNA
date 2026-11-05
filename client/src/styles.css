@@ -576,3 +576,24 @@ input:focus, select:focus, textarea:focus { outline: 2px solid rgba(230,0,27,.26
 .sent-panel { padding: 8px 4px 4px; }
 .sent-panel h3 { margin: 0 0 6px; }
 .sent-panel p { margin: 0 0 14px; color: var(--muted, #5b6472); }
+
+.bell { position: relative; }
+.bell-btn { position: relative; width: 38px; height: 38px; display: grid; place-items: center; border-radius: 10px; border: 1px solid var(--border, #d9dee7); background: transparent; color: inherit; cursor: pointer; }
+.bell-btn svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.bell-count { position: absolute; top: -6px; right: -6px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: #d92d20; color: #fff; font-size: 11px; font-weight: 700; display: grid; place-items: center; }
+.bell-panel { position: absolute; right: 0; top: 46px; width: min(340px, 90vw); max-height: 60vh; overflow: auto; z-index: 50; background: var(--card); color: var(--text); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 12px 32px rgba(0,0,0,.18); }
+.bell-head { padding: 12px 14px; font-weight: 700; border-bottom: 1px solid var(--border, #d9dee7); }
+.bell-empty { padding: 16px 14px; color: var(--muted, #5b6472); }
+.bell-panel ul { list-style: none; margin: 0; padding: 0; }
+.bell-panel li button { width: 100%; text-align: left; padding: 10px 14px; border: 0; border-bottom: 1px solid var(--border, #e5e9f0); background: transparent; color: inherit; cursor: pointer; display: grid; gap: 2px; }
+.bell-panel li button:hover { background: rgba(127,127,127,.12); }
+.bell-subject { font-weight: 600; }
+.bell-meta { font-size: 12px; color: var(--muted, #5b6472); }
+.row-unread td { background: rgba(217,45,32,.06); }
+.row-unread .letter-subject { font-weight: 700; }
+.badge-new { display: inline-block; margin-right: 8px; padding: 1px 7px; border-radius: 999px; background: #d92d20; color: #fff; font-size: 11px; font-weight: 700; vertical-align: 1px; }
+.activity-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.nowrap { white-space: nowrap; }
+.dot-transfert { background: #3b82f6; }
+.dot-retire { background: #ef4444; }
+.dot-vu_comite { background: #f59e0b; }

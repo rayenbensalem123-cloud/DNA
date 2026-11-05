@@ -27,6 +27,24 @@ export default function LetterDetail() {
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
 
+  const timeline = (() => {
+    if (!letter) return [];
+    const nm = (cid) => committees.find((c) => c.id === cid)?.nom || cid || '—';
+    const rows = [{ key: 'created', kind: 'assigne', date: letter.createdAt, label: <>Courrier enregistré</>, by: letter.createdByName || '' }];
+    (letter.commissionHisto || []).forEach((h) => {
+      let label;
+      if (h.type === 'assigne') label = <>Envoyé au comité <strong>{nm(h.committee)}</strong></>;
+      else if (h.type === 'transfert') label = <>Transféré <strong>{nm(h.fromCommittee)} → {nm(h.committee)}</strong></>;
+      else if (h.type === 'retire') label = <>Retiré du comité <strong>{nm(h.fromCommittee)}</strong></>;
+      else if (h.type === 'vu_comite' || h.type === 'recu_comite') label = <>Ouvert par le comité <strong>{nm(h.committee)}</strong></>;
+      else if (h.type === 'traite_comite') label = <>Terminé et archivé par <strong>{nm(h.committee)}</strong></>;
+      else label = <>Note ({nm(h.committee)})</>;
+      rows.push({ key: h.id, kind: h.type, date: h.date, label, note: h.note, by: h.byName });
+    });
+    (letter.pieces || []).forEach((p) => { if (p.uploadedAt) rows.push({ key: 'p' + p.id, kind: 'note', date: p.uploadedAt, label: <>Fichier ajouté : <strong>{p.nom}</strong></> }); });
+    return rows.sort((x, y) => (x.date || '') < (y.date || '') ? -1 : 1);
+  })();
+
   const committeeName = (cid) => (committees.find((c) => c.id === cid)?.nom) || cid || '—';
 
   useEffect(() => {
@@ -42,9 +60,8 @@ export default function LetterDetail() {
         setLetter(found);
         setCommittee(found ? (found.commission || '') : '');
         setLoading(false);
-        const alreadySeen = (found?.commissionHisto || []).some((h) => h.type === 'vu_comite' || h.type === 'recu_comite');
         const canAutoSee = isAdmin || holdsLetter(found);
-        if (found?.commission && !alreadySeen && canAutoSee) {
+        if (found?.commission && found.unread && canAutoSee) {
           api.addCommissionEvent(found.id, { type: 'vu_comite' })
             .then((updated) => { if (!cancelled) setLetter(updated.item); })
             .catch(() => {});
@@ -174,23 +191,19 @@ export default function LetterDetail() {
       </div>
 
       <div className="card">
-        <h2 className="card-title">{t('detail.commissionHisto')}</h2>
-        {(letter.commissionHisto || []).length === 0 ? (
-          <div className="muted">{t('detail.noHisto')}</div>
-        ) : (
-          <div className="histo">
-            {[...letter.commissionHisto].reverse().map((h) => (
-              <div key={h.id} className="histo-item">
-                <span className={'histo-dot dot-' + h.type} />
-                <div>
-                  <div>{t('event.' + h.type)} {h.type === 'transfert' && h.fromCommittee ? <strong>— {committees.find((c) => c.id === h.fromCommittee)?.nom || h.fromCommittee} → {committeeName(h.committee)}</strong> : h.type === 'retire' && h.fromCommittee ? <strong>— {committees.find((c) => c.id === h.fromCommittee)?.nom || h.fromCommittee} (retiré)</strong> : <strong>— {committeeName(h.committee)}</strong>}</div>
-                  {h.note && <div className="muted">{h.note}</div>}
-                  <div className="muted small">{fmtDateTime(h.date)} — {h.byName || '—'}</div>
-                </div>
+        <h2 className="card-title">Suivi du courrier</h2>
+        <div className="histo timeline">
+          {timeline.map((h) => (
+            <div key={h.key} className="histo-item">
+              <span className={'histo-dot dot-' + h.kind} />
+              <div>
+                <div>{h.label}</div>
+                {h.note && <div className="muted">{h.note}</div>}
+                <div className="muted small">{fmtDateTime(h.date)}{h.by ? ' — ' + h.by : ''}</div>
               </div>
-            ))}
-          </div>
-        )}
+            </div>
+          ))}
+        </div>
       </div>
 
       {canHandleCommittee && (

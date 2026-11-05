@@ -113,9 +113,9 @@ export default function Archive() {
             <div className="table-wrap"><table className="table archive-table">
               <thead><tr><th>{t('letters.numero')}</th><th>{t('letters.objet')}</th>{!committeeId && <th>Comité</th>}<th>{t('letters.direction')}</th><th>{t('letters.statut')}</th><th>{t('letters.priorite')}</th><th>{t('letters.date')}</th></tr></thead>
               <tbody>{items.map((letter) => (
-                <tr key={letter.id} className="row-link" onClick={() => navigate('/lettres/' + letter.id)}>
+                <tr key={letter.id} className={'row-link' + (letter.unread ? ' row-unread' : '')} onClick={() => navigate('/lettres/' + letter.id)}>
                   <td className="mono">{letter.numeroLettre || '—'}</td>
-                  <td><div className="letter-subject">{letter.objet}</div>{letter.personneConcernee && <div className="letter-subline">{letter.personneConcernee}</div>}</td>
+                  <td><div className="letter-subject">{letter.unread && <span className="badge-new">Nouveau</span>}{letter.objet}</div>{letter.personneConcernee && <div className="letter-subline">{letter.personneConcernee}</div>}</td>
                   {!committeeId && <td><span className="committee-pill">{committees.find((committee) => committee.id === letter.commission)?.nom || 'Sans comité'}</span></td>}
                   <td><span className={'direction-pill direction-' + (letter.direction || 'entrant')}><i />{t('direction.' + (letter.direction || 'entrant'))}</span></td>
                   <td><span className={'badge statut-' + letter.statut}>{t('status.' + (letter.statut || 'recu'))}</span>{(letter.commissionHisto || []).some((h) => h.type === 'transfert') && <span className="badge badge-transfert" style={{ marginLeft: 6 }}>{t('badge.transferred')}</span>}</td>
