@@ -13,6 +13,7 @@ export default function Splash({ title, subtitle, label, leaving }) {
         <h1>{title}</h1>
         {subtitle && <p>{subtitle}</p>}
         {label && <span className="splash-label">{label}</span>}
+        {label && <div className="splash-bar" aria-hidden="true"><i /></div>}
       </div>
     </div>
   );
