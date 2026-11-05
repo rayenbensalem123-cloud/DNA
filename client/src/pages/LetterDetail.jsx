@@ -11,10 +11,14 @@ export default function LetterDetail() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { t } = useLanguage();
-  const canManage = user?.role === 'admin' || user?.role === 'agent';
-  const canEdit = user?.role === 'admin';
-  const canHandleCommittee = canManage || user?.role === 'lecture';
+  const isAdmin = user?.role === 'admin';
   const [letter, setLetter] = useState(null);
+  // A department account can change a letter only while it is in its department.
+  const holdsLetter = (l) => Boolean(l) && (isAdmin || (user?.role === 'agent' && Boolean(user.commission) && l.commission === user.commission));
+  const canManage = holdsLetter(letter);
+  const canEdit = canManage;
+  const readOnlyDepartment = user?.role === 'agent' && Boolean(letter) && !canManage;
+  const canHandleCommittee = canManage || user?.role === 'lecture';
   const [committees, setCommittees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -39,7 +43,7 @@ export default function LetterDetail() {
         setCommittee(found ? (found.commission || '') : '');
         setLoading(false);
         const alreadySeen = (found?.commissionHisto || []).some((h) => h.type === 'vu_comite' || h.type === 'recu_comite');
-        const canAutoSee = canHandleCommittee && (user?.role !== 'lecture' || found?.commission === user?.commission);
+        const canAutoSee = isAdmin || (user?.role === 'agent' ? holdsLetter(found) : (user?.role === 'lecture' && found?.commission === user?.commission));
         if (found?.commission && !alreadySeen && canAutoSee) {
           api.addCommissionEvent(found.id, { type: 'vu_comite' })
             .then((updated) => { if (!cancelled) setLetter(updated.item); })
@@ -135,9 +139,10 @@ export default function LetterDetail() {
         <div className="page-actions">
           <button className="btn btn-secondary" onClick={() => navigate('/archive')}>{t('detail.back')}</button>
           {canEdit && <button className="btn btn-primary" onClick={() => { setError(''); setEditing(true); }}>Modifier</button>}
-          {canManage && <button className="btn btn-danger" onClick={remove}>{t('detail.delete')}</button>}
+          {isAdmin && <button className="btn btn-danger" onClick={remove}>{t('detail.delete')}</button>}
         </div>
       </div>
+      {readOnlyDepartment && <div className="account-notice" role="status">Cette lettre est maintenant dans le département « {committeeName(letter.commission)} ». Vous pouvez la consulter, mais plus la modifier.</div>}
       <div className="card">
         {info('detail.numero', letter.numeroLettre || '—')}
         {info('detail.objet', letter.objet)}
@@ -194,7 +199,7 @@ export default function LetterDetail() {
             <h2 className="card-title">{t('detail.committeeActions')}</h2>
             {canManage && <div className="status-actions">
                 <select value={committee} onChange={(e) => setCommittee(e.target.value)}>
-                  <option value="">{t('commission.none')}</option>
+                  {isAdmin && <option value="">{t('commission.none')}</option>}
                   {committees.map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}
                 </select>
                 <button className="btn btn-primary" onClick={assignCommittee} disabled={busy}>{t('detail.transmit')}</button>

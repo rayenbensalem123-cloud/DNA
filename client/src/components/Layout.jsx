@@ -16,7 +16,8 @@ export default function Layout() {
   const { t } = useLanguage();
   const navigate = useNavigate();
   const location = useLocation();
-  const showLetterModal = user?.role === 'admin' && new URLSearchParams(location.search).get('newLetter') === '1';
+  const canAdd = user?.role === 'admin' || user?.role === 'agent';
+  const showLetterModal = canAdd && new URLSearchParams(location.search).get('newLetter') === '1';
 
   const onLogout = async () => {
     await logout();
@@ -48,7 +49,7 @@ export default function Layout() {
       <div className="main">
         <header className="topbar">
           <div className="topbar-left">
-            {user?.role === 'admin' && <button className="btn btn-primary btn-add" type="button" onClick={() => navigate('/?newLetter=1')}>
+            {canAdd && <button className="btn btn-primary btn-add" type="button" onClick={() => navigate('/?newLetter=1')}>
               <span className="plus" aria-hidden="true">+</span> Ajouter un courrier
             </button>}
           </div>

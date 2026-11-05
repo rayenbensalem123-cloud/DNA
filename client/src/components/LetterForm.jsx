@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { useLanguage } from '../i18n';
+import { useAuth } from '../auth';
 import { fmtSize, todayInputValue } from '../utils';
 
 const SUBJECTS = [
@@ -47,6 +48,8 @@ function initialForm(letter, initialDirection) {
 }
 
 export default function LetterForm({ onSubmit, onCancel, busy = false, error = '', initialDirection = 'entrant', initialLetter = null }) {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
   const { t } = useLanguage();
   const [committees, setCommittees] = useState([]);
   const [files, setFiles] = useState([]);
@@ -161,9 +164,9 @@ export default function LetterForm({ onSubmit, onCancel, busy = false, error = '
               <option value="normale">Normale</option><option value="urgente">Urgente</option><option value="confidentielle">Confidentielle</option>
             </select>
           </label>
-          <label className="field"><span>Comité destinataire</span>
+          <label className="field"><span>{isAdmin ? 'Comité destinataire' : 'Département (changez-le pour transférer)'}</span>
             <select value={form.commission} onChange={(event) => set('commission', event.target.value)}>
-              <option value="">— Aucun —</option>
+              <option value="">{isAdmin ? '— Aucun —' : (initialLetter ? '— Choisir un département —' : 'Mon département (par défaut)')}</option>
               {committees.map((committee) => <option key={committee.id} value={committee.id}>{committee.nom}</option>)}
             </select>
           </label>

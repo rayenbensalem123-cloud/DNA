@@ -45,6 +45,24 @@ function readBody(req, limitMB = 10) {
 
 function publicUser(u) { return { id: u.id, username: u.username, name: u.name, role: u.role, commission: u.commission || null, createdAt: u.createdAt }; }
 
+// ---- Department access -------------------------------------------------------------
+// Admin sees and does everything. A department account sees only the letters that are in its
+// department now, or that passed through it (so it can follow what it sent on). It can only change
+// a letter while the letter is in its department. Accounts without a department see their own letters.
+function letterTouches(letter, committee) {
+  return letter.commission === committee || (Array.isArray(letter.commissionHisto) && letter.commissionHisto.some((h) => h.committee === committee || h.fromCommittee === committee));
+}
+function canSeeLetter(user, letter) {
+  if (user.role === 'admin') return true;
+  return user.commission ? letterTouches(letter, user.commission) : letter.createdBy === user.id;
+}
+function holdsLetter(user, letter) {
+  if (user.role === 'admin') return true;
+  if (user.role !== 'agent') return false;
+  return user.commission ? letter.commission === user.commission : letter.createdBy === user.id;
+}
+const NOT_IN_DEPARTMENT = 'Cette lettre n’est plus dans votre département : vous pouvez la consulter mais plus la modifier.';
+
 function authUser(req) {
   const h = req.headers.authorization || '';
   const token = h.startsWith('Bearer ') ? h.slice(7) : null;
@@ -69,6 +87,7 @@ function requireAuth(req, res, next) {
   return user;
 }
 
+const ROLES = ['admin', 'agent', 'lecture'];
 function isValidStatut(s) { return ['recu', 'en_cours', 'archive'].includes(s); }
 function isValidType(t) { return ['officielle', 'arrete', 'decret', 'note', 'courrier', 'mandat', 'autre'].includes(t); }
 function isValidCategorie(c) { return ['administration', 'juridique', 'finances', 'rh', 'communication', 'securite', 'autre'].includes(c); }
@@ -167,7 +186,10 @@ async function route(req, res) {
     if (!name) return send(res, 400, { error: 'Le nom est obligatoire' });
     if (password.length < 8) return send(res, 400, { error: 'Le mot de passe doit contenir au moins 8 caractères' });
     if (!isValidCommission(db, commission)) return send(res, 400, { error: 'Comité invalide' });
-    const created = { id: 'u' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex'), username, name, password: hashPassword(password), role: 'lecture', commission, createdAt: new Date().toISOString() };
+    const role = body.role === undefined ? 'agent' : String(body.role);
+    if (!ROLES.includes(role)) return send(res, 400, { error: 'Rôle invalide' });
+    if (role === 'agent' && !commission) return send(res, 400, { error: 'Choisissez le département de ce compte' });
+    const created = { id: 'u' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex'), username, name, password: hashPassword(password), role, commission, createdAt: new Date().toISOString() };
     db.users.push(created);
     await saveDB(db);
     return send(res, 201, { item: publicUser(created) });
@@ -188,8 +210,14 @@ async function route(req, res) {
     if (!name) return send(res, 400, { error: 'Le nom est obligatoire' });
     if (!isValidCommission(db, commission)) return send(res, 400, { error: 'Comité invalide' });
     if (password && password.length < 8) return send(res, 400, { error: 'Le mot de passe doit contenir au moins 8 caractères' });
+    const role = body.role === undefined ? target.role : String(body.role);
+    if (!ROLES.includes(role)) return send(res, 400, { error: 'Rôle invalide' });
+    if (role !== target.role && target.id === user.id) return send(res, 400, { error: 'Vous ne pouvez pas changer votre propre rôle' });
+    if (target.role === 'admin' && role !== 'admin' && db.users.filter((u) => u.role === 'admin').length <= 1) return send(res, 400, { error: 'Le dernier compte administrateur doit rester administrateur' });
+    if (role === 'agent' && !commission) return send(res, 400, { error: 'Choisissez le département de ce compte' });
     target.name = name;
     target.commission = commission;
+    target.role = role;
     if (password) target.password = hashPassword(password);
     await saveDB(db);
     return send(res, 200, { item: publicUser(target) });
@@ -236,6 +264,8 @@ async function route(req, res) {
           const extension = path.extname(filename).toLowerCase();
           const letter = getDB().letters.find((item) => item.id === letterId);
           if (!letter) throw new Error('Lettre introuvable');
+          if (!canSeeLetter(user, letter)) throw new Error('Lettre introuvable');
+          if (!holdsLetter(user, letter)) throw new Error(NOT_IN_DEPARTMENT);
           if (!['.pdf', '.jpg', '.jpeg', '.png'].includes(extension)) throw new Error('Format non pris en charge');
           // Vercel Blob may add a random suffix to the pathname, and the client
           // normalizes spaces in filenames. Validate the letter prefix and
@@ -260,13 +290,9 @@ async function route(req, res) {
     if (!user) return;
     const db = getDB();
     const isAdmin = user.role === 'admin';
-    const myCommission = user.commission || null;
     let lettres = db.letters;
     if (!isAdmin) {
-      lettres = lettres.filter((l) => {
-        if (myCommission) return l.commission === myCommission || (Array.isArray(l.commissionHisto) && l.commissionHisto.some((h) => h.committee === myCommission));
-        return l.createdBy === user.id;
-      });
+      lettres = lettres.filter((l) => canSeeLetter(user, l));
     }
     const parStatut = {};
     const parCategorie = {};
@@ -316,7 +342,6 @@ async function route(req, res) {
     const to = url.searchParams.get('to') ? new Date(url.searchParams.get('to') + 'T23:59:59.999Z').toISOString() : null;
 
     const isAdmin = user.role === 'admin';
-    const myCommission = user.commission || null;
 
     let items = db.letters.filter((l) => {
       if (direction && (l.direction || 'entrant') !== direction) return false;
@@ -336,10 +361,7 @@ async function route(req, res) {
       // Committee-based access control: non-admins only see their own letters
       // (received by their committee or created/sent by them). Admin sees all.
       if (!isAdmin) {
-        const mine = myCommission
-          ? (l.commission === myCommission || (Array.isArray(l.commissionHisto) && l.commissionHisto.some((h) => h.committee === myCommission)))
-          : (l.createdBy === user.id);
-        if (!mine) return false;
+        if (!canSeeLetter(user, l)) return false;
       }
       return true;
     });
@@ -373,12 +395,7 @@ async function route(req, res) {
       const letter = db.letters.find((l) => l.id === id);
       if (!letter) return send(res, 404, { error: 'Lettre introuvable' });
       // access control
-      if (user.role !== 'admin') {
-        const mine = user.commission
-          ? (letter.commission === user.commission || (Array.isArray(letter.commissionHisto) && letter.commissionHisto.some((h) => h.committee === user.commission)))
-          : (letter.createdBy === user.id);
-        if (!mine) return send(res, 404, { error: 'Lettre introuvable' });
-      }
+      if (!canSeeLetter(user, letter)) return send(res, 404, { error: 'Lettre introuvable' });
       return send(res, 200, { item: publicLetter(letter) });
     }
 
@@ -388,12 +405,8 @@ async function route(req, res) {
       if (!['admin', 'agent'].includes(user.role)) return send(res, 403, { error: 'Droits insuffisants' });
       const letter = db.letters.find((l) => l.id === id);
       if (!letter) return send(res, 404, { error: 'Lettre introuvable' });
-      if (user.role !== 'admin') {
-        const mine = user.commission
-          ? (letter.commission === user.commission || (Array.isArray(letter.commissionHisto) && letter.commissionHisto.some((h) => h.committee === user.commission)))
-          : (letter.createdBy === user.id);
-        if (!mine) return send(res, 404, { error: 'Lettre introuvable' });
-      }
+      if (!canSeeLetter(user, letter)) return send(res, 404, { error: 'Lettre introuvable' });
+      if (!holdsLetter(user, letter)) return send(res, 403, { error: NOT_IN_DEPARTMENT });
       const body = await readBody(req);
       const nextStatut = body.statut !== undefined ? body.statut : letter.statut;
       if (!isValidStatut(nextStatut)) return send(res, 400, { error: 'Statut invalide' });
@@ -415,7 +428,6 @@ async function route(req, res) {
         destinataire: body.destinataire !== undefined ? body.destinataire : letter.destinataire,
         dateEmission: body.dateEmission !== undefined ? body.dateEmission : letter.dateEmission,
         dateReception: body.dateReception !== undefined ? body.dateReception : letter.dateReception,
-        pieces: body.pieces !== undefined ? body.pieces : letter.pieces,
       });
       letter.commission = nextCommission;
       if (nextCommission !== prevCommission) {
@@ -466,16 +478,23 @@ async function route(req, res) {
   if (pathname === '/api/letters' && method === 'POST') {
     const user = requireAuth(req, res);
     if (!user) return;
-    if (user.role !== 'admin') return send(res, 403, { error: 'Droits insuffisants' });
+    if (!['admin', 'agent'].includes(user.role)) return send(res, 403, { error: 'Droits insuffisants' });
     const body = await readBody(req);
     const db = getDB();
     if (!isValidCommission(db, body.commission || null)) return send(res, 400, { error: 'Comité invalide' });
-    const statut = body.statut || (body.commission ? 'en_cours' : 'recu');
+    const newEvent = (type, committee, fromCommittee) => ({ id: 'h' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8), date: new Date().toISOString(), type, committee, fromCommittee, by: user.id, byName: user.name, note: '' });
+    // A department account registers the letter in its own department; it can send it straight on to another one.
+    const own = user.role === 'agent' ? (user.commission || null) : null;
+    const commission = body.commission || own || null;
+    const statut = body.statut || (commission ? 'en_cours' : 'recu');
     if (!isValidStatut(statut)) return send(res, 400, { error: 'Statut invalide' });
-    const commission = body.commission || null;
-    const commissionHisto = commission
-      ? [{ id: 'h' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8), date: new Date().toISOString(), type: 'assigne', committee: commission, fromCommittee: null, by: user.id, byName: user.name, note: '' }]
-      : [];
+    const commissionHisto = [];
+    if (own) {
+      commissionHisto.push(newEvent('assigne', own, null));
+      if (commission !== own) commissionHisto.push(newEvent('transfert', commission, own));
+    } else if (commission) {
+      commissionHisto.push(newEvent('assigne', commission, null));
+    }
     const lettre = {
       id: 'l' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
       ref: body.ref || nextRef(db),
@@ -513,18 +532,13 @@ async function route(req, res) {
     const letter = db.letters.find((l) => l.id === eventsMatch[1]);
     if (!letter) return send(res, 404, { error: 'Lettre introuvable' });
     // access control
-    if (user.role !== 'admin') {
-      const mine = user.commission
-        ? (letter.commission === user.commission || (Array.isArray(letter.commissionHisto) && letter.commissionHisto.some((h) => h.committee === user.commission)))
-        : (letter.createdBy === user.id);
-      if (!mine) return send(res, 404, { error: 'Lettre introuvable' });
-    }
+    if (!canSeeLetter(user, letter)) return send(res, 404, { error: 'Lettre introuvable' });
     const body = await readBody(req);
     const type = String(body.type || '');
     if (!COMMISSION_EVENTS.includes(type)) return send(res, 400, { error: 'Type d\'événement invalide' });
-    const canManage = ['admin', 'agent'].includes(user.role);
+    const canManage = holdsLetter(user, letter);
     const canUpdateCommitteeStatus = user.role === 'lecture' && ['vu_comite', 'traite_comite'].includes(type) && letter.commission === user.commission;
-    if (!canManage && !canUpdateCommitteeStatus) return send(res, 403, { error: 'Droits insuffisants' });
+    if (!canManage && !canUpdateCommitteeStatus) return send(res, 403, { error: user.role === 'agent' ? NOT_IN_DEPARTMENT : 'Droits insuffisants' });
     if (type !== 'note' && !letter.commission) return send(res, 400, { error: 'Aucun comité assigné' });
     if (type === 'vu_comite' && (letter.commissionHisto || []).some((h) => h.type === 'vu_comite')) return send(res, 200, { item: publicLetter(letter) });
     const event = {
@@ -554,12 +568,8 @@ async function route(req, res) {
     const letter = db.letters.find((item) => item.id === letterId);
     if (!letter) return send(res, 404, { error: 'Lettre introuvable' });
     // access control: non-admins may only touch their own letters
-    if (user.role !== 'admin') {
-      const mine = user.commission
-        ? (letter.commission === user.commission || (Array.isArray(letter.commissionHisto) && letter.commissionHisto.some((h) => h.committee === user.commission)))
-        : (letter.createdBy === user.id);
-      if (!mine) return send(res, 404, { error: 'Lettre introuvable' });
-    }
+    if (!canSeeLetter(user, letter)) return send(res, 404, { error: 'Lettre introuvable' });
+    if (!holdsLetter(user, letter)) return send(res, 403, { error: NOT_IN_DEPARTMENT });
     const body = await readBody(req, 1);
     const pathnameForBlob = String(body.pathname || '');
     const filename = sanitizeFilename(body.filename);
@@ -594,12 +604,8 @@ async function route(req, res) {
       const user = requireAuth(req, res);
       if (!user) return;
       if (!['admin', 'agent'].includes(user.role)) return send(res, 403, { error: 'Droits insuffisants' });
-      if (user.role !== 'admin') {
-        const mine = user.commission
-          ? (letter.commission === user.commission || (Array.isArray(letter.commissionHisto) && letter.commissionHisto.some((h) => h.committee === user.commission)))
-          : (letter.createdBy === user.id);
-        if (!mine) return send(res, 404, { error: 'Lettre introuvable' });
-      }
+      if (!canSeeLetter(user, letter)) return send(res, 404, { error: 'Lettre introuvable' });
+      if (!holdsLetter(user, letter)) return send(res, 403, { error: NOT_IN_DEPARTMENT });
       let body;
       try { body = await readBody(req, 14); } catch (e) { return send(res, 413, { error: 'Fichier trop volumineux (max ~10 Mo)' }); }
       const filename = sanitizeFilename(body.filename);
@@ -630,24 +636,14 @@ async function route(req, res) {
     if (method === 'GET' && !pieceId) {
       const user = requireAuth(req, res);
       if (!user) return;
-      if (user.role !== 'admin') {
-        const mine = user.commission
-          ? (letter.commission === user.commission || (Array.isArray(letter.commissionHisto) && letter.commissionHisto.some((h) => h.committee === user.commission)))
-          : (letter.createdBy === user.id);
-        if (!mine) return send(res, 404, { error: 'Lettre introuvable' });
-      }
+      if (!canSeeLetter(user, letter)) return send(res, 404, { error: 'Lettre introuvable' });
       return send(res, 200, { items: (letter.pieces || []).map((p) => ({ id: p.id, nom: p.nom, taille: p.taille, hasFile: !!p.storedAs })) });
     }
 
     if (method === 'GET' && pieceId) {
       const user = requireAuth(req, res);
       if (!user) return;
-      if (user.role !== 'admin') {
-        const mine = user.commission
-          ? (letter.commission === user.commission || (Array.isArray(letter.commissionHisto) && letter.commissionHisto.some((h) => h.committee === user.commission)))
-          : (letter.createdBy === user.id);
-        if (!mine) return send(res, 404, { error: 'Fichier non disponible' });
-      }
+      if (!canSeeLetter(user, letter)) return send(res, 404, { error: 'Fichier non disponible' });
       const piece = (letter.pieces || []).find((p) => p.id === pieceId);
       if (!piece || !piece.storedAs) return send(res, 404, { error: 'Fichier non disponible' });
       if (process.env.VERCEL) {
