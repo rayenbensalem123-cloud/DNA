@@ -14,11 +14,11 @@ export default function Archive() {
   const [total, setTotal] = useState(0);
   const [committees, setCommittees] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filters, setFilters] = useState({ q: '', direction: '', statut: '', priorite: '', bucket: '' });
+  const [filters, setFilters] = useState({ q: '', direction: '', statut: '', priorite: '', bucket: '', from: '', to: '', expediteur: '', commission: '' });
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
-    setFilters({ q: params.get('q') || '', direction: params.get('direction') || '', statut: params.get('statut') || '', priorite: params.get('priorite') || '', bucket: params.get('bucket') || '' });
+    setFilters({ q: params.get('q') || '', direction: params.get('direction') || '', statut: params.get('statut') || '', priorite: params.get('priorite') || '', bucket: params.get('bucket') || '', from: params.get('from') || '', to: params.get('to') || '', expediteur: params.get('expediteur') || '', commission: params.get('commission') || '' });
   }, [location.search]);
 
   useEffect(() => { api.committees().then((d) => setCommittees(d.items || [])).catch(() => {}); }, []);
@@ -55,7 +55,10 @@ export default function Archive() {
     ? { id: 'non-assigne', nom: 'Sans comité' }
     : committees.find((committee) => committee.id === committeeId);
   const set = (key, value) => setFilters((current) => ({ ...current, [key]: value }));
-  const hasFilters = Boolean(filters.q || filters.direction || filters.statut || filters.priorite || filters.bucket);
+  const hasFilters = Boolean(filters.q || filters.direction || filters.statut || filters.priorite || filters.bucket || filters.from || filters.to || filters.expediteur || filters.commission);
+  const [showMore, setShowMore] = useState(false);
+  const advancedCount = [filters.from, filters.to, filters.expediteur, filters.commission].filter(Boolean).length;
+  const resetFilters = () => setFilters({ q: '', direction: '', statut: '', priorite: '', bucket: '', from: '', to: '', expediteur: '', commission: '' });
   const listTitle = filters.bucket === 'pending' ? 'Courriers à traiter'
     : filters.direction === 'entrant' ? 'Courriers entrants'
       : filters.direction === 'sortant' ? 'Courriers sortants'
@@ -68,7 +71,7 @@ export default function Archive() {
         <div className="page-title-copy">
           <span className="page-title-kicker">{selectedCommittee ? 'Archive · Comité' : hasFilters ? 'Archive · Résultats' : 'Registre officiel'}</span>
           <h1>{selectedCommittee ? selectedCommittee.nom : 'Archive'}</h1>
-          <div className="muted">{selectedCommittee ? 'Courriers de ce comité' : hasFilters ? 'Résultats filtrés depuis le tableau de bord' : 'Tous les courriers classés par comité'}</div>
+          <div className="muted">{selectedCommittee ? 'Courriers de ce comité' : hasFilters ? 'Résultats de votre recherche' : 'Tous les courriers classés par comité'}</div>
         </div>
         {(selectedCommittee || hasFilters) && <button className="btn btn-secondary" onClick={() => navigate('/archive')}>← Tous les courriers</button>}
       </div>
@@ -108,7 +111,19 @@ export default function Archive() {
             <select aria-label="Importance" value={filters.priorite} onChange={(event) => set('priorite', event.target.value)}>
               <option value="">Toutes les importances</option><option value="normale">Normale</option><option value="urgente">Urgente</option><option value="confidentielle">Confidentielle</option>
             </select>
+            <button type="button" className="btn btn-secondary" onClick={() => setShowMore((v) => !v)} aria-expanded={showMore}>Plus de filtres{advancedCount ? ` (${advancedCount})` : ''}</button>
+            {hasFilters && <button type="button" className="btn btn-ghost" onClick={resetFilters}>Réinitialiser</button>}
           </div>
+          {(showMore || advancedCount > 0) && <div className="filters filters-more">
+            <label className="filter-field"><span>Du</span><input type="date" value={filters.from} max={filters.to || undefined} onChange={(event) => set('from', event.target.value)} /></label>
+            <label className="filter-field"><span>Au</span><input type="date" value={filters.to} min={filters.from || undefined} onChange={(event) => set('to', event.target.value)} /></label>
+            <label className="filter-field"><span>Expéditeur</span><input placeholder="Nom, fonction, service…" value={filters.expediteur} onChange={(event) => set('expediteur', event.target.value)} /></label>
+            {!committeeId && <label className="filter-field"><span>Comité</span><select value={filters.commission} onChange={(event) => set('commission', event.target.value)}>
+              <option value="">Tous les comités</option>
+              {committees.map((committee) => <option key={committee.id} value={committee.id}>{committee.nom}</option>)}
+              <option value="non_assigne">Sans comité</option>
+            </select></label>}
+          </div>}
           {loading ? <div className="card-pad">{t('common.loading')}</div> : (
             <div className="table-wrap"><table className="table archive-table">
               <thead><tr><th>{t('letters.numero')}</th><th>{t('letters.objet')}</th>{!committeeId && <th>Comité</th>}<th>{t('letters.direction')}</th><th>{t('letters.statut')}</th><th>{t('letters.priorite')}</th><th>{t('letters.date')}</th></tr></thead>

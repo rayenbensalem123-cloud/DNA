@@ -4,6 +4,7 @@ import { useLanguage } from '../i18n';
 import LetterCreateModal from './LetterCreateModal';
 import ThemeToggle from './ThemeToggle';
 import NotificationBell from './NotificationBell';
+import InstallButton from './InstallButton';
 
 function NavIcon({ type }) {
   if (type === 'dashboard') return <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="3.5" y="13.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="13.5" width="7" height="7" rx="1.5" /></svg>;
@@ -59,6 +60,7 @@ export default function Layout() {
             </button>}
           </div>
           <div className="topbar-right">
+            <InstallButton />
             {user?.role === 'agent' && <NotificationBell />}
             <ThemeToggle />
             <div className="user-info">

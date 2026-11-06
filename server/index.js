@@ -14,6 +14,8 @@ const MIME = {
   '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
+  '.webmanifest': 'application/manifest+json; charset=utf-8',
+  '.webp': 'image/webp',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
@@ -117,6 +119,14 @@ function isUnread(letter) {
   histo.forEach((h, i) => { if ((h.type === 'assigne' || h.type === 'transfert') && h.committee === letter.commission) at = i; });
   if (at < 0) return false;
   return !histo.slice(at + 1).some((h) => ['vu_comite', 'recu_comite', 'traite_comite'].includes(h.type) && h.committee === letter.commission);
+}
+
+// Lower-case and strip accents so "arbitre" finds "Arbitre" and "arbitré".
+function fold(value) { return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
+function validDate(value, endOfDay) {
+  if (!value) return null;
+  const d = new Date(endOfDay ? value + 'T23:59:59.999Z' : value);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
 function sanitizeFilename(name) {
@@ -380,15 +390,16 @@ async function route(req, res) {
     const user = requireAuth(req, res);
     if (!user) return;
     const db = getDB();
-    const q = (url.searchParams.get('q') || '').trim().toLowerCase();
+    const q = fold((url.searchParams.get('q') || '').trim());
+    const expediteurQ = fold((url.searchParams.get('expediteur') || '').trim());
     const direction = url.searchParams.get('direction') || '';
     const statut = url.searchParams.get('statut') || '';
     const type = url.searchParams.get('type') || '';
     const categorie = url.searchParams.get('categorie') || '';
     const priorite = url.searchParams.get('priorite') || '';
     const commission = url.searchParams.get('commission') || '';
-    const from = url.searchParams.get('from') ? new Date(url.searchParams.get('from')).toISOString() : null;
-    const to = url.searchParams.get('to') ? new Date(url.searchParams.get('to') + 'T23:59:59.999Z').toISOString() : null;
+    const from = validDate(url.searchParams.get('from'), false);
+    const to = validDate(url.searchParams.get('to'), true);
 
     const isAdmin = user.role === 'admin';
 
@@ -402,10 +413,21 @@ async function route(req, res) {
       if (commission && commission !== 'non_assigne' && ((l.commission || '') !== commission)) return false;
       if (from && (l.dateEmission || l.createdAt) < from) return false;
       if (to && (l.dateEmission || l.createdAt) > to) return false;
+      if (expediteurQ) {
+        const sender = fold([l.expediteur?.nom, l.expediteur?.fonction, l.expediteur?.service, l.createdByName].join(' '));
+        if (!sender.includes(expediteurQ)) return false;
+      }
       if (q) {
-        const hay = [l.ref, l.numeroLettre, l.objet, l.resume, l.expediteur?.nom || '', l.destinataire?.nom || '', l.expediteur?.fonction || '', l.destinataire?.fonction || '', l.service || '']
-          .join(' ').toLowerCase();
-        if (!hay.includes(q)) return false;
+        const names = (id) => (db.committees || []).find((c) => c.id === id)?.nom || '';
+        const hay = fold([
+          l.ref, l.numeroLettre, l.objet, l.personneConcernee, l.resume,
+          l.expediteur?.nom, l.destinataire?.nom, l.expediteur?.fonction, l.destinataire?.fonction, l.expediteur?.service, l.destinataire?.service, l.service,
+          l.createdByName, names(l.commission),
+          ...(l.pieces || []).map((p) => p.nom),
+          ...(l.commissionHisto || []).map((h) => h.note),
+        ].join(' '));
+        // Every word must match somewhere, in any order.
+        if (!q.split(/\s+/).every((word) => hay.includes(word))) return false;
       }
       // Committee-based access control: non-admins only see their own letters
       // (received by their committee or created/sent by them). Admin sees all.

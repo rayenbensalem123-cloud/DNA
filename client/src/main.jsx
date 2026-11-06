@@ -13,6 +13,10 @@ window.addEventListener('unhandledrejection', (e) => {
   window.__errs.push({ msg: 'REJECTION: ' + String(e.reason && e.reason.message ? e.reason.message : e.reason) });
 });
 
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => { navigator.serviceWorker.register('/sw.js').catch(() => {}); });
+}
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>

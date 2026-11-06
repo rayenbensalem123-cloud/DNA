@@ -1,0 +1,16 @@
+{
+  "name": "Bureau d’ordre — Direction Nationale d’Arbitrage",
+  "short_name": "Bureau d’ordre",
+  "description": "Registre du courrier de la Direction Nationale d’Arbitrage (FTF)",
+  "lang": "fr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#151113",
+  "theme_color": "#191416",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
