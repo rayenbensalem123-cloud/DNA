@@ -54,9 +54,10 @@ export default function Layout() {
       </aside>
       <div className="main">
         <header className="topbar">
+          <div className="topbar-brand"><img src="/federation-tunisienne-logo.webp" alt="" /><span>Bureau d’ordre</span></div>
           <div className="topbar-left">
-            {canAdd && <button className="btn btn-primary btn-add" type="button" onClick={() => navigate('/?newLetter=1')}>
-              <span className="plus" aria-hidden="true">+</span> Ajouter un courrier
+            {canAdd && <button className="btn btn-primary btn-add" type="button" aria-label="Ajouter un courrier" onClick={() => navigate('/?newLetter=1')}>
+              <span className="plus" aria-hidden="true">+</span><span className="btn-label">Ajouter un courrier</span>
             </button>}
           </div>
           <div className="topbar-right">
@@ -67,13 +68,14 @@ export default function Layout() {
               <div className="user-name">{user?.name}</div>
               <div className="user-role">{t('auth.role.' + (user?.role || ''))}</div>
             </div>
-            <button className="btn btn-ghost" onClick={onLogout}>{t('nav.logout')}</button>
+            <button className="btn btn-ghost btn-logout" onClick={onLogout} aria-label={t('nav.logout')}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4.5H5.5v15H10M14 8l4 4-4 4M18 12H9" /></svg><span className="btn-label">{t('nav.logout')}</span></button>
           </div>
         </header>
         <main className="content">
           <Outlet />
         </main>
       </div>
+      {canAdd && <button className="fab" type="button" aria-label="Ajouter un courrier" onClick={() => navigate('/?newLetter=1')}><span aria-hidden="true">+</span></button>}
       {showLetterModal && (
         <LetterCreateModal onClose={() => navigate(location.pathname, { replace: true })} />
       )}
