@@ -613,3 +613,25 @@ input:focus, select:focus, textarea:focus { outline: 2px solid rgba(230,0,27,.26
   .topbar-left { flex: 1 1 auto; min-width: 0; }
   .topbar-right { flex: 0 0 auto; }
 }
+
+/* Phone layout: navigation moves to a bottom bar so the content gets the full width. */
+@media (max-width: 600px) {
+  .layout { display: block; }
+  .sidebar { position: fixed; left: 0; right: 0; bottom: 0; top: auto; width: auto; height: auto; z-index: 40; padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); flex-direction: row; border-right: 0; border-top: 1px solid var(--border); background: rgba(20,16,18,.96); backdrop-filter: blur(14px); animation: none; }
+  .sidebar .brand { display: none; }
+  .nav { margin: 0; flex-direction: row; justify-content: space-around; width: 100%; gap: 4px; }
+  .nav-link { flex: 1; flex-direction: column; gap: 3px; padding: 8px 4px; animation: none; }
+  .nav-link.active { box-shadow: inset 0 3px var(--primary); background: rgba(230,0,27,.16); }
+  .nav-text { display: block; font-size: 10px; line-height: 1.1; text-align: center; }
+  .main { padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
+  .topbar { padding-top: calc(8px + env(safe-area-inset-top)); }
+  .topbar-left { width: 100%; }
+  .topbar-left .btn-add { flex: 1; justify-content: center; }
+  .topbar-right { width: 100%; justify-content: flex-end; }
+  .content { padding: 16px 12px; }
+  .bell-panel { position: fixed; left: 12px; right: 12px; top: 112px; width: auto; max-height: 55vh; }
+  .install-help { position: fixed; left: 12px; right: 12px; top: 112px; width: auto; }
+  .filters input, .filters select, .filter-field, .filter-field input, .filter-field select { width: 100%; min-width: 0; }
+  .filters .btn { flex: 1; }
+  .modal-body .form-grid { grid-template-columns: 1fr; }
+}
