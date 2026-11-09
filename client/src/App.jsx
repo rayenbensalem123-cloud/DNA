@@ -10,6 +10,8 @@ import Dashboard from './pages/Dashboard';
 import Archive from './pages/Archive';
 import LetterDetail from './pages/LetterDetail';
 import Accounts from './pages/Accounts';
+import Courrier from './pages/Courrier';
+import CourriersRejetes from './pages/CourriersRejetes';
 import { getToken } from './api';
 
 function Protected({ children }) {
@@ -46,7 +48,7 @@ function Protected({ children }) {
 
 function AdminOnly({ children }) {
   const { user } = useAuth();
-  return user?.role === 'admin' ? children : <Navigate to="/" replace />;
+  return user?.role === 'admin' || user?.role === 'supervisor' ? children : <Navigate to="/" replace />;
 }
 
 export default function App() {
@@ -62,6 +64,8 @@ export default function App() {
                 <Route path="archive/comites/:committeeId" element={<ErrorBoundary label="archive"><Archive /></ErrorBoundary>} />
                 <Route path="archive" element={<ErrorBoundary label="archive"><Archive /></ErrorBoundary>} />
                 <Route path="comptes" element={<AdminOnly><ErrorBoundary label="accounts"><Accounts /></ErrorBoundary></AdminOnly>} />
+                <Route path="courrier" element={<ErrorBoundary label="courrier"><Courrier /></ErrorBoundary>} />
+                <Route path="courriers-rejetes" element={<ErrorBoundary label="rejetes"><CourriersRejetes /></ErrorBoundary>} />
                 <Route path="lettres" element={<Navigate to="/archive" replace />} />
                 <Route path="lettres/nouveau" element={<Navigate to="/?newLetter=1" replace />} />
                 <Route path="lettres/:id" element={<ErrorBoundary label="letterdetail"><LetterDetail /></ErrorBoundary>} />

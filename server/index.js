@@ -45,6 +45,8 @@ function readBody(req, limitMB = 10) {
 
 function publicUser(u) { return { id: u.id, username: u.username, name: u.name, role: u.role, commission: u.commission || null, createdAt: u.createdAt }; }
 
+function isAdminLike(u) { return !!u && (u.role === 'admin' || u.role === 'supervisor'); }
+
 function authUser(req) {
   const h = req.headers.authorization || '';
   const token = h.startsWith('Bearer ') ? h.slice(7) : null;
@@ -154,7 +156,7 @@ async function route(req, res) {
   if (pathname === '/api/users' && (method === 'GET' || method === 'POST')) {
     const user = requireAuth(req, res);
     if (!user) return;
-    if (user.role !== 'admin') return send(res, 403, { error: 'Droits insuffisants' });
+    if (!isAdminLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
     const db = getDB();
     if (method === 'GET') return send(res, 200, { items: db.users.map(publicUser) });
     const body = await readBody(req);
@@ -162,12 +164,13 @@ async function route(req, res) {
     const name = String(body.name || '').trim();
     const password = String(body.password || '');
     const commission = body.commission ? String(body.commission) : null;
+    const role = ['lecture', 'agent', 'supervisor'].includes(String(body.role || '')) ? String(body.role) : 'lecture';
     if (username.length < 3 || !/^[a-z0-9._-]+$/.test(username)) return send(res, 400, { error: 'Identifiant invalide (3 caractères minimum, lettres, chiffres, . _ -)' });
     if (db.users.some((u) => u.username === username)) return send(res, 409, { error: 'Cet identifiant existe déjà' });
     if (!name) return send(res, 400, { error: 'Le nom est obligatoire' });
     if (password.length < 8) return send(res, 400, { error: 'Le mot de passe doit contenir au moins 8 caractères' });
     if (!isValidCommission(db, commission)) return send(res, 400, { error: 'Comité invalide' });
-    const created = { id: 'u' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex'), username, name, password: hashPassword(password), role: 'lecture', commission, createdAt: new Date().toISOString() };
+    const created = { id: 'u' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex'), username, name, password: hashPassword(password), role, commission, createdAt: new Date().toISOString() };
     db.users.push(created);
     await saveDB(db);
     return send(res, 201, { item: publicUser(created) });
@@ -177,7 +180,7 @@ async function route(req, res) {
   if (userMatch && method === 'PATCH') {
     const user = requireAuth(req, res);
     if (!user) return;
-    if (user.role !== 'admin') return send(res, 403, { error: 'Droits insuffisants' });
+    if (!isAdminLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
     const db = getDB();
     const target = db.users.find((u) => u.id === decodeURIComponent(userMatch[1]));
     if (!target) return send(res, 404, { error: 'Compte introuvable' });
@@ -185,11 +188,13 @@ async function route(req, res) {
     const name = String(body.name ?? target.name).trim();
     const commission = body.commission === undefined ? (target.commission || null) : (body.commission ? String(body.commission) : null);
     const password = body.password === undefined ? '' : String(body.password);
+    const role = body.role !== undefined && ['lecture', 'agent', 'supervisor'].includes(String(body.role)) ? String(body.role) : target.role;
     if (!name) return send(res, 400, { error: 'Le nom est obligatoire' });
     if (!isValidCommission(db, commission)) return send(res, 400, { error: 'Comité invalide' });
     if (password && password.length < 8) return send(res, 400, { error: 'Le mot de passe doit contenir au moins 8 caractères' });
     target.name = name;
     target.commission = commission;
+    target.role = role;
     if (password) target.password = hashPassword(password);
     await saveDB(db);
     return send(res, 200, { item: publicUser(target) });
@@ -213,7 +218,7 @@ async function route(req, res) {
         body,
         onBeforeGenerateToken: async (pathnameForBlob, clientPayload) => {
           const user = authUser(req);
-          if (!user || !['admin', 'agent'].includes(user.role)) throw new Error('Droits insuffisants pour ajouter un fichier');
+          if (!user || !['admin', 'supervisor', 'agent'].includes(user.role)) throw new Error('Droits insuffisants pour ajouter un fichier');
           let details;
           try { details = JSON.parse(clientPayload || '{}'); } catch { throw new Error('Informations du fichier invalides'); }
           const letterId = String(details.letterId || '');
@@ -244,7 +249,7 @@ async function route(req, res) {
     const user = requireAuth(req, res);
     if (!user) return;
     const db = getDB();
-    const isAdmin = user.role === 'admin';
+    const isAdmin = isAdminLike(user);
     const myCommission = user.commission || null;
     let lettres = db.letters;
     if (!isAdmin) {
@@ -300,7 +305,7 @@ async function route(req, res) {
     const from = url.searchParams.get('from') ? new Date(url.searchParams.get('from')).toISOString() : null;
     const to = url.searchParams.get('to') ? new Date(url.searchParams.get('to') + 'T23:59:59.999Z').toISOString() : null;
 
-    const isAdmin = user.role === 'admin';
+    const isAdmin = isAdminLike(user);
     const myCommission = user.commission || null;
 
     let items = db.letters.filter((l) => {
@@ -358,7 +363,7 @@ async function route(req, res) {
       const letter = db.letters.find((l) => l.id === id);
       if (!letter) return send(res, 404, { error: 'Lettre introuvable' });
       // access control
-      if (user.role !== 'admin') {
+      if (!isAdminLike(user)) {
         const mine = user.commission
           ? (letter.commission === user.commission || (Array.isArray(letter.commissionHisto) && letter.commissionHisto.some((h) => h.committee === user.commission)))
           : (letter.createdBy === user.id);
@@ -370,10 +375,10 @@ async function route(req, res) {
     if (method === 'PATCH') {
       const user = requireAuth(req, res);
       if (!user) return;
-      if (!['admin', 'agent'].includes(user.role)) return send(res, 403, { error: 'Droits insuffisants' });
+      if (!['admin', 'supervisor', 'agent'].includes(user.role)) return send(res, 403, { error: 'Droits insuffisants' });
       const letter = db.letters.find((l) => l.id === id);
       if (!letter) return send(res, 404, { error: 'Lettre introuvable' });
-      if (user.role !== 'admin') {
+      if (!isAdminLike(user)) {
         const mine = user.commission
           ? (letter.commission === user.commission || (Array.isArray(letter.commissionHisto) && letter.commissionHisto.some((h) => h.committee === user.commission)))
           : (letter.createdBy === user.id);
@@ -427,7 +432,7 @@ async function route(req, res) {
     if (method === 'DELETE') {
       const user = requireAuth(req, res);
       if (!user) return;
-      if (user.role !== 'admin') return send(res, 403, { error: 'Droits insuffisants' });
+      if (!isAdminLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
       const letter = db.letters.find((l) => l.id === id);
       if (!letter) return send(res, 404, { error: 'Lettre introuvable' });
       for (const p of letter.pieces || []) {
@@ -451,7 +456,7 @@ async function route(req, res) {
   if (pathname === '/api/letters' && method === 'POST') {
     const user = requireAuth(req, res);
     if (!user) return;
-    if (user.role !== 'admin') return send(res, 403, { error: 'Droits insuffisants' });
+    if (!isAdminLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
     const body = await readBody(req);
     const db = getDB();
     if (!isValidCommission(db, body.commission || null)) return send(res, 400, { error: 'Comité invalide' });
@@ -498,7 +503,7 @@ async function route(req, res) {
     const letter = db.letters.find((l) => l.id === eventsMatch[1]);
     if (!letter) return send(res, 404, { error: 'Lettre introuvable' });
     // access control
-    if (user.role !== 'admin') {
+    if (!isAdminLike(user)) {
       const mine = user.commission
         ? (letter.commission === user.commission || (Array.isArray(letter.commissionHisto) && letter.commissionHisto.some((h) => h.committee === user.commission)))
         : (letter.createdBy === user.id);
@@ -507,7 +512,7 @@ async function route(req, res) {
     const body = await readBody(req);
     const type = String(body.type || '');
     if (!COMMISSION_EVENTS.includes(type)) return send(res, 400, { error: 'Type d\'événement invalide' });
-    const canManage = ['admin', 'agent'].includes(user.role);
+    const canManage = ['admin', 'supervisor', 'agent'].includes(user.role);
     const canUpdateCommitteeStatus = user.role === 'lecture' && ['vu_comite', 'traite_comite'].includes(type) && letter.commission === user.commission;
     if (!canManage && !canUpdateCommitteeStatus) return send(res, 403, { error: 'Droits insuffisants' });
     if (type !== 'note' && !letter.commission) return send(res, 400, { error: 'Aucun comité assigné' });
@@ -533,13 +538,13 @@ async function route(req, res) {
   if (completedUploadMatch && method === 'POST') {
     const user = requireAuth(req, res);
     if (!user) return;
-    if (!['admin', 'agent'].includes(user.role)) return send(res, 403, { error: 'Droits insuffisants' });
+    if (!['admin', 'supervisor', 'agent'].includes(user.role)) return send(res, 403, { error: 'Droits insuffisants' });
     const db = getDB();
     const letterId = completedUploadMatch[1];
     const letter = db.letters.find((item) => item.id === letterId);
     if (!letter) return send(res, 404, { error: 'Lettre introuvable' });
     // access control: non-admins may only touch their own letters
-    if (user.role !== 'admin') {
+    if (!isAdminLike(user)) {
       const mine = user.commission
         ? (letter.commission === user.commission || (Array.isArray(letter.commissionHisto) && letter.commissionHisto.some((h) => h.committee === user.commission)))
         : (letter.createdBy === user.id);
@@ -578,8 +583,8 @@ async function route(req, res) {
     if (method === 'POST') {
       const user = requireAuth(req, res);
       if (!user) return;
-      if (!['admin', 'agent'].includes(user.role)) return send(res, 403, { error: 'Droits insuffisants' });
-      if (user.role !== 'admin') {
+      if (!['admin', 'supervisor', 'agent'].includes(user.role)) return send(res, 403, { error: 'Droits insuffisants' });
+      if (!isAdminLike(user)) {
         const mine = user.commission
           ? (letter.commission === user.commission || (Array.isArray(letter.commissionHisto) && letter.commissionHisto.some((h) => h.committee === user.commission)))
           : (letter.createdBy === user.id);
@@ -615,7 +620,7 @@ async function route(req, res) {
     if (method === 'GET' && !pieceId) {
       const user = requireAuth(req, res);
       if (!user) return;
-      if (user.role !== 'admin') {
+      if (!isAdminLike(user)) {
         const mine = user.commission
           ? (letter.commission === user.commission || (Array.isArray(letter.commissionHisto) && letter.commissionHisto.some((h) => h.committee === user.commission)))
           : (letter.createdBy === user.id);
@@ -627,7 +632,7 @@ async function route(req, res) {
     if (method === 'GET' && pieceId) {
       const user = requireAuth(req, res);
       if (!user) return;
-      if (user.role !== 'admin') {
+      if (!isAdminLike(user)) {
         const mine = user.commission
           ? (letter.commission === user.commission || (Array.isArray(letter.commissionHisto) && letter.commissionHisto.some((h) => h.committee === user.commission)))
           : (letter.createdBy === user.id);
@@ -663,7 +668,7 @@ async function route(req, res) {
     if (method === 'DELETE' && pieceId) {
       const user = requireAuth(req, res);
       if (!user) return;
-      if (user.role !== 'admin') return send(res, 403, { error: 'Droits insuffisants' });
+      if (!isAdminLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
       const idx = (letter.pieces || []).findIndex((p) => p.id === pieceId);
       if (idx < 0) return send(res, 404, { error: 'Fichier introuvable' });
       const [removed] = letter.pieces.splice(idx, 1);
@@ -679,6 +684,167 @@ async function route(req, res) {
       await saveDB(db);
       return send(res, 200, { ok: true });
     }
+  }
+
+  // ---- Courriers (scanned files awaiting supervisor validation) ----
+  if (pathname === '/api/courriers' && (method === 'GET' || method === 'POST')) {
+    const user = requireAuth(req, res);
+    if (!user) return;
+    const db = getDB();
+    if (method === 'GET') {
+      const status = url.searchParams.get('status') || '';
+      let items = Array.isArray(db.courriers) ? db.courriers : [];
+      // non-admins see their own uploaded courriers; admin/supervisor see all
+      if (!isAdminLike(user)) {
+        items = items.filter((c) => c.uploadedBy === user.id);
+      }
+      if (status) items = items.filter((c) => c.status === status);
+      items = [...items].sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
+      return send(res, 200, { items });
+    }
+    // POST: upload a scanned courrier (admin/agent/supervisor)
+    if (!isAdminLike(user) && user.role !== 'agent') return send(res, 403, { error: 'Droits insuffisants' });
+    let body;
+    try { body = await readBody(req, 14); } catch (e) { return send(res, 413, { error: 'Fichier trop volumineux (max ~10 Mo)' }); }
+    const filename = sanitizeFilename(body.filename);
+    if (!/^[A-Za-z0-9+/=\s]+$/.test(String(body.dataBase64 || ''))) return send(res, 400, { error: 'Données base64 invalides' });
+    const buf = Buffer.from(String(body.dataBase64), 'base64');
+    if (!buf.length) return send(res, 400, { error: 'Fichier vide' });
+    if (buf.length > 10 * 1024 * 1024) return send(res, 413, { error: 'Fichier trop volumineux (max 10 Mo)' });
+    const storedAs = 'cr-' + Date.now().toString(36) + '-' + filename.replace(/[^.\w]/g, '_');
+    const uploadedAt = new Date().toISOString();
+    if (process.env.VERCEL) {
+      const { put } = await import('@vercel/blob');
+      const blob = await put(storedAs, buf, { access: 'private', contentType: filename.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream', addRandomSuffix: true });
+      const courrier = { id: 'cr' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), nom: filename, taille: buf.length, storedAs: blob.pathname, uploadedBy: user.id, uploadedByName: user.name, uploadedAt, status: 'a_valider', note: '', rejectionReason: '', validatedBy: null, validatedAt: null, letterId: null };
+      db.courriers.push(courrier);
+      await saveDB(db);
+      return send(res, 201, { item: courrier });
+    }
+    fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+    fs.writeFileSync(path.join(UPLOAD_DIR, storedAs), buf);
+    const courrier = { id: 'cr' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), nom: filename, taille: buf.length, storedAs, uploadedBy: user.id, uploadedByName: user.name, uploadedAt, status: 'a_valider', note: '', rejectionReason: '', validatedBy: null, validatedAt: null, letterId: null };
+    db.courriers.push(courrier);
+    await saveDB(db);
+    return send(res, 201, { item: courrier });
+  }
+
+  const courrierMatch = /^\/api\/courriers\/([A-Za-z0-9_-]+)$/.exec(pathname);
+  if (courrierMatch && method === 'PATCH') {
+    const user = requireAuth(req, res);
+    if (!user) return;
+    if (!isAdminLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
+    const db = getDB();
+    const courrier = db.courriers.find((c) => c.id === courrierMatch[1]);
+    if (!courrier) return send(res, 404, { error: 'Courrier introuvable' });
+    const body = await readBody(req);
+    const action = String(body.action || '');
+    if (action === 'valide') {
+      // auto-create a letter (status recu) with the PDF attached
+      const letter = {
+        id: 'l' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+        ref: nextRef(db),
+        numeroLettre: courrier.nom,
+        direction: 'entrant',
+        type: 'courrier',
+        categorie: 'administration',
+        objet: courrier.nom.replace(/\.pdf$/i, ''),
+        personneConcernee: '',
+        resume: body.note || '',
+        priorite: 'normale',
+        statut: 'recu',
+        commission: null,
+        commissionHisto: [],
+        expediteur: { nom: courrier.uploadedByName || '', fonction: '', service: '' },
+        destinataire: { nom: 'Bureau ordre', fonction: '', service: '' },
+        dateEmission: courrier.uploadedAt,
+        dateReception: new Date().toISOString(),
+        pieces: [{ id: 'p' + Date.now().toString(36), nom: courrier.nom, taille: courrier.taille, storedAs: courrier.storedAs, uploadedAt: courrier.uploadedAt }],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        createdBy: user.id,
+      };
+      db.letters.push(letter);
+      courrier.status = 'valide';
+      courrier.validatedBy = user.id;
+      courrier.validatedAt = new Date().toISOString();
+      courrier.note = String(body.note || '');
+      courrier.letterId = letter.id;
+      await saveDB(db);
+      return send(res, 200, { item: courrier, letter: publicLetter(letter) });
+    }
+    if (action === 'rejete') {
+      courrier.status = 'rejete';
+      courrier.validatedBy = user.id;
+      courrier.validatedAt = new Date().toISOString();
+      courrier.rejectionReason = String(body.rejectionReason || body.note || '');
+      courrier.note = String(body.note || '');
+      // notify the sender
+      db.notifications.push({
+        id: 'n' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+        userId: courrier.uploadedBy,
+        type: 'courrier_rejete',
+        message: `Courrier "${courrier.nom}" rejeté: ${courrier.rejectionReason || 'non conforme'}`,
+        courrierId: courrier.id,
+        read: false,
+        createdAt: new Date().toISOString(),
+      });
+      await saveDB(db);
+      return send(res, 200, { item: courrier });
+    }
+    return send(res, 400, { error: 'Action invalide' });
+  }
+
+  const courrierFileMatch = /^\/api\/courriers\/([A-Za-z0-9_-]+)\/file$/.exec(pathname);
+  if (courrierFileMatch && method === 'GET') {
+    const user = requireAuth(req, res);
+    if (!user) return;
+    const db = getDB();
+    const courrier = db.courriers.find((c) => c.id === courrierFileMatch[1]);
+    if (!courrier || !courrier.storedAs) return send(res, 404, { error: 'Fichier non disponible' });
+    // access: admin/supervisor or uploader
+    if (!isAdminLike(user) && courrier.uploadedBy !== user.id) return send(res, 404, { error: 'Fichier non disponible' });
+    if (process.env.VERCEL) {
+      const { get } = await import('@vercel/blob');
+      const blob = await get(courrier.storedAs, { access: 'private' });
+      if (!blob || blob.statusCode !== 200) return send(res, 404, { error: 'Fichier non disponible' });
+      const ext = path.extname(courrier.nom).toLowerCase();
+      const mime = ext === '.pdf' ? 'application/pdf' : ext === '.png' ? 'image/png' : (ext === '.jpg' || ext === '.jpeg') ? 'image/jpeg' : 'application/octet-stream';
+      res.writeHead(200, { 'Content-Type': mime, 'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(courrier.nom)}` });
+      const { Readable } = await import('node:stream');
+      Readable.fromWeb(blob.stream).pipe(res);
+      return;
+    }
+    const filePath = path.join(UPLOAD_DIR, courrier.storedAs);
+    if (!fs.existsSync(filePath)) return send(res, 404, { error: 'Fichier non disponible' });
+    const ext = path.extname(courrier.storedAs).toLowerCase();
+    const mime = ext === '.pdf' ? 'application/pdf' : ext === '.png' ? 'image/png' : (ext === '.jpg' || ext === '.jpeg') ? 'image/jpeg' : 'application/octet-stream';
+    const data = fs.readFileSync(filePath);
+    res.writeHead(200, { 'Content-Type': mime, 'Content-Length': data.length, 'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(courrier.nom)}` });
+    res.end(data);
+    return;
+  }
+
+  // ---- Notifications ----
+  if (pathname === '/api/notifications' && method === 'GET') {
+    const user = requireAuth(req, res);
+    if (!user) return;
+    const db = getDB();
+    const items = (db.notifications || []).filter((n) => n.userId === user.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    return send(res, 200, { items, unread: items.filter((n) => !n.read).length });
+  }
+
+  const notifMatch = /^\/api\/notifications\/([A-Za-z0-9_-]+)$/.exec(pathname);
+  if (notifMatch && method === 'PATCH') {
+    const user = requireAuth(req, res);
+    if (!user) return;
+    const db = getDB();
+    const n = db.notifications.find((x) => x.id === notifMatch[1] && x.userId === user.id);
+    if (!n) return send(res, 404, { error: 'Notification introuvable' });
+    const body = await readBody(req);
+    if (body.read !== undefined) n.read = !!body.read;
+    await saveDB(db);
+    return send(res, 200, { item: n });
   }
 
   // Static client

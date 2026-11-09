@@ -67,5 +67,21 @@ export const api = {
     window.open(url, '_blank');
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   },
+  // Courriers (scanned files awaiting validation)
+  listCourriers: (status = '') => req('/api/courriers' + (status ? `?status=${encodeURIComponent(status)}` : '')),
+  uploadCourrier: (filename, dataBase64) => req('/api/courriers', { method: 'POST', body: { filename, dataBase64 } }),
+  validateCourrier: (id, note = '') => req(`/api/courriers/${id}`, { method: 'PATCH', body: { action: 'valide', note } }),
+  rejectCourrier: (id, reason) => req(`/api/courriers/${id}`, { method: 'PATCH', body: { action: 'rejete', rejectionReason: reason } }),
+  openCourrierFile: async (id) => {
+    const res = await fetch(`/api/courriers/${id}/file`, { headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {} });
+    if (!res.ok) throw new Error('Fichier non disponible');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  },
+  // Notifications
+  notifications: () => req('/api/notifications'),
+  markNotificationRead: (id) => req(`/api/notifications/${id}`, { method: 'PATCH', body: { read: true } }),
 };
 

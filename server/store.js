@@ -46,6 +46,8 @@ function seed() {
     users,
     letters: [],
     seq: 1,
+    courriers: [],
+    notifications: [],
     committees: COMMITTEES.map((c) => ({ ...c })),
     secret: crypto.randomBytes(32).toString('hex'),
   };
@@ -69,6 +71,8 @@ function migrate(db) {
   let changed = false;
   if (!Array.isArray(db.users)) { db.users = []; changed = true; }
   if (!Array.isArray(db.letters)) { db.letters = []; changed = true; }
+  if (!Array.isArray(db.courriers)) { db.courriers = []; changed = true; }
+  if (!Array.isArray(db.notifications)) { db.notifications = []; changed = true; }
   if (!Array.isArray(db.committees)) {
     db.committees = COMMITTEES.map((c) => ({ ...c }));
     changed = true;

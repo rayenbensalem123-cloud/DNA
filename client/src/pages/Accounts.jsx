@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 
-const emptyAccount = () => ({ name: '', username: '', password: '', commission: '' });
+const emptyAccount = () => ({ name: '', username: '', password: '', commission: '', role: 'lecture' });
 
 export default function Accounts() {
   const [accounts, setAccounts] = useState([]);
@@ -28,7 +28,7 @@ export default function Accounts() {
   const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
   const edit = (account) => {
     setError(''); setNotice('');
-    setForm({ id: account.id, name: account.name, username: account.username, password: '', commission: account.commission || '' });
+    setForm({ id: account.id, name: account.name, username: account.username, password: '', commission: account.commission || '', role: account.role || 'lecture' });
   };
   const save = async (event) => {
     event.preventDefault();
@@ -66,6 +66,7 @@ export default function Accounts() {
             <label className="field">Nom complet<input autoComplete="name" value={form.name} onChange={(e) => update('name', e.target.value)} required /></label>
             <label className="field">Identifiant<input autoComplete="username" value={form.username} onChange={(e) => update('username', e.target.value)} required minLength={3} disabled={Boolean(form.id)} /></label>
             <label className="field">{form.id ? 'Nouveau mot de passe (facultatif)' : 'Mot de passe'}<input type="password" autoComplete="new-password" value={form.password} onChange={(e) => update('password', e.target.value)} minLength={form.password ? 8 : undefined} required={!form.id} placeholder={form.id ? 'Laisser vide pour conserver' : '8 caractères minimum'} /></label>
+            <label className="field">Rôle<select value={form.role} onChange={(e) => update('role', e.target.value)}><option value="lecture">Lecteur</option><option value="agent">Agent</option><option value="supervisor">Superviseur</option></select></label>
             <label className="field">Comité<select value={form.commission} onChange={(e) => update('commission', e.target.value)}><option value="">Aucun comité</option>{committees.map((committee) => <option key={committee.id} value={committee.id}>{committee.nom}</option>)}</select></label>
           </div>
           {error && <div className="form-error" role="alert">{error}</div>}

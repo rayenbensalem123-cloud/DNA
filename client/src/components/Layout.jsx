@@ -3,6 +3,8 @@ import { useAuth } from '../auth';
 import { useLanguage } from '../i18n';
 import LetterCreateModal from './LetterCreateModal';
 import ThemeToggle from './ThemeToggle';
+import { useState, useEffect } from 'react';
+import { api } from '../api';
 
 function NavIcon({ type }) {
   if (type === 'dashboard') return <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="3.5" y="13.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="13.5" width="7" height="7" rx="1.5" /></svg>;
@@ -17,6 +19,25 @@ export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const showLetterModal = user?.role === 'admin' && new URLSearchParams(location.search).get('newLetter') === '1';
+  const isAdminLike = user?.role === 'admin' || user?.role === 'supervisor';
+  const [notifications, setNotifications] = useState([]);
+  const [showNotifs, setShowNotifs] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    const load = () => api.notifications().then((d) => setNotifications(d.items || [])).catch(() => {});
+    load();
+    const timer = setInterval(load, 30000);
+    return () => clearInterval(timer);
+  }, [user]);
+
+  const unread = notifications.filter((n) => !n.read).length;
+
+  const markRead = async (n) => {
+    try { await api.markNotificationRead(n.id); } catch {}
+    setNotifications((prev) => prev.map((x) => x.id === n.id ? { ...x, read: true } : x));
+    if (n.courrierId) navigate('/courriers-rejetes');
+  };
 
   const onLogout = async () => {
     await logout();
@@ -40,6 +61,12 @@ export default function Layout() {
           <NavLink to="/archive" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}>
             <NavIcon type="letters" /><span className="nav-text">Archive</span>
           </NavLink>
+          {isAdminLike && <NavLink to="/courrier" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}>
+            <NavIcon type="letters" /><span className="nav-text">Courrier</span>
+          </NavLink>}
+          {isAdminLike && <NavLink to="/courriers-rejetes" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}>
+            <NavIcon type="letters" /><span className="nav-text">Rejetés</span>
+          </NavLink>}
           {user?.role === 'admin' && <NavLink to="/comptes" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}>
             <NavIcon type="users" /><span className="nav-text">Comptes</span>
           </NavLink>}
@@ -51,8 +78,29 @@ export default function Layout() {
             {user?.role === 'admin' && <button className="btn btn-primary btn-add" type="button" onClick={() => navigate('/?newLetter=1')}>
               <span className="plus" aria-hidden="true">+</span> Ajouter un courrier
             </button>}
+            {isAdminLike && <button className="btn btn-secondary" type="button" onClick={() => navigate('/courrier')}>
+              Courrier
+            </button>}
           </div>
           <div className="topbar-right">
+            <div style={{ position: 'relative' }}>
+              <button className="btn btn-ghost" onClick={() => setShowNotifs((v) => !v)} style={{ position: 'relative' }}>
+                🔔
+                {unread > 0 && <span style={{ position: 'absolute', top: -4, right: -4, background: 'var(--primary)', color: '#fff', fontSize: 10, fontWeight: 700, borderRadius: 999, padding: '1px 5px', minWidth: 16, textAlign: 'center' }}>{unread}</span>}
+              </button>
+              {showNotifs && (
+                <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 8, width: 320, maxHeight: 360, overflowY: 'auto', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 12px 40px rgba(0,0,0,.3)', zIndex: 50, padding: 8 }}>
+                  <div style={{ padding: '8px 12px', fontWeight: 700, fontSize: 13, borderBottom: '1px solid var(--border)' }}>Notifications</div>
+                  {notifications.length === 0 && <div style={{ padding: 16, color: 'var(--muted)', fontSize: 13 }}>Aucune notification</div>}
+                  {notifications.map((n) => (
+                    <div key={n.id} onClick={() => markRead(n)} style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', cursor: 'pointer', background: n.read ? 'transparent' : 'rgba(230,0,27,.06)', fontSize: 13 }}>
+                      <div style={{ fontWeight: n.read ? 400 : 600 }}>{n.message}</div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{new Date(n.createdAt).toLocaleString()}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
             <ThemeToggle />
             <div className="user-info">
               <div className="user-name">{user?.name}</div>
