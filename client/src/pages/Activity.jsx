@@ -3,19 +3,25 @@ import { api } from '../api';
 import { fmtDateTime } from '../utils';
 
 const LABELS = {
-  login: 'Connexion',
+  login: 'Connexion à la plateforme',
   'letter.create': 'Courrier créé',
   'letter.update': 'Courrier modifié',
   'letter.transfer': 'Courrier transféré',
   'letter.delete': 'Courrier supprimé',
   'letter.event': 'Suivi du courrier',
+  'letter.file.view': 'PDF du courrier ouvert',
   'piece.add': 'Fichier ajouté',
   'piece.delete': 'Fichier supprimé',
   'user.create': 'Compte créé',
   'user.update': 'Compte modifié',
   'user.delete': 'Compte supprimé',
+  'courrier.upload': 'Courrier numérisé téléversé',
+  'courrier.validate': 'Courrier validé',
+  'courrier.reject': 'Courrier rejeté',
+  'courrier.delete': 'Courrier rejeté supprimé',
+  'courrier.file.view': 'Fichier du courrier ouvert',
 };
-const FILTERS = [['', 'Tout'], ['letter', 'Courriers'], ['piece', 'Fichiers'], ['user', 'Comptes'], ['login', 'Connexions']];
+const FILTERS = [['', 'Tout'], ['letter', 'Courriers'], ['courrier', 'Numérisation'], ['piece', 'Fichiers'], ['user', 'Comptes'], ['login', 'Connexions']];
 const EVENT_LABELS = { vu_comite: 'ouvert par le comité', recu_comite: 'reçu par le comité', traite_comite: 'terminé et archivé', note: 'note ajoutée' };
 
 export default function Activity() {
@@ -44,6 +50,9 @@ export default function Activity() {
     if (a.action === 'letter.delete') return d.objet || '';
     if (a.action === 'user.create') return `${d.role === 'admin' ? 'Administration' : 'Comité'}${d.commission ? ' · ' + nameOf(d.commission) : ''}`;
     if (a.action === 'user.update') return `${d.role === 'admin' ? 'Administration' : 'Comité'}${d.commission ? ' · ' + nameOf(d.commission) : ''}${d.passwordReset ? ' · mot de passe changé' : ''}`;
+    if (a.action === 'letter.file.view') return d.file || '';
+    if (a.action === 'courrier.validate') return d.letterRef ? `Devenu le courrier ${d.letterRef}` : '';
+    if (a.action === 'courrier.reject') return d.reason ? `Motif : ${d.reason}${d.sender ? ' · envoyé par ' + d.sender : ''}` : (d.sender ? 'envoyé par ' + d.sender : '');
     return '';
   };
 

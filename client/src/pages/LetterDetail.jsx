@@ -12,6 +12,8 @@ export default function LetterDetail() {
   const { user } = useAuth();
   const { t } = useLanguage();
   const isAdmin = user?.role === 'admin';
+  // The tracking history (entry, transfers, committee events) is private to the bureau d'ordre.
+  const canSeeHistory = isAdmin || user?.role === 'supervisor';
   const [letter, setLetter] = useState(null);
   // A comité account can change a letter only while it is in its comité.
   const holdsLetter = (l) => Boolean(l) && (isAdmin || (user?.role === 'agent' && Boolean(user.commission) && l.commission === user.commission));
@@ -167,7 +169,7 @@ export default function LetterDetail() {
         {info('detail.direction', t('direction.' + (letter.direction || 'entrant')))}
         {info('detail.type', t('type.' + (letter.type || 'autre')))}
         {info('detail.categorie', t('categorie.' + (letter.categorie || 'autre')))}
-        {info('detail.statut', <>{t('status.' + (letter.statut || 'recu'))}{(letter.commissionHisto || []).some((h) => h.type === 'transfert') && <span className="badge badge-transfert" style={{ marginLeft: 8 }}>{t('badge.transferred')}</span>}</>)}
+        {info('detail.statut', <>{t('status.' + (letter.statut || 'recu'))}{(letter.transferred || (letter.commissionHisto || []).some((h) => h.type === 'transfert')) && <span className="badge badge-transfert" style={{ marginLeft: 8 }}>{t('badge.transferred')}</span>}</>)}
         {info('detail.priorite', t('priorite.' + (letter.priorite || 'normale')))}
         {info('detail.commission', letter.commission ? committeeName(letter.commission) : '—')}
         {info('detail.expediteur', [letter.expediteur?.nom, letter.expediteur?.fonction, letter.expediteur?.service].filter(Boolean).join(' — ') || '—')}
@@ -190,7 +192,7 @@ export default function LetterDetail() {
         )}
       </div>
 
-      <div className="card">
+      {canSeeHistory && <div className="card">
         <h2 className="card-title">Suivi du courrier</h2>
         <div className="histo timeline">
           {timeline.map((h) => (
@@ -204,7 +206,7 @@ export default function LetterDetail() {
             </div>
           ))}
         </div>
-      </div>
+      </div>}
 
       {canHandleCommittee && (
         <>

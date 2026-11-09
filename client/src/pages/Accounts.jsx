@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { api } from '../api';
+import { api, setToken } from '../api';
 import { useAuth } from '../auth';
 
 const emptyAccount = () => ({ name: '', username: '', password: '', commission: '', role: 'agent' });
 const ROLE_HINTS = {
   agent: 'Peut envoyer du courrier à n’importe quel comité, mais ne lit que le courrier reçu par son propre comité.',
+  supervisor: 'Équivalent à l’administrateur : voit tout et valide les courriers.',
   admin: 'Voit tout : courrier de tous les comités, comptes et suppressions.',
 };
-const ROLE_LABELS = { admin: 'Administration', agent: 'Comité', lecture: 'Comité' };
+const ROLE_LABELS = { admin: 'Administration', supervisor: 'Superviseur', agent: 'Comité', lecture: 'Comité' };
 
 export default function Accounts() {
   const { user: me } = useAuth();
@@ -36,7 +37,7 @@ export default function Accounts() {
   const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
   const edit = (account) => {
     setError(''); setNotice('');
-    setForm({ id: account.id, name: account.name, username: account.username, password: '', commission: account.commission || '', role: account.role === 'admin' ? 'admin' : 'agent' });
+    setForm({ id: account.id, name: account.name, username: account.username, password: '', commission: account.commission || '', role: ['admin', 'supervisor'].includes(account.role) ? account.role : 'agent' });
   };
   const save = async (event) => {
     event.preventDefault();
@@ -45,7 +46,8 @@ export default function Accounts() {
       const payload = { ...form, commission: form.commission || null };
       if (form.id) {
         const { id, username, ...changes } = payload;
-        await api.updateUser(id, changes);
+        const updated = await api.updateUser(id, changes);
+        if (updated?.token) setToken(updated.token);
         setNotice('Compte mis à jour.');
       } else {
         await api.createUser(payload);
@@ -87,6 +89,7 @@ export default function Accounts() {
             <label className="field">{form.id ? 'Nouveau mot de passe (facultatif)' : 'Mot de passe'}<input type="password" autoComplete="new-password" value={form.password} onChange={(e) => update('password', e.target.value)} minLength={form.password ? 8 : undefined} required={!form.id} placeholder={form.id ? 'Laisser vide pour conserver' : '8 caractères minimum'} /></label>
             <label className="field">Type de compte<select value={form.role} onChange={(e) => update('role', e.target.value)} disabled={form.id === me?.id}>
               <option value="agent">Comité</option>
+              <option value="supervisor">Superviseur</option>
               <option value="admin">Administration</option>
             </select><span className="muted">{ROLE_HINTS[form.role]}</span></label>
             <label className="field">{form.role === 'admin' ? 'Comité (facultatif)' : 'Comité'}<select value={form.commission} required={form.role !== 'admin'} onChange={(e) => update('commission', e.target.value)}><option value="">{form.role === 'admin' ? 'Aucun comité' : '— Choisir un comité —'}</option>{committees.map((committee) => <option key={committee.id} value={committee.id}>{committee.nom}</option>)}</select></label>

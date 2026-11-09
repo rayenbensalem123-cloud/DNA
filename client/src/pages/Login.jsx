@@ -30,7 +30,7 @@ export default function Login() {
   return (
     <main className="sign">
       <section className="sign-stage" aria-label="Direction Nationale d’Arbitrage">
-        <img className="sign-photo" src="/referee-background.webp" alt="" />
+        <img className="sign-photo" src="/fond.jpg" alt="" />
         <div className="sign-shade" />
         <div className="sign-identity">
           <img className="sign-emblem" src="/federation-tunisienne-logo.webp" alt="Fédération Tunisienne de Football" />

@@ -35,7 +35,7 @@ function seed() {
     {
       id: 'u1',
       username: 'admin',
-      password: hashPassword(process.env.DNA_ADMIN_PASSWORD || 'admin'),
+      password: hashPassword(initialAdminPassword()),
       name: 'Administrateur',
       role: 'admin',
       createdAt: iso(now),
@@ -46,6 +46,8 @@ function seed() {
     users,
     letters: [],
     seq: 1,
+    courriers: [],
+    notifications: [],
     committees: COMMITTEES.map((c) => ({ ...c })),
     secret: crypto.randomBytes(32).toString('hex'),
   };
@@ -65,10 +67,23 @@ function isDemoSeed(db) {
   return letters.length <= 20;
 }
 
+// Never ship a well-known default password: outside local development a random one is generated and printed once.
+function initialAdminPassword() {
+  if (process.env.DNA_ADMIN_PASSWORD) return process.env.DNA_ADMIN_PASSWORD;
+  if (process.env.VERCEL || process.env.NODE_ENV === 'production') {
+    const generated = crypto.randomBytes(9).toString('base64url');
+    console.warn('DNA_ADMIN_PASSWORD is not set: first admin password generated ->', generated);
+    return generated;
+  }
+  return 'admin';
+}
+
 function migrate(db) {
   let changed = false;
   if (!Array.isArray(db.users)) { db.users = []; changed = true; }
   if (!Array.isArray(db.letters)) { db.letters = []; changed = true; }
+  if (!Array.isArray(db.courriers)) { db.courriers = []; changed = true; }
+  if (!Array.isArray(db.notifications)) { db.notifications = []; changed = true; }
   if (!Array.isArray(db.committees)) {
     db.committees = COMMITTEES.map((c) => ({ ...c }));
     changed = true;

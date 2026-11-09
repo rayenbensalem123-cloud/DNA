@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { LanguageProvider, useLanguage } from './i18n';
 import { AuthProvider, useAuth } from './auth';
 import { ThemeProvider } from './theme';
+import { setHolding, useHolding } from './motion';
 import Layout from './components/Layout';
 import ErrorBoundary from './components/ErrorBoundary';
 import Login from './pages/Login';
@@ -11,18 +12,19 @@ import Archive from './pages/Archive';
 import LetterDetail from './pages/LetterDetail';
 import Accounts from './pages/Accounts';
 import Activity from './pages/Activity';
+import Courrier from './pages/Courrier';
+import CourriersRejetes from './pages/CourriersRejetes';
+import ToSend from './pages/ToSend';
 import Splash from './components/Splash';
-import { setHolding, useHolding } from './motion';
 
 const BOOT_MIN_MS = 1500;
 const WELCOME_MS = 1800;
 const LEAVE_MS = 800;
 
-// Two splash moments: once when the site opens, and once right after signing in.
 function Splashes() {
   const { t } = useLanguage();
   const { loading, welcome, endWelcome } = useAuth();
-  const [bootPhase, setBootPhase] = useState('show'); // show -> leaving -> done
+  const [bootPhase, setBootPhase] = useState('show');
   const [bootMin, setBootMin] = useState(false);
   const [welcomePhase, setWelcomePhase] = useState('show');
   const [greeted, setGreeted] = useState(null);
@@ -41,7 +43,6 @@ function Splashes() {
     const a = setTimeout(() => setWelcomePhase('leaving'), WELCOME_MS);
     const b = setTimeout(() => { setGreeted(null); endWelcome(); }, WELCOME_MS + LEAVE_MS);
     return () => { clearTimeout(a); clearTimeout(b); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [welcome]);
 
   const holding = bootPhase === 'show' || (greeted && welcomePhase === 'show');
@@ -64,7 +65,6 @@ function Stage({ children }) {
 function Protected({ children }) {
   const { user, loading } = useAuth();
   const location = useLocation();
-  // The start-up splash covers the screen while the session is checked.
   if (loading) return null;
   if (!user) return <Navigate to="/login" replace state={{ from: location }} />;
   return children;
@@ -72,7 +72,7 @@ function Protected({ children }) {
 
 function AdminOnly({ children }) {
   const { user } = useAuth();
-  return user?.role === 'admin' ? children : <Navigate to="/" replace />;
+  return user?.role === 'admin' || user?.role === 'supervisor' ? children : <Navigate to="/" replace />;
 }
 
 export default function App() {
@@ -91,6 +91,9 @@ export default function App() {
                 <Route path="archive" element={<ErrorBoundary label="archive"><Archive /></ErrorBoundary>} />
                 <Route path="comptes" element={<AdminOnly><ErrorBoundary label="accounts"><Accounts /></ErrorBoundary></AdminOnly>} />
                 <Route path="activite" element={<AdminOnly><ErrorBoundary label="activity"><Activity /></ErrorBoundary></AdminOnly>} />
+                <Route path="courrier" element={<ErrorBoundary label="courrier"><Courrier /></ErrorBoundary>} />
+                <Route path="a-envoyer" element={<AdminOnly><ErrorBoundary label="tosend"><ToSend /></ErrorBoundary></AdminOnly>} />
+                <Route path="courriers-rejetes" element={<ErrorBoundary label="rejetes"><CourriersRejetes /></ErrorBoundary>} />
                 <Route path="lettres" element={<Navigate to="/archive" replace />} />
                 <Route path="lettres/nouveau" element={<Navigate to="/?newLetter=1" replace />} />
                 <Route path="lettres/:id" element={<ErrorBoundary label="letterdetail"><LetterDetail /></ErrorBoundary>} />
@@ -105,4 +108,3 @@ export default function App() {
     </ThemeProvider>
   );
 }
-

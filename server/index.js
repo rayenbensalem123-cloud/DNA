@@ -64,23 +64,23 @@ function readBody(req, limitMB = 0.25) {
   });
 }
 
-function publicUser(u) { return { id: u.id, username: u.username, name: u.name, role: u.role === 'admin' ? 'admin' : 'agent', commission: u.commission || null, createdAt: u.createdAt }; }
+function publicUser(u) { return { id: u.id, username: u.username, name: u.name, role: effectiveRole(u.role), commission: u.commission || null, createdAt: u.createdAt }; }
 
 // ---- Access by comité ---------------------------------------------------------------
 // Two kinds of accounts: Administration (role "admin": sees and does everything) and comité accounts
 // (role "agent", older "lecture" accounts behave the same). A comité account can send a letter to any
 // comité, but only reads the letters its own comité received, and only changes a letter while it is in
 // its comité. It cannot see what other comités receive or handle.
-const effectiveRole = (role) => (role === 'admin' ? 'admin' : 'agent');
+const effectiveRole = (role) => (role === 'admin' || role === 'supervisor' ? role : 'agent');
 function receivedBy(letter, committee) {
   return letter.commission === committee || (Array.isArray(letter.commissionHisto) && letter.commissionHisto.some((h) => h.committee === committee));
 }
 function canSeeLetter(user, letter) {
-  if (user.role === 'admin') return true;
+  if (isAdminLike(user)) return true;
   return user.commission ? receivedBy(letter, user.commission) : letter.createdBy === user.id;
 }
 function holdsLetter(user, letter) {
-  if (user.role === 'admin') return true;
+  if (isAdminLike(user)) return true;
   return user.commission ? letter.commission === user.commission : letter.createdBy === user.id;
 }
 // Right after sending, the sender may still attach the scanned files to the letter it just created.
@@ -89,6 +89,8 @@ function justSent(user, letter) {
 }
 const canAttach = (user, letter) => holdsLetter(user, letter) || justSent(user, letter);
 const NOT_IN_COMMITTEE = 'Cette lettre n’est plus dans votre comité : vous pouvez la consulter mais plus la modifier.';
+
+function isAdminLike(u) { return !!u && (u.role === 'admin' || u.role === 'supervisor'); }
 
 // ---- Login protection ---------------------------------------------------------------
 // Too many wrong passwords from one address (or for one account from one address) → temporary block.
@@ -150,7 +152,7 @@ function requireAuth(req, res, next) {
   return user;
 }
 
-const ROLES = ['admin', 'agent'];
+const ROLES = ['admin', 'supervisor', 'agent'];
 const normalizeRole = (r) => (r === 'lecture' ? 'agent' : r);
 function isValidStatut(s) { return ['recu', 'en_cours', 'archive'].includes(s); }
 function isValidType(t) { return ['officielle', 'arrete', 'decret', 'note', 'courrier', 'mandat', 'autre'].includes(t); }
@@ -162,7 +164,7 @@ const COMMISSION_EVENTS = ['recu_comite', 'vu_comite', 'traite_comite', 'note'];
 
 function logActivity(db, user, action, target, details) {
   if (!Array.isArray(db.activity)) db.activity = [];
-  db.activity.push({ id: 'a' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), date: new Date().toISOString(), userId: user?.id || null, userName: user?.name || '—', userRole: user?.role === 'admin' ? 'admin' : 'agent', commission: user?.commission || null, action, target: String(target || ''), details: details || {} });
+  db.activity.push({ id: 'a' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), date: new Date().toISOString(), userId: user?.id || null, userName: user?.name || '—', userRole: isAdminLike(user) ? (user.role === 'supervisor' ? 'supervisor' : 'admin') : 'agent', commission: user?.commission || null, action, target: String(target || ''), details: details || {} });
   if (db.activity.length > 3000) db.activity.splice(0, db.activity.length - 3000);
 }
 
@@ -196,8 +198,12 @@ const FILE_TYPES = {
 // The file must really be what its extension says (no HTML or scripts renamed to .pdf).
 function fileLooksValid(buf, ext) {
   const type = FILE_TYPES[ext];
-  return Boolean(type) && type.magic.some((m) => m.every((byte, i) => buf[i] === byte));
+  if (!type) return false;
+  if (ext === '.pdf') return buf.subarray(0, 1024).includes('%PDF-');
+  return type.magic.some((m) => m.every((byte, i) => buf[i] === byte));
 }
+// Browsers may display PDFs and images; anything else is always downloaded, never rendered.
+const fileDisposition = (name) => `${FILE_TYPES[path.extname(String(name || '')).toLowerCase()] ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(name)}`;
 // A stored file name must belong to its letter and can never point outside the upload folder.
 function storedNameOk(storedAs) {
   const name = String(storedAs || '');
@@ -242,6 +248,23 @@ function publicLetter(l) {
   };
 }
 
+// What a user may see of a letter. Admins and supervisors see everything:
+// the tracking history AND a "seen by comité" indicator computed from it.
+// Comité accounts never see the history (private to the bureau d'ordre)
+// — only a simple "transferred" flag so the badge still works.
+function letterView(user, l) {
+  const base = publicLetter(l);
+  if (isAdminLike(user)) {
+    return { ...base, comiteVu: l.commission ? !isUnread(l) : null };
+  }
+  return {
+    ...base,
+    commissionHisto: [],
+    transferred: (Array.isArray(l.commissionHisto) ? l.commissionHisto : []).some((h) => h.type === 'transfert'),
+    comiteVu: null,
+  };
+}
+
 process.on('uncaughtException', (e) => { console.error('uncaught', e); });
 process.on('unhandledRejection', (e) => { console.error('unhandledRejection', e); });
 
@@ -250,7 +273,7 @@ const server = http.createServer(async (req, res) => {
     await route(req, res);
   } catch (e) {
     console.error('Request error', req.url, e);
-    if (!res.headersSent) send(res, e.status || 500, { error: e.status === 409 ? e.message : 'Erreur serveur' });
+    if (!res.headersSent) send(res, e.status || 500, { error: (e.status === 409 || e.status === 413) ? e.message : 'Erreur serveur' });
     else res.end();
   }
 });
@@ -310,7 +333,7 @@ async function route(req, res) {
   if (pathname === '/api/users' && (method === 'GET' || method === 'POST')) {
     const user = requireAuth(req, res);
     if (!user) return;
-    if (user.role !== 'admin') return send(res, 403, { error: 'Droits insuffisants' });
+    if (!isAdminLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
     const db = getDB();
     if (method === 'GET') return send(res, 200, { items: db.users.map(publicUser) });
     const body = await readBody(req);
@@ -318,14 +341,14 @@ async function route(req, res) {
     const name = clip(body.name, 100).trim();
     const password = typeof body.password === 'string' ? body.password.slice(0, 200) : '';
     const commission = body.commission ? String(body.commission) : null;
+    const role = body.role === undefined ? 'agent' : normalizeRole(String(body.role));
+    if (!ROLES.includes(role)) return send(res, 400, { error: 'Rôle invalide' });
+    if (role === 'agent' && !commission) return send(res, 400, { error: 'Choisissez le comité de ce compte' });
     if (username.length < 3 || !/^[a-z0-9._-]+$/.test(username)) return send(res, 400, { error: 'Identifiant invalide (3 caractères minimum, lettres, chiffres, . _ -)' });
     if (db.users.some((u) => u.username === username)) return send(res, 409, { error: 'Cet identifiant existe déjà' });
     if (!name) return send(res, 400, { error: 'Le nom est obligatoire' });
     if (password.length < 8) return send(res, 400, { error: 'Le mot de passe doit contenir au moins 8 caractères' });
     if (!isValidCommission(db, commission)) return send(res, 400, { error: 'Comité invalide' });
-    const role = body.role === undefined ? 'agent' : normalizeRole(String(body.role));
-    if (!ROLES.includes(role)) return send(res, 400, { error: 'Rôle invalide' });
-    if (role === 'agent' && !commission) return send(res, 400, { error: 'Choisissez le comité de ce compte' });
     const created = { id: 'u' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex'), username, name, password: hashPassword(password), role, commission, createdAt: new Date().toISOString() };
     db.users.push(created);
     logActivity(db, user, 'user.create', created.username, { role: created.role, commission: created.commission });
@@ -337,7 +360,7 @@ async function route(req, res) {
   if (userMatch && method === 'PATCH') {
     const user = requireAuth(req, res);
     if (!user) return;
-    if (user.role !== 'admin') return send(res, 403, { error: 'Droits insuffisants' });
+    if (!isAdminLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
     const db = getDB();
     const target = db.users.find((u) => u.id === decodeURIComponent(userMatch[1]));
     if (!target) return send(res, 404, { error: 'Compte introuvable' });
@@ -345,11 +368,11 @@ async function route(req, res) {
     const name = clip(body.name ?? target.name, 100).trim();
     const commission = body.commission === undefined ? (target.commission || null) : (body.commission ? String(body.commission) : null);
     const password = typeof body.password === 'string' ? body.password.slice(0, 200) : '';
+    const role = body.role === undefined ? effectiveRole(target.role) : normalizeRole(String(body.role));
+    if (!ROLES.includes(role)) return send(res, 400, { error: 'Rôle invalide' });
     if (!name) return send(res, 400, { error: 'Le nom est obligatoire' });
     if (!isValidCommission(db, commission)) return send(res, 400, { error: 'Comité invalide' });
     if (password && password.length < 8) return send(res, 400, { error: 'Le mot de passe doit contenir au moins 8 caractères' });
-    const role = body.role === undefined ? effectiveRole(target.role) : normalizeRole(String(body.role));
-    if (!ROLES.includes(role)) return send(res, 400, { error: 'Rôle invalide' });
     if (role !== effectiveRole(target.role) && target.id === user.id) return send(res, 400, { error: 'Vous ne pouvez pas changer votre propre rôle' });
     if (target.role === 'admin' && role !== 'admin' && db.users.filter((u) => u.role === 'admin').length <= 1) return send(res, 400, { error: 'Le dernier compte administrateur doit rester administrateur' });
     if (role === 'agent' && !commission) return send(res, 400, { error: 'Choisissez le comité de ce compte' });
@@ -368,7 +391,7 @@ async function route(req, res) {
   if (userMatch && method === 'DELETE') {
     const user = requireAuth(req, res);
     if (!user) return;
-    if (user.role !== 'admin') return send(res, 403, { error: 'Droits insuffisants' });
+    if (!isAdminLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
     const db = getDB();
     const id = decodeURIComponent(userMatch[1]);
     const target = db.users.find((u) => u.id === id);
@@ -384,7 +407,7 @@ async function route(req, res) {
   if (pathname === '/api/activity' && method === 'GET') {
     const user = requireAuth(req, res);
     if (!user) return;
-    if (user.role !== 'admin') return send(res, 403, { error: 'Droits insuffisants' });
+    if (!isAdminLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
     const db = getDB();
     const action = url.searchParams.get('action') || '';
     const limit = Math.min(parseInt(url.searchParams.get('limit') || '200', 10) || 200, 1000);
@@ -396,7 +419,7 @@ async function route(req, res) {
     const user = requireAuth(req, res);
     if (!user) return;
     const db = getDB();
-    if (user.role === 'admin' || !user.commission) return send(res, 200, { unread: 0, items: [] });
+    if (isAdminLike(user) || !user.commission) return send(res, 200, { unread: 0, items: [] });
     const items = db.letters.filter((l) => l.commission === user.commission && isUnread(l))
       .map((l) => { const h = [...(l.commissionHisto || [])].reverse().find((e) => e.type === 'assigne' || e.type === 'transfert'); return { id: l.id, ref: l.ref, numeroLettre: l.numeroLettre || '', objet: l.objet || '', priorite: l.priorite || 'normale', date: h?.date || l.createdAt, fromCommittee: h?.fromCommittee || null, byName: h?.byName || '' }; })
       .sort((a, b) => (a.date < b.date ? 1 : -1));
@@ -421,9 +444,17 @@ async function route(req, res) {
         body,
         onBeforeGenerateToken: async (pathnameForBlob, clientPayload) => {
           const user = authUser(req);
-          if (!user || !['admin', 'agent'].includes(user.role)) throw new Error('Droits insuffisants pour ajouter un fichier');
+          if (!user || !['admin', 'supervisor', 'agent'].includes(user.role)) throw new Error('Droits insuffisants pour ajouter un fichier');
           let details;
           try { details = JSON.parse(clientPayload || '{}'); } catch { throw new Error('Informations du fichier invalides'); }
+          if (details.courrier) {
+            // Scanned courriers: admin / supervisor only.
+            if (!isAdminLike(user)) throw new Error('Droits insuffisants pour ajouter un fichier');
+            const crExt = path.extname(sanitizeFilename(details.filename)).toLowerCase();
+            if (!['.pdf', '.jpg', '.jpeg', '.png'].includes(crExt)) throw new Error('Format non pris en charge pour un gros fichier (PDF, JPG ou PNG)');
+            if (!pathnameForBlob.startsWith('cr-') || path.extname(pathnameForBlob).toLowerCase() !== crExt) throw new Error('Chemin de fichier invalide');
+            return { allowedContentTypes: ['application/pdf', 'image/jpeg', 'image/png'], maximumSizeInBytes: 25 * 1024 * 1024, addRandomSuffix: true };
+          }
           const letterId = String(details.letterId || '');
           const filename = sanitizeFilename(details.filename);
           const extension = path.extname(filename).toLowerCase();
@@ -454,7 +485,8 @@ async function route(req, res) {
     const user = requireAuth(req, res);
     if (!user) return;
     const db = getDB();
-    const isAdmin = user.role === 'admin';
+    const isAdmin = isAdminLike(user);
+    const myCommission = user.commission || null;
     let lettres = db.letters;
     if (!isAdmin) {
       lettres = lettres.filter((l) => canSeeLetter(user, l));
@@ -507,7 +539,8 @@ async function route(req, res) {
     const from = validDate(url.searchParams.get('from'), false);
     const to = validDate(url.searchParams.get('to'), true);
 
-    const isAdmin = user.role === 'admin';
+    const isAdmin = isAdminLike(user);
+    const myCommission = user.commission || null;
 
     let items = db.letters.filter((l) => {
       if (direction && (l.direction || 'entrant') !== direction) return false;
@@ -558,7 +591,7 @@ async function route(req, res) {
     const start = (page - 1) * limit;
     const pageItems = items.slice(start, start + limit);
 
-    return send(res, 200, { items: pageItems.map((l) => ({ ...publicLetter(l), unread: !isAdmin && l.commission === user.commission && isUnread(l) })), total, page, limit });
+    return send(res, 200, { items: pageItems.map((l) => ({ ...letterView(user, l), unread: !isAdmin && l.commission === user.commission && isUnread(l) })), total, page, limit });
   }
 
   const lettersMatch = /^\/api\/letters\/([A-Za-z0-9_-]+)$/.exec(pathname);
@@ -573,13 +606,13 @@ async function route(req, res) {
       if (!letter) return send(res, 404, { error: 'Lettre introuvable' });
       // access control
       if (!canSeeLetter(user, letter)) return send(res, 404, { error: 'Lettre introuvable' });
-      return send(res, 200, { item: publicLetter(letter) });
+      return send(res, 200, { item: letterView(user, letter) });
     }
 
     if (method === 'PATCH') {
       const user = requireAuth(req, res);
       if (!user) return;
-      if (!['admin', 'agent'].includes(user.role)) return send(res, 403, { error: 'Droits insuffisants' });
+      if (!['admin', 'supervisor', 'agent'].includes(user.role)) return send(res, 403, { error: 'Droits insuffisants' });
       const letter = db.letters.find((l) => l.id === id);
       if (!letter) return send(res, 404, { error: 'Lettre introuvable' });
       if (!canSeeLetter(user, letter)) return send(res, 404, { error: 'Lettre introuvable' });
@@ -590,7 +623,7 @@ async function route(req, res) {
       const prevCommission = letter.commission || null;
       const nextCommission = body.commission !== undefined ? (body.commission || null) : prevCommission;
       if (!isValidCommission(db, nextCommission)) return send(res, 400, { error: 'Comité invalide' });
-      if (body.ref && user.role === 'admin') letter.ref = clip(body.ref, 60);
+      if (body.ref && isAdminLike(user)) letter.ref = clip(body.ref, 60);
       if (body.numeroLettre !== undefined) letter.numeroLettre = clip(body.numeroLettre, 60);
       Object.assign(letter, {
         direction: body.direction !== undefined ? (body.direction === 'sortant' ? 'sortant' : 'entrant') : letter.direction,
@@ -626,13 +659,13 @@ async function route(req, res) {
       logActivity(db, user, nextCommission !== prevCommission ? 'letter.transfer' : 'letter.update', letter.ref, { letterId: letter.id, from: prevCommission, to: nextCommission });
       await saveDB(db);
       const updated = db.letters.find((l) => l.id === id);
-      return send(res, 200, { item: publicLetter(updated) });
+      return send(res, 200, { item: letterView(user, updated) });
     }
 
     if (method === 'DELETE') {
       const user = requireAuth(req, res);
       if (!user) return;
-      if (user.role !== 'admin') return send(res, 403, { error: 'Droits insuffisants' });
+      if (!isAdminLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
       const letter = db.letters.find((l) => l.id === id);
       if (!letter) return send(res, 404, { error: 'Lettre introuvable' });
       for (const p of letter.pieces || []) {
@@ -657,7 +690,7 @@ async function route(req, res) {
   if (pathname === '/api/letters' && method === 'POST') {
     const user = requireAuth(req, res);
     if (!user) return;
-    if (!['admin', 'agent'].includes(user.role)) return send(res, 403, { error: 'Droits insuffisants' });
+    if (!isAdminLike(user) && user.role !== 'agent') return send(res, 403, { error: 'Droits insuffisants' });
     const body = await readBody(req);
     const db = getDB();
     if (!isValidCommission(db, body.commission || null)) return send(res, 400, { error: 'Comité invalide' });
@@ -671,7 +704,7 @@ async function route(req, res) {
       : [];
     const lettre = {
       id: 'l' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
-      ref: (user.role === 'admin' && body.ref) ? clip(body.ref, 60) : nextRef(db),
+      ref: (isAdminLike(user) && body.ref) ? clip(body.ref, 60) : nextRef(db),
       numeroLettre: clip(body.numeroLettre, 60),
       direction: body.direction === 'sortant' ? 'sortant' : 'entrant',
       type: isValidType(body.type) ? body.type : 'courrier',
@@ -698,7 +731,7 @@ async function route(req, res) {
     db.letters.push(lettre);
     logActivity(db, user, 'letter.create', lettre.ref, { letterId: lettre.id, to: commission });
     await saveDB(db);
-    return send(res, 201, { item: publicLetter(lettre) });
+    return send(res, 201, { item: letterView(user, lettre) });
   }
 
   // Committee tracking events
@@ -717,7 +750,7 @@ async function route(req, res) {
     const canManage = holdsLetter(user, letter);
     if (!canManage) return send(res, 403, { error: NOT_IN_COMMITTEE });
     if (type !== 'note' && !letter.commission) return send(res, 400, { error: 'Aucun comité assigné' });
-    if (type === 'vu_comite' && !isUnread(letter)) return send(res, 200, { item: publicLetter(letter) });
+    if (type === 'vu_comite' && !isUnread(letter)) return send(res, 200, { item: letterView(user, letter) });
     const event = {
       id: 'h' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
       date: new Date().toISOString(),
@@ -732,7 +765,7 @@ async function route(req, res) {
     letter.updatedAt = new Date().toISOString();
     logActivity(db, user, 'letter.event', letter.ref, { letterId: letter.id, type });
     await saveDB(db);
-    return send(res, 200, { item: publicLetter(db.letters.find((l) => l.id === letter.id)) });
+    return send(res, 200, { item: letterView(user, db.letters.find((l) => l.id === letter.id)) });
   }
 
   // Attachments (scanned letter PDF): upload / stream / delete
@@ -740,7 +773,7 @@ async function route(req, res) {
   if (completedUploadMatch && method === 'POST') {
     const user = requireAuth(req, res);
     if (!user) return;
-    if (!['admin', 'agent'].includes(user.role)) return send(res, 403, { error: 'Droits insuffisants' });
+    if (!['admin', 'supervisor', 'agent'].includes(user.role)) return send(res, 403, { error: 'Droits insuffisants' });
     const db = getDB();
     const letterId = completedUploadMatch[1];
     const letter = db.letters.find((item) => item.id === letterId);
@@ -782,7 +815,7 @@ async function route(req, res) {
     if (method === 'POST') {
       const user = requireAuth(req, res);
       if (!user) return;
-      if (!['admin', 'agent'].includes(user.role)) return send(res, 403, { error: 'Droits insuffisants' });
+      if (!['admin', 'supervisor', 'agent'].includes(user.role)) return send(res, 403, { error: 'Droits insuffisants' });
       if (!canAttach(user, letter) && !canSeeLetter(user, letter)) return send(res, 404, { error: 'Lettre introuvable' });
       if (!canAttach(user, letter)) return send(res, 403, { error: NOT_IN_COMMITTEE });
       let body;
@@ -792,6 +825,7 @@ async function route(req, res) {
       const buf = Buffer.from(String(body.dataBase64), 'base64');
       if (!buf.length) return send(res, 400, { error: 'Fichier vide' });
       if (buf.length > 10 * 1024 * 1024) return send(res, 413, { error: 'Fichier trop volumineux (max 10 Mo)' });
+      if (!fileLooksValid(buf, path.extname(filename).toLowerCase())) return send(res, 400, { error: 'Format non pris en charge : PDF, JPG ou PNG uniquement' });
       const storedAs = letterId + '-' + Date.now().toString(36) + '-' + filename.replace(/[^.\w]/g, '_');
       const uploadedAt = new Date().toISOString();
       if (process.env.VERCEL) {
@@ -827,26 +861,29 @@ async function route(req, res) {
       if (!canSeeLetter(user, letter)) return send(res, 404, { error: 'Fichier non disponible' });
       const piece = (letter.pieces || []).find((p) => p.id === pieceId);
       if (!piece || !piece.storedAs) return send(res, 404, { error: 'Fichier non disponible' });
+      try { logActivity(db, user, 'letter.file.view', letter.ref, { letterId: letter.id, file: piece.nom }); await saveDB(db); } catch { /* logging the view must never stop the file from opening */ }
       if (process.env.VERCEL) {
         const { get } = await import('@vercel/blob');
         const blob = await get(piece.storedAs, { access: 'private' });
         if (!blob || blob.statusCode !== 200) return send(res, 404, { error: 'Fichier non disponible' });
         const ext = path.extname(piece.nom).toLowerCase();
         const mime = ext === '.pdf' ? 'application/pdf' : ext === '.png' ? 'image/png' : (ext === '.jpg' || ext === '.jpeg') ? 'image/jpeg' : 'application/octet-stream';
-        res.writeHead(200, { 'Content-Type': mime, 'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(piece.nom)}` });
+        res.writeHead(200, { ...FILE_RESPONSE_HEADERS, 'Content-Type': mime, 'Content-Disposition': fileDisposition(piece.nom) });
         const { Readable } = await import('node:stream');
         Readable.fromWeb(blob.stream).pipe(res);
         return;
       }
+      if (!storedNameOk(piece.storedAs)) return send(res, 404, { error: 'Fichier non disponible' });
       const filePath = path.join(UPLOAD_DIR, piece.storedAs);
       if (!fs.existsSync(filePath)) return send(res, 404, { error: 'Fichier non disponible' });
       const ext = path.extname(piece.storedAs).toLowerCase();
       const mime = ext === '.pdf' ? 'application/pdf' : ext === '.png' ? 'image/png' : (ext === '.jpg' || ext === '.jpeg') ? 'image/jpeg' : 'application/octet-stream';
       const data = fs.readFileSync(filePath);
       res.writeHead(200, {
+        ...FILE_RESPONSE_HEADERS,
         'Content-Type': mime,
         'Content-Length': data.length,
-        'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(piece.nom)}`,
+        'Content-Disposition': fileDisposition(piece.nom),
       });
       res.end(data);
       return;
@@ -855,7 +892,7 @@ async function route(req, res) {
     if (method === 'DELETE' && pieceId) {
       const user = requireAuth(req, res);
       if (!user) return;
-      if (user.role !== 'admin') return send(res, 403, { error: 'Droits insuffisants' });
+      if (!isAdminLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
       const idx = (letter.pieces || []).findIndex((p) => p.id === pieceId);
       if (idx < 0) return send(res, 404, { error: 'Fichier introuvable' });
       const [removed] = letter.pieces.splice(idx, 1);
@@ -874,6 +911,231 @@ async function route(req, res) {
     }
   }
 
+  // ---- Courriers (scanned files awaiting supervisor validation) ----
+  if (pathname === '/api/courriers' && (method === 'GET' || method === 'POST')) {
+    const user = requireAuth(req, res);
+    if (!user) return;
+    const db = getDB();
+    if (method === 'GET') {
+      const status = url.searchParams.get('status') || '';
+      let items = Array.isArray(db.courriers) ? db.courriers : [];
+      // non-admins see their own uploaded courriers; admin/supervisor see all
+      if (!isAdminLike(user)) {
+        items = items.filter((c) => c.uploadedBy === user.id);
+      }
+      if (status) items = items.filter((c) => c.status === status);
+      items = [...items].sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
+      return send(res, 200, { items });
+    }
+    // POST: upload a scanned courrier (admin / supervisor only)
+    if (!isAdminLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
+    let body;
+    try { body = await readBody(req, 14); } catch (e) { return send(res, 413, { error: 'Fichier trop volumineux (max ~10 Mo)' }); }
+    const filename = sanitizeFilename(body.filename);
+    if (!/^[A-Za-z0-9+/=\s]+$/.test(String(body.dataBase64 || ''))) return send(res, 400, { error: 'Données base64 invalides' });
+    const buf = Buffer.from(String(body.dataBase64), 'base64');
+    if (!buf.length) return send(res, 400, { error: 'Fichier vide' });
+    if (buf.length > 10 * 1024 * 1024) return send(res, 413, { error: 'Fichier trop volumineux (max 10 Mo)' });
+    const storedAs = 'cr-' + Date.now().toString(36) + '-' + filename.replace(/[^.\w]/g, '_');
+    const uploadedAt = new Date().toISOString();
+    if (process.env.VERCEL) {
+      const { put } = await import('@vercel/blob');
+      const blob = await put(storedAs, buf, { access: 'private', contentType: filename.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream', addRandomSuffix: true });
+      const courrier = { id: 'cr' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), nom: filename, taille: buf.length, storedAs: blob.pathname, uploadedBy: user.id, uploadedByName: user.name, uploadedAt, status: 'a_valider', note: '', rejectionReason: '', validatedBy: null, validatedAt: null, letterId: null };
+      db.courriers.push(courrier);
+      logActivity(db, user, 'courrier.upload', filename, { courrierId: courrier.id });
+      await saveDB(db);
+      return send(res, 201, { item: courrier });
+    }
+    fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+    fs.writeFileSync(path.join(UPLOAD_DIR, storedAs), buf);
+    const courrier = { id: 'cr' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), nom: filename, taille: buf.length, storedAs, uploadedBy: user.id, uploadedByName: user.name, uploadedAt, status: 'a_valider', note: '', rejectionReason: '', validatedBy: null, validatedAt: null, letterId: null };
+    db.courriers.push(courrier);
+    logActivity(db, user, 'courrier.upload', filename, { courrierId: courrier.id });
+    await saveDB(db);
+    return send(res, 201, { item: courrier });
+  }
+
+  if (pathname === '/api/courriers/complete' && method === 'POST') {
+    const user = requireAuth(req, res);
+    if (!user) return;
+    if (!isAdminLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
+    let body;
+    try { body = await readBody(req, 1); } catch { return send(res, 400, { error: 'Requête invalide' }); }
+    const pathnameForBlob = String(body.pathname || '');
+    const filename = sanitizeFilename(body.filename);
+    const ext = path.extname(filename).toLowerCase();
+    if (!pathnameForBlob.startsWith('cr-') || !/^[\w.-]+$/.test(pathnameForBlob) || pathnameForBlob.includes('..') || path.extname(pathnameForBlob).toLowerCase() !== ext) return send(res, 400, { error: 'Chemin de fichier invalide' });
+    try {
+      const { head } = await import('@vercel/blob');
+      const blob = await head(pathnameForBlob, { access: 'private' });
+      if (blob.size > 25 * 1024 * 1024) return send(res, 413, { error: 'Fichier trop volumineux (25 Mo maximum)' });
+      const db = getDB();
+      let courrier = db.courriers.find((c) => c.storedAs === pathnameForBlob);
+      if (!courrier) {
+        courrier = { id: 'cr' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), nom: filename, taille: blob.size, storedAs: pathnameForBlob, uploadedBy: user.id, uploadedByName: user.name, uploadedAt: new Date().toISOString(), status: 'a_valider', note: '', rejectionReason: '', validatedBy: null, validatedAt: null, letterId: null };
+        db.courriers.push(courrier);
+        logActivity(db, user, 'courrier.upload', filename, { courrierId: courrier.id });
+        await saveDB(db);
+      }
+      return send(res, 201, { item: courrier });
+    } catch (error) {
+      return send(res, 400, { error: error.message || 'Fichier téléversé, mais enregistrement impossible' });
+    }
+  }
+
+  // ---- "À envoyer": validated scans waiting for the admin to pick the comité ----
+  if (pathname === '/api/to-send' && method === 'GET') {
+    const user = requireAuth(req, res);
+    if (!user) return;
+    if (!isAdminLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
+    const db = getDB();
+    const mine = db.letters.filter((l) => l.fromCourrier);
+    const view = (l) => {
+      const c = (db.courriers || []).find((x) => x.id === l.fromCourrier);
+      return { id: l.id, ref: l.ref, objet: l.objet, priorite: l.priorite, commission: l.commission, validatedAt: c?.validatedAt || l.createdAt, validatedBy: c ? (db.users.find((u) => u.id === c.validatedBy)?.name || '') : '', uploadedByName: c?.uploadedByName || '', fileName: c?.nom || '', pieceId: (l.pieces || [])[0]?.id || null, sentAt: (l.commissionHisto || []).find((h) => h.type === 'assigne')?.date || null };
+    };
+    const waiting = mine.filter((l) => !l.commission).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)).map(view);
+    const sent = mine.filter((l) => l.commission).sort((a, b) => ((b.updatedAt || '') > (a.updatedAt || '') ? 1 : -1)).slice(0, 15).map(view);
+    return send(res, 200, { waiting, sent });
+  }
+
+  const courrierMatch = /^\/api\/courriers\/([A-Za-z0-9_-]+)$/.exec(pathname);
+  if (courrierMatch && (method === 'PATCH' || method === 'DELETE')) {
+    const user = requireAuth(req, res);
+    if (!user) return;
+    if (!isAdminLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
+    const db = getDB();
+    const courrier = db.courriers.find((c) => c.id === courrierMatch[1]);
+    if (!courrier) return send(res, 404, { error: 'Courrier introuvable' });
+
+    // DELETE: remove a courrier (e.g. a rejected scan) — admin/supervisor only
+    if (method === 'DELETE') {
+      const idx = db.courriers.findIndex((c) => c.id === courrier.id);
+      if (idx >= 0) db.courriers.splice(idx, 1);
+      logActivity(db, user, courrier.status === 'rejete' ? 'courrier.reject_delete' : 'courrier.delete', courrier.nom, { courrierId: courrier.id, by: user.name });
+      await saveDB(db);
+      return send(res, 200, { ok: true });
+    }
+
+    const body = await readBody(req);
+    const action = String(body.action || '');
+    if ((action === 'valide' || action === 'rejete') && courrier.status !== 'a_valider') {
+      return send(res, 409, { error: courrier.status === 'valide' ? 'Ce courrier a déjà été validé' : 'Ce courrier a déjà été traité' });
+    }
+    if (action === 'valide') {
+      // auto-create a letter (status recu) with the PDF attached
+      const letter = {
+        id: 'l' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+        ref: nextRef(db),
+        numeroLettre: courrier.nom,
+        direction: 'entrant',
+        type: 'courrier',
+        categorie: 'administration',
+        objet: courrier.nom.replace(/\.pdf$/i, ''),
+        personneConcernee: '',
+        resume: clip(body.note, 5000),
+        priorite: 'normale',
+        statut: 'recu',
+        commission: null,
+        commissionHisto: [],
+        expediteur: { nom: courrier.uploadedByName || '', fonction: '', service: '' },
+        destinataire: { nom: 'Bureau ordre', fonction: '', service: '' },
+        dateEmission: courrier.uploadedAt,
+        dateReception: new Date().toISOString(),
+        pieces: [{ id: 'p' + Date.now().toString(36), nom: courrier.nom, taille: courrier.taille, storedAs: courrier.storedAs, uploadedAt: courrier.uploadedAt }],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        createdBy: user.id,
+      };
+      letter.fromCourrier = courrier.id;
+      db.letters.push(letter);
+      courrier.status = 'valide';
+      courrier.validatedBy = user.id;
+      courrier.validatedAt = new Date().toISOString();
+      courrier.note = clip(body.note, 5000);
+      courrier.letterId = letter.id;
+      logActivity(db, user, 'courrier.validate', courrier.nom, { courrierId: courrier.id, letterRef: letter.ref, by: user.name });
+      await saveDB(db);
+      return send(res, 200, { item: courrier, letter: letterView(user, letter) });
+    }
+    if (action === 'rejete') {
+      courrier.status = 'rejete';
+      courrier.validatedBy = user.id;
+      courrier.validatedAt = new Date().toISOString();
+      courrier.rejectionReason = clip(body.rejectionReason || body.note, 500);
+      courrier.note = clip(body.note, 5000);
+      // notify the sender
+      db.notifications.push({
+        id: 'n' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+        userId: courrier.uploadedBy,
+        type: 'courrier_rejete',
+        message: `Courrier "${courrier.nom}" rejeté: ${courrier.rejectionReason || 'non conforme'}`,
+        courrierId: courrier.id,
+        read: false,
+        createdAt: new Date().toISOString(),
+      });
+      logActivity(db, user, 'courrier.reject', courrier.nom, { courrierId: courrier.id, reason: courrier.rejectionReason || '', sender: courrier.uploadedByName || '', by: user.name });
+      await saveDB(db);
+      return send(res, 200, { item: courrier });
+    }
+    return send(res, 400, { error: 'Action invalide' });
+  }
+
+  const courrierFileMatch = /^\/api\/courriers\/([A-Za-z0-9_-]+)\/file$/.exec(pathname);
+  if (courrierFileMatch && method === 'GET') {
+    const user = requireAuth(req, res);
+    if (!user) return;
+    const db = getDB();
+    const courrier = db.courriers.find((c) => c.id === courrierFileMatch[1]);
+    if (!courrier || !courrier.storedAs) return send(res, 404, { error: 'Fichier non disponible' });
+    // access: admin/supervisor or uploader
+    if (!isAdminLike(user) && courrier.uploadedBy !== user.id) return send(res, 404, { error: 'Fichier non disponible' });
+    try { logActivity(db, user, 'courrier.file.view', courrier.nom, { courrierId: courrier.id }); await saveDB(db); } catch { /* logging the view must never stop the file from opening */ }
+    if (process.env.VERCEL) {
+      const { get } = await import('@vercel/blob');
+      const blob = await get(courrier.storedAs, { access: 'private' });
+      if (!blob || blob.statusCode !== 200) return send(res, 404, { error: 'Fichier non disponible' });
+      const ext = path.extname(courrier.nom).toLowerCase();
+      const mime = ext === '.pdf' ? 'application/pdf' : ext === '.png' ? 'image/png' : (ext === '.jpg' || ext === '.jpeg') ? 'image/jpeg' : 'application/octet-stream';
+      res.writeHead(200, { ...FILE_RESPONSE_HEADERS, 'Content-Type': mime, 'Content-Disposition': fileDisposition(courrier.nom) });
+      const { Readable } = await import('node:stream');
+      Readable.fromWeb(blob.stream).pipe(res);
+      return;
+    }
+    if (!storedNameOk(courrier.storedAs)) return send(res, 404, { error: 'Fichier non disponible' });
+    const filePath = path.join(UPLOAD_DIR, courrier.storedAs);
+    if (!fs.existsSync(filePath)) return send(res, 404, { error: 'Fichier non disponible' });
+    const ext = path.extname(courrier.storedAs).toLowerCase();
+    const mime = ext === '.pdf' ? 'application/pdf' : ext === '.png' ? 'image/png' : (ext === '.jpg' || ext === '.jpeg') ? 'image/jpeg' : 'application/octet-stream';
+    const data = fs.readFileSync(filePath);
+    res.writeHead(200, { ...FILE_RESPONSE_HEADERS, 'Content-Type': mime, 'Content-Length': data.length, 'Content-Disposition': fileDisposition(courrier.nom) });
+    res.end(data);
+    return;
+  }
+
+  // ---- Courrier notifications (rejections) ----
+  if (pathname === '/api/courrier-notifications' && method === 'GET') {
+    const user = requireAuth(req, res);
+    if (!user) return;
+    const db = getDB();
+    const items = (db.notifications || []).filter((n) => n.userId === user.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    return send(res, 200, { items, unread: items.filter((n) => !n.read).length });
+  }
+
+  const notifMatch = /^\/api\/courrier-notifications\/([A-Za-z0-9_-]+)$/.exec(pathname);
+  if (notifMatch && method === 'PATCH') {
+    const user = requireAuth(req, res);
+    if (!user) return;
+    const db = getDB();
+    const n = db.notifications.find((x) => x.id === notifMatch[1] && x.userId === user.id);
+    if (!n) return send(res, 404, { error: 'Notification introuvable' });
+    const body = await readBody(req);
+    if (body.read !== undefined) n.read = !!body.read;
+    await saveDB(db);
+    return send(res, 200, { item: n });
+  }
+
   // Static client
   if (method === 'GET' && !pathname.startsWith('/api')) {
     let filePath = path.join(CLIENT_DIST, pathname === '/' ? 'index.html' : pathname);
@@ -883,7 +1145,7 @@ async function route(req, res) {
     const ext = path.extname(filePath);
     const contentType = MIME[ext] || 'application/octet-stream';
     const data = fs.readFileSync(filePath);
-    res.writeHead(200, { 'Content-Type': contentType });
+    res.writeHead(200, { ...SECURITY_HEADERS, 'Content-Type': contentType, 'Cache-Control': ext === '.html' || path.basename(filePath) === 'sw.js' ? 'no-cache' : 'public, max-age=3600' });
     res.end(data);
     return;
   }

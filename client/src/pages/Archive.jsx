@@ -1,11 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api';
+import { useAuth } from '../auth';
 import { useLanguage } from '../i18n';
 import { fmtDate } from '../utils';
 
 export default function Archive() {
   const { t } = useLanguage();
+  const { user } = useAuth();
+  // Only the bureau d'ordre (admin + supervisor) may see the tracking history
+  // and the "seen by comité" tick.
+  const canSeeTracking = user?.role === 'admin' || user?.role === 'supervisor';
   const navigate = useNavigate();
   const location = useLocation();
   const { committeeId } = useParams();
@@ -126,18 +131,19 @@ export default function Archive() {
           </div>}
           {loading ? <div className="card-pad">{t('common.loading')}</div> : (
             <div className="table-wrap"><table className="table archive-table">
-              <thead><tr><th>{t('letters.numero')}</th><th>{t('letters.objet')}</th>{!committeeId && <th>Comité</th>}<th>{t('letters.direction')}</th><th>{t('letters.statut')}</th><th>{t('letters.priorite')}</th><th>{t('letters.date')}</th></tr></thead>
+              <thead><tr><th>{t('letters.numero')}</th><th>{t('letters.objet')}</th>{!committeeId && <th>Comité</th>}{canSeeTracking && <th>Vu</th>}<th>{t('letters.direction')}</th><th>{t('letters.statut')}</th><th>{t('letters.priorite')}</th><th>{t('letters.date')}</th></tr></thead>
               <tbody>{items.map((letter) => (
                 <tr key={letter.id} className={'row-link' + (letter.unread ? ' row-unread' : '')} onClick={() => navigate('/lettres/' + letter.id)}>
                   <td className="mono">{letter.numeroLettre || '—'}</td>
                   <td><div className="letter-subject">{letter.unread && <span className="badge-new">Nouveau</span>}{letter.objet}</div>{letter.personneConcernee && <div className="letter-subline">{letter.personneConcernee}</div>}</td>
                   {!committeeId && <td><span className="committee-pill">{committees.find((committee) => committee.id === letter.commission)?.nom || 'Sans comité'}</span></td>}
+                  {canSeeTracking && <td><span className={'seen-tick' + (letter.commission ? (letter.comiteVu ? ' seen' : ' unseen') : ' none')} title={letter.commission ? (letter.comiteVu ? 'Le comité a ouvert ce courrier' : 'Le comité n’a pas encore ouvert ce courrier') : 'Aucun comité assigné'}>{letter.commission ? (letter.comiteVu ? '✓ Vu' : '✓ Pas vu') : '—'}</span></td>}
                   <td><span className={'direction-pill direction-' + (letter.direction || 'entrant')}><i />{t('direction.' + (letter.direction || 'entrant'))}</span></td>
-                  <td><span className={'badge statut-' + letter.statut}>{t('status.' + (letter.statut || 'recu'))}</span>{(letter.commissionHisto || []).some((h) => h.type === 'transfert') && <span className="badge badge-transfert" style={{ marginLeft: 6 }}>{t('badge.transferred')}</span>}</td>
+                  <td><span className={'badge statut-' + letter.statut}>{t('status.' + (letter.statut || 'recu'))}</span>{(letter.transferred || (letter.commissionHisto || []).some((h) => h.type === 'transfert')) && <span className="badge badge-transfert" style={{ marginLeft: 6 }}>{t('badge.transferred')}</span>}</td>
                   <td><span className={'priority-pill priority-' + (letter.priorite || 'normale')}>{t('priorite.' + (letter.priorite || 'normale'))}</span></td>
                   <td className="date-cell">{fmtDate(letter.dateReception || letter.dateEmission)}</td>
                 </tr>
-              ))}{items.length === 0 && <tr><td colSpan={committeeId ? 6 : 7} className="empty-cell">{t('letters.empty')}</td></tr>}</tbody>
+              ))}{items.length === 0 && <tr><td colSpan={7 + (canSeeTracking ? 1 : 0)} className="empty-cell">{t('letters.empty')}</td></tr>}</tbody>
             </table></div>
           )}
         </div>
