@@ -76,6 +76,26 @@ export const api = {
   uploadCourrier: (filename, dataBase64) => req('/api/courriers', { method: 'POST', body: { filename, dataBase64 } }),
   validateCourrier: (id, note = '') => req(`/api/courriers/${id}`, { method: 'PATCH', body: { action: 'valide', note } }),
   rejectCourrier: (id, reason) => req(`/api/courriers/${id}`, { method: 'PATCH', body: { action: 'rejete', rejectionReason: reason } }),
+  // Small scans travel in the request; bigger ones go straight to storage (Vercel limits request bodies to ~4.5 MB).
+  uploadCourrierFile: async (file) => {
+    const toBase64 = () => new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(String(r.result).split(',')[1] || ''); r.onerror = reject; r.readAsDataURL(file); });
+    if (file.size <= 3 * 1024 * 1024) return api.uploadCourrier(file.name, await toBase64());
+    try {
+      const safeName = file.name.replace(/[^\w.\-\u00C0-\u017F]/g, '_');
+      const blob = await upload(`cr-${Date.now().toString(36)}-${safeName}`, file, {
+        access: 'private', handleUploadUrl: '/api/blob-upload',
+        clientPayload: JSON.stringify({ courrier: true, filename: file.name }),
+        headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {},
+        multipart: file.size > 5 * 1024 * 1024,
+      });
+      return await req('/api/courriers/complete', { method: 'POST', body: { filename: file.name, pathname: blob.pathname } });
+    } catch (error) {
+      // Local development has no cloud storage: fall back to the normal upload when the file is small enough.
+      if (file.size <= 9 * 1024 * 1024) return api.uploadCourrier(file.name, await toBase64());
+      throw error;
+    }
+  },
+  toSend: () => req('/api/to-send'),
   deleteCourrier: (id) => req(`/api/courriers/${id}`, { method: 'DELETE' }),
   openCourrierFile: async (id) => {
     const res = await fetch(`/api/courriers/${id}/file`, { headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {} });

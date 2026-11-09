@@ -776,3 +776,17 @@ input[type='date']:hover, input[type='datetime-local']:hover, input[type='time']
 :root:not([data-theme='light']) .priority-pill { background: rgba(255,255,255,.08); color: #e4dadd; }
 :root:not([data-theme='light']) .priority-urgente { background: rgba(230,0,27,.22); color: #ffd7dc; }
 :root:not([data-theme='light']) .priority-confidentielle { background: rgba(217,157,70,.22); color: #f5d9a6; }
+
+/* À envoyer */
+.send-card { padding: 16px 18px; margin-bottom: 14px; }
+.send-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.send-file { font-weight: 700; font-size: 16px; word-break: break-word; }
+.send-form { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+.send-form .send-wide { flex: 1 1 100%; }
+.send-form .filter-field { flex: 1 1 200px; }
+.send-form .filter-field input, .send-form .filter-field select { width: 100%; }
+.sent-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.sent-list li { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.link-button { background: none; border: 0; padding: 0; color: inherit; font: inherit; font-weight: 600; text-decoration: underline; cursor: pointer; text-align: left; }
+.nav-badge { margin-left: 6px; min-width: 18px; padding: 1px 6px; border-radius: 999px; background: var(--primary, #e6001b); color: #fff; font-size: 10px; font-weight: 700; display: inline-block; text-align: center; }
+@media (max-width: 600px) { .nav-badge { position: absolute; top: 2px; right: 22%; margin: 0; padding: 0 5px; } .nav-link { position: relative; } }

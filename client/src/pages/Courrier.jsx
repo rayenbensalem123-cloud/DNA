@@ -37,15 +37,7 @@ export default function Courrier() {
     setError('');
     setNotice('');
     try {
-      for (const file of files) {
-        const base64 = await new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        });
-        await api.uploadCourrier(file.name, base64);
-      }
+      for (const file of files) await api.uploadCourrierFile(file);
       setNotice(files.length + ' courrier(s) téléversé(s).');
       await load();
     } catch (e) {

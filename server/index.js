@@ -337,6 +337,14 @@ async function route(req, res) {
           if (!user || !['admin', 'supervisor', 'agent'].includes(user.role)) throw new Error('Droits insuffisants pour ajouter un fichier');
           let details;
           try { details = JSON.parse(clientPayload || '{}'); } catch { throw new Error('Informations du fichier invalides'); }
+          if (details.courrier) {
+            // Scanned courriers: admin / supervisor only.
+            if (!isAdminLike(user)) throw new Error('Droits insuffisants pour ajouter un fichier');
+            const crExt = path.extname(sanitizeFilename(details.filename)).toLowerCase();
+            if (!['.pdf', '.jpg', '.jpeg', '.png'].includes(crExt)) throw new Error('Format non pris en charge pour un gros fichier (PDF, JPG ou PNG)');
+            if (!pathnameForBlob.startsWith('cr-') || path.extname(pathnameForBlob).toLowerCase() !== crExt) throw new Error('Chemin de fichier invalide');
+            return { allowedContentTypes: ['application/pdf', 'image/jpeg', 'image/png'], maximumSizeInBytes: 25 * 1024 * 1024, addRandomSuffix: true };
+          }
           const letterId = String(details.letterId || '');
           const filename = sanitizeFilename(details.filename);
           const extension = path.extname(filename).toLowerCase();
@@ -741,8 +749,7 @@ async function route(req, res) {
       if (!canSeeLetter(user, letter)) return send(res, 404, { error: 'Fichier non disponible' });
       const piece = (letter.pieces || []).find((p) => p.id === pieceId);
       if (!piece || !piece.storedAs) return send(res, 404, { error: 'Fichier non disponible' });
-      logActivity(db, user, 'letter.file.view', letter.ref, { letterId: letter.id, file: piece.nom });
-      await saveDB(db);
+      try { logActivity(db, user, 'letter.file.view', letter.ref, { letterId: letter.id, file: piece.nom }); await saveDB(db); } catch { /* logging the view must never stop the file from opening */ }
       if (process.env.VERCEL) {
         const { get } = await import('@vercel/blob');
         const blob = await get(piece.storedAs, { access: 'private' });
@@ -806,8 +813,8 @@ async function route(req, res) {
       items = [...items].sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
       return send(res, 200, { items });
     }
-    // POST: upload a scanned courrier (admin/agent/supervisor)
-    if (!isAdminLike(user) && user.role !== 'agent') return send(res, 403, { error: 'Droits insuffisants' });
+    // POST: upload a scanned courrier (admin / supervisor only)
+    if (!isAdminLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
     let body;
     try { body = await readBody(req, 14); } catch (e) { return send(res, 413, { error: 'Fichier trop volumineux (max ~10 Mo)' }); }
     const filename = sanitizeFilename(body.filename);
@@ -835,6 +842,50 @@ async function route(req, res) {
     return send(res, 201, { item: courrier });
   }
 
+  if (pathname === '/api/courriers/complete' && method === 'POST') {
+    const user = requireAuth(req, res);
+    if (!user) return;
+    if (!isAdminLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
+    let body;
+    try { body = await readBody(req, 1); } catch { return send(res, 400, { error: 'Requête invalide' }); }
+    const pathnameForBlob = String(body.pathname || '');
+    const filename = sanitizeFilename(body.filename);
+    const ext = path.extname(filename).toLowerCase();
+    if (!pathnameForBlob.startsWith('cr-') || !/^[\w.-]+$/.test(pathnameForBlob) || pathnameForBlob.includes('..') || path.extname(pathnameForBlob).toLowerCase() !== ext) return send(res, 400, { error: 'Chemin de fichier invalide' });
+    try {
+      const { head } = await import('@vercel/blob');
+      const blob = await head(pathnameForBlob, { access: 'private' });
+      if (blob.size > 25 * 1024 * 1024) return send(res, 413, { error: 'Fichier trop volumineux (25 Mo maximum)' });
+      const db = getDB();
+      let courrier = db.courriers.find((c) => c.storedAs === pathnameForBlob);
+      if (!courrier) {
+        courrier = { id: 'cr' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), nom: filename, taille: blob.size, storedAs: pathnameForBlob, uploadedBy: user.id, uploadedByName: user.name, uploadedAt: new Date().toISOString(), status: 'a_valider', note: '', rejectionReason: '', validatedBy: null, validatedAt: null, letterId: null };
+        db.courriers.push(courrier);
+        logActivity(db, user, 'courrier.upload', filename, { courrierId: courrier.id });
+        await saveDB(db);
+      }
+      return send(res, 201, { item: courrier });
+    } catch (error) {
+      return send(res, 400, { error: error.message || 'Fichier téléversé, mais enregistrement impossible' });
+    }
+  }
+
+  // ---- "À envoyer": validated scans waiting for the admin to pick the comité ----
+  if (pathname === '/api/to-send' && method === 'GET') {
+    const user = requireAuth(req, res);
+    if (!user) return;
+    if (!isAdminLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
+    const db = getDB();
+    const mine = db.letters.filter((l) => l.fromCourrier);
+    const view = (l) => {
+      const c = (db.courriers || []).find((x) => x.id === l.fromCourrier);
+      return { id: l.id, ref: l.ref, objet: l.objet, priorite: l.priorite, commission: l.commission, validatedAt: c?.validatedAt || l.createdAt, validatedBy: c ? (db.users.find((u) => u.id === c.validatedBy)?.name || '') : '', uploadedByName: c?.uploadedByName || '', fileName: c?.nom || '', pieceId: (l.pieces || [])[0]?.id || null, sentAt: (l.commissionHisto || []).find((h) => h.type === 'assigne')?.date || null };
+    };
+    const waiting = mine.filter((l) => !l.commission).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)).map(view);
+    const sent = mine.filter((l) => l.commission).sort((a, b) => ((b.updatedAt || '') > (a.updatedAt || '') ? 1 : -1)).slice(0, 15).map(view);
+    return send(res, 200, { waiting, sent });
+  }
+
   const courrierMatch = /^\/api\/courriers\/([A-Za-z0-9_-]+)$/.exec(pathname);
   if (courrierMatch && (method === 'PATCH' || method === 'DELETE')) {
     const user = requireAuth(req, res);
@@ -855,6 +906,9 @@ async function route(req, res) {
 
     const body = await readBody(req);
     const action = String(body.action || '');
+    if ((action === 'valide' || action === 'rejete') && courrier.status !== 'a_valider') {
+      return send(res, 409, { error: courrier.status === 'valide' ? 'Ce courrier a déjà été validé' : 'Ce courrier a déjà été traité' });
+    }
     if (action === 'valide') {
       // auto-create a letter (status recu) with the PDF attached
       const letter = {
@@ -880,6 +934,7 @@ async function route(req, res) {
         updatedAt: new Date().toISOString(),
         createdBy: user.id,
       };
+      letter.fromCourrier = courrier.id;
       db.letters.push(letter);
       courrier.status = 'valide';
       courrier.validatedBy = user.id;
@@ -922,8 +977,7 @@ async function route(req, res) {
     if (!courrier || !courrier.storedAs) return send(res, 404, { error: 'Fichier non disponible' });
     // access: admin/supervisor or uploader
     if (!isAdminLike(user) && courrier.uploadedBy !== user.id) return send(res, 404, { error: 'Fichier non disponible' });
-    logActivity(db, user, 'courrier.file.view', courrier.nom, { courrierId: courrier.id });
-    await saveDB(db);
+    try { logActivity(db, user, 'courrier.file.view', courrier.nom, { courrierId: courrier.id }); await saveDB(db); } catch { /* logging the view must never stop the file from opening */ }
     if (process.env.VERCEL) {
       const { get } = await import('@vercel/blob');
       const blob = await get(courrier.storedAs, { access: 'private' });

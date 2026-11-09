@@ -14,6 +14,7 @@ import Accounts from './pages/Accounts';
 import Activity from './pages/Activity';
 import Courrier from './pages/Courrier';
 import CourriersRejetes from './pages/CourriersRejetes';
+import ToSend from './pages/ToSend';
 import Splash from './components/Splash';
 
 const BOOT_MIN_MS = 1500;
@@ -91,6 +92,7 @@ export default function App() {
                 <Route path="comptes" element={<AdminOnly><ErrorBoundary label="accounts"><Accounts /></ErrorBoundary></AdminOnly>} />
                 <Route path="activite" element={<AdminOnly><ErrorBoundary label="activity"><Activity /></ErrorBoundary></AdminOnly>} />
                 <Route path="courrier" element={<ErrorBoundary label="courrier"><Courrier /></ErrorBoundary>} />
+                <Route path="a-envoyer" element={<AdminOnly><ErrorBoundary label="tosend"><ToSend /></ErrorBoundary></AdminOnly>} />
                 <Route path="courriers-rejetes" element={<ErrorBoundary label="rejetes"><CourriersRejetes /></ErrorBoundary>} />
                 <Route path="lettres" element={<Navigate to="/archive" replace />} />
                 <Route path="lettres/nouveau" element={<Navigate to="/?newLetter=1" replace />} />
