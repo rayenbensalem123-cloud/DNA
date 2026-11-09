@@ -12,6 +12,11 @@ export default function CourriersRejetes() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [confirmId, setConfirmId] = useState(null);
+  const [busy, setBusy] = useState(false);
+  // Only the bureau d'ordre (admin + supervisor) may delete rejected courriers.
+  const canDelete = user?.role === 'admin' || user?.role === 'supervisor';
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -28,6 +33,22 @@ export default function CourriersRejetes() {
 
   useEffect(() => { load(); }, [load]);
 
+  const remove = async (courrier) => {
+    setBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      await api.deleteCourrier(courrier.id);
+      setNotice(`Courrier "${courrier.nom}" supprimé.`);
+      setConfirmId(null);
+      await load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="page">
       <div className="page-header">
@@ -42,6 +63,7 @@ export default function CourriersRejetes() {
       </div>
 
       {error && <div className="form-error" role="alert">{error}</div>}
+      {notice && <div className="account-notice" role="status">{notice}</div>}
 
       {loading ? <div className="card-pad">{t('common.loading')}</div> : (
         <div className="card">
@@ -67,7 +89,12 @@ export default function CourriersRejetes() {
                     <td>{c.validatedBy ? 'Superviseur' : '—'}</td>
                     <td>{c.rejectionReason || '—'}</td>
                     <td className="date-cell">{fmtDate(c.validatedAt || c.uploadedAt)}</td>
-                    <td><button className="btn btn-ghost" onClick={() => api.openCourrierFile(c.id)}>Voir</button></td>
+                    <td>
+                      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                        <button className="btn btn-ghost" onClick={() => api.openCourrierFile(c.id)}>Voir</button>
+                        {canDelete && <button className="btn btn-danger" onClick={() => setConfirmId(c.id)}>Supprimer</button>}
+                      </div>
+                    </td>
                   </tr>
                 ))}
                 {items.length === 0 && (
@@ -78,6 +105,26 @@ export default function CourriersRejetes() {
           </div>
         </div>
       )}
+
+      {confirmId && (() => {
+        const courrier = items.find((c) => c.id === confirmId);
+        if (!courrier) return null;
+        return (
+          <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setConfirmId(null); }}>
+            <section className="modal" role="dialog" aria-modal="true">
+              <header className="modal-head"><h2>Supprimer le courrier</h2><button type="button" className="modal-close" onClick={() => setConfirmId(null)} aria-label="Fermer">×</button></header>
+              <div className="modal-body">
+                <p>Supprimer définitivement <strong>{courrier.nom}</strong> (rejeté le {fmtDate(courrier.validatedAt || courrier.uploadedAt)}) ?</p>
+                <p className="muted">Cette action est irréversible. L'expéditeur ({courrier.uploadedByName || '—'}) ne verra plus ce courrier.</p>
+              </div>
+              <div className="modal-foot">
+                <button className="btn btn-secondary" onClick={() => setConfirmId(null)}>Annuler</button>
+                <button className="btn btn-danger" onClick={() => remove(courrier)} disabled={busy}>{busy ? 'Suppression…' : 'Supprimer'}</button>
+              </div>
+            </section>
+          </div>
+        );
+      })()}
     </div>
   );
 }

@@ -76,6 +76,7 @@ export const api = {
   uploadCourrier: (filename, dataBase64) => req('/api/courriers', { method: 'POST', body: { filename, dataBase64 } }),
   validateCourrier: (id, note = '') => req(`/api/courriers/${id}`, { method: 'PATCH', body: { action: 'valide', note } }),
   rejectCourrier: (id, reason) => req(`/api/courriers/${id}`, { method: 'PATCH', body: { action: 'rejete', rejectionReason: reason } }),
+  deleteCourrier: (id) => req(`/api/courriers/${id}`, { method: 'DELETE' }),
   openCourrierFile: async (id) => {
     const res = await fetch(`/api/courriers/${id}/file`, { headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {} });
     if (!res.ok) throw new Error('Fichier non disponible');

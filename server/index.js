@@ -741,6 +741,8 @@ async function route(req, res) {
       if (!canSeeLetter(user, letter)) return send(res, 404, { error: 'Fichier non disponible' });
       const piece = (letter.pieces || []).find((p) => p.id === pieceId);
       if (!piece || !piece.storedAs) return send(res, 404, { error: 'Fichier non disponible' });
+      logActivity(db, user, 'letter.file.view', letter.ref, { letterId: letter.id, file: piece.nom });
+      await saveDB(db);
       if (process.env.VERCEL) {
         const { get } = await import('@vercel/blob');
         const blob = await get(piece.storedAs, { access: 'private' });
@@ -820,6 +822,7 @@ async function route(req, res) {
       const blob = await put(storedAs, buf, { access: 'private', contentType: filename.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream', addRandomSuffix: true });
       const courrier = { id: 'cr' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), nom: filename, taille: buf.length, storedAs: blob.pathname, uploadedBy: user.id, uploadedByName: user.name, uploadedAt, status: 'a_valider', note: '', rejectionReason: '', validatedBy: null, validatedAt: null, letterId: null };
       db.courriers.push(courrier);
+      logActivity(db, user, 'courrier.upload', filename, { courrierId: courrier.id });
       await saveDB(db);
       return send(res, 201, { item: courrier });
     }
@@ -827,18 +830,29 @@ async function route(req, res) {
     fs.writeFileSync(path.join(UPLOAD_DIR, storedAs), buf);
     const courrier = { id: 'cr' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), nom: filename, taille: buf.length, storedAs, uploadedBy: user.id, uploadedByName: user.name, uploadedAt, status: 'a_valider', note: '', rejectionReason: '', validatedBy: null, validatedAt: null, letterId: null };
     db.courriers.push(courrier);
+    logActivity(db, user, 'courrier.upload', filename, { courrierId: courrier.id });
     await saveDB(db);
     return send(res, 201, { item: courrier });
   }
 
   const courrierMatch = /^\/api\/courriers\/([A-Za-z0-9_-]+)$/.exec(pathname);
-  if (courrierMatch && method === 'PATCH') {
+  if (courrierMatch && (method === 'PATCH' || method === 'DELETE')) {
     const user = requireAuth(req, res);
     if (!user) return;
     if (!isAdminLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
     const db = getDB();
     const courrier = db.courriers.find((c) => c.id === courrierMatch[1]);
     if (!courrier) return send(res, 404, { error: 'Courrier introuvable' });
+
+    // DELETE: remove a courrier (e.g. a rejected scan) — admin/supervisor only
+    if (method === 'DELETE') {
+      const idx = db.courriers.findIndex((c) => c.id === courrier.id);
+      if (idx >= 0) db.courriers.splice(idx, 1);
+      logActivity(db, user, courrier.status === 'rejete' ? 'courrier.reject_delete' : 'courrier.delete', courrier.nom, { courrierId: courrier.id, by: user.name });
+      await saveDB(db);
+      return send(res, 200, { ok: true });
+    }
+
     const body = await readBody(req);
     const action = String(body.action || '');
     if (action === 'valide') {
@@ -872,6 +886,7 @@ async function route(req, res) {
       courrier.validatedAt = new Date().toISOString();
       courrier.note = String(body.note || '');
       courrier.letterId = letter.id;
+      logActivity(db, user, 'courrier.validate', courrier.nom, { courrierId: courrier.id, letterRef: letter.ref, by: user.name });
       await saveDB(db);
       return send(res, 200, { item: courrier, letter: letterView(user, letter) });
     }
@@ -891,6 +906,7 @@ async function route(req, res) {
         read: false,
         createdAt: new Date().toISOString(),
       });
+      logActivity(db, user, 'courrier.reject', courrier.nom, { courrierId: courrier.id, reason: courrier.rejectionReason || '', sender: courrier.uploadedByName || '', by: user.name });
       await saveDB(db);
       return send(res, 200, { item: courrier });
     }
@@ -906,6 +922,8 @@ async function route(req, res) {
     if (!courrier || !courrier.storedAs) return send(res, 404, { error: 'Fichier non disponible' });
     // access: admin/supervisor or uploader
     if (!isAdminLike(user) && courrier.uploadedBy !== user.id) return send(res, 404, { error: 'Fichier non disponible' });
+    logActivity(db, user, 'courrier.file.view', courrier.nom, { courrierId: courrier.id });
+    await saveDB(db);
     if (process.env.VERCEL) {
       const { get } = await import('@vercel/blob');
       const blob = await get(courrier.storedAs, { access: 'private' });
