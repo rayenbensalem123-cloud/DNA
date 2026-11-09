@@ -244,12 +244,11 @@ async function route(req, res) {
     const name = String(body.name ?? target.name).trim();
     const commission = body.commission === undefined ? (target.commission || null) : (body.commission ? String(body.commission) : null);
     const password = body.password === undefined ? '' : String(body.password);
-    const role = body.role !== undefined && ['lecture', 'agent', 'supervisor'].includes(String(body.role)) ? String(body.role) : target.role;
+    const role = body.role === undefined ? effectiveRole(target.role) : normalizeRole(String(body.role));
+    if (!ROLES.includes(role)) return send(res, 400, { error: 'Rôle invalide' });
     if (!name) return send(res, 400, { error: 'Le nom est obligatoire' });
     if (!isValidCommission(db, commission)) return send(res, 400, { error: 'Comité invalide' });
     if (password && password.length < 8) return send(res, 400, { error: 'Le mot de passe doit contenir au moins 8 caractères' });
-    const role = body.role === undefined ? effectiveRole(target.role) : normalizeRole(String(body.role));
-    if (!ROLES.includes(role)) return send(res, 400, { error: 'Rôle invalide' });
     if (role !== effectiveRole(target.role) && target.id === user.id) return send(res, 400, { error: 'Vous ne pouvez pas changer votre propre rôle' });
     if (target.role === 'admin' && role !== 'admin' && db.users.filter((u) => u.role === 'admin').length <= 1) return send(res, 400, { error: 'Le dernier compte administrateur doit rester administrateur' });
     if (role === 'agent' && !commission) return send(res, 400, { error: 'Choisissez le comité de ce compte' });
@@ -265,7 +264,7 @@ async function route(req, res) {
   if (userMatch && method === 'DELETE') {
     const user = requireAuth(req, res);
     if (!user) return;
-    if (user.role !== 'admin') return send(res, 403, { error: 'Droits insuffisants' });
+    if (!isAdminLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
     const db = getDB();
     const id = decodeURIComponent(userMatch[1]);
     const target = db.users.find((u) => u.id === id);
@@ -281,7 +280,7 @@ async function route(req, res) {
   if (pathname === '/api/activity' && method === 'GET') {
     const user = requireAuth(req, res);
     if (!user) return;
-    if (user.role !== 'admin') return send(res, 403, { error: 'Droits insuffisants' });
+    if (!isAdminLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
     const db = getDB();
     const action = url.searchParams.get('action') || '';
     const limit = Math.min(parseInt(url.searchParams.get('limit') || '200', 10) || 200, 1000);
@@ -293,7 +292,7 @@ async function route(req, res) {
     const user = requireAuth(req, res);
     if (!user) return;
     const db = getDB();
-    if (user.role === 'admin' || !user.commission) return send(res, 200, { unread: 0, items: [] });
+    if (isAdminLike(user) || !user.commission) return send(res, 200, { unread: 0, items: [] });
     const items = db.letters.filter((l) => l.commission === user.commission && isUnread(l))
       .map((l) => { const h = [...(l.commissionHisto || [])].reverse().find((e) => e.type === 'assigne' || e.type === 'transfert'); return { id: l.id, ref: l.ref, numeroLettre: l.numeroLettre || '', objet: l.objet || '', priorite: l.priorite || 'normale', date: h?.date || l.createdAt, fromCommittee: h?.fromCommittee || null, byName: h?.byName || '' }; })
       .sort((a, b) => (a.date < b.date ? 1 : -1));
