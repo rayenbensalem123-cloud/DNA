@@ -160,6 +160,23 @@ function publicLetter(l) {
   };
 }
 
+// What a user may see of a letter. Admins and supervisors see everything:
+// the tracking history AND a "seen by comité" indicator computed from it.
+// Comité accounts never see the history (private to the bureau d'ordre)
+// — only a simple "transferred" flag so the badge still works.
+function letterView(user, l) {
+  const base = publicLetter(l);
+  if (isAdminLike(user)) {
+    return { ...base, comiteVu: l.commission ? !isUnread(l) : null };
+  }
+  return {
+    ...base,
+    commissionHisto: [],
+    transferred: (Array.isArray(l.commissionHisto) ? l.commissionHisto : []).some((h) => h.type === 'transfert'),
+    comiteVu: null,
+  };
+}
+
 process.on('uncaughtException', (e) => { console.error('uncaught', e); });
 process.on('unhandledRejection', (e) => { console.error('unhandledRejection', e); });
 
@@ -456,7 +473,7 @@ async function route(req, res) {
     const start = (page - 1) * limit;
     const pageItems = items.slice(start, start + limit);
 
-    return send(res, 200, { items: pageItems.map((l) => ({ ...publicLetter(l), unread: !isAdmin && l.commission === user.commission && isUnread(l) })), total, page, limit });
+    return send(res, 200, { items: pageItems.map((l) => ({ ...letterView(user, l), unread: !isAdmin && l.commission === user.commission && isUnread(l) })), total, page, limit });
   }
 
   const lettersMatch = /^\/api\/letters\/([A-Za-z0-9_-]+)$/.exec(pathname);
@@ -471,7 +488,7 @@ async function route(req, res) {
       if (!letter) return send(res, 404, { error: 'Lettre introuvable' });
       // access control
       if (!canSeeLetter(user, letter)) return send(res, 404, { error: 'Lettre introuvable' });
-      return send(res, 200, { item: publicLetter(letter) });
+      return send(res, 200, { item: letterView(user, letter) });
     }
 
     if (method === 'PATCH') {
@@ -524,7 +541,7 @@ async function route(req, res) {
       logActivity(db, user, nextCommission !== prevCommission ? 'letter.transfer' : 'letter.update', letter.ref, { letterId: letter.id, from: prevCommission, to: nextCommission });
       await saveDB(db);
       const updated = db.letters.find((l) => l.id === id);
-      return send(res, 200, { item: publicLetter(updated) });
+      return send(res, 200, { item: letterView(user, updated) });
     }
 
     if (method === 'DELETE') {
@@ -595,7 +612,7 @@ async function route(req, res) {
     db.letters.push(lettre);
     logActivity(db, user, 'letter.create', lettre.ref, { letterId: lettre.id, to: commission });
     await saveDB(db);
-    return send(res, 201, { item: publicLetter(lettre) });
+    return send(res, 201, { item: letterView(user, lettre) });
   }
 
   // Committee tracking events
@@ -614,7 +631,7 @@ async function route(req, res) {
     const canManage = holdsLetter(user, letter);
     if (!canManage) return send(res, 403, { error: NOT_IN_COMMITTEE });
     if (type !== 'note' && !letter.commission) return send(res, 400, { error: 'Aucun comité assigné' });
-    if (type === 'vu_comite' && !isUnread(letter)) return send(res, 200, { item: publicLetter(letter) });
+    if (type === 'vu_comite' && !isUnread(letter)) return send(res, 200, { item: letterView(user, letter) });
     const event = {
       id: 'h' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
       date: new Date().toISOString(),
@@ -629,7 +646,7 @@ async function route(req, res) {
     letter.updatedAt = new Date().toISOString();
     logActivity(db, user, 'letter.event', letter.ref, { letterId: letter.id, type });
     await saveDB(db);
-    return send(res, 200, { item: publicLetter(db.letters.find((l) => l.id === letter.id)) });
+    return send(res, 200, { item: letterView(user, db.letters.find((l) => l.id === letter.id)) });
   }
 
   // Attachments (scanned letter PDF): upload / stream / delete
@@ -856,7 +873,7 @@ async function route(req, res) {
       courrier.note = String(body.note || '');
       courrier.letterId = letter.id;
       await saveDB(db);
-      return send(res, 200, { item: courrier, letter: publicLetter(letter) });
+      return send(res, 200, { item: courrier, letter: letterView(user, letter) });
     }
     if (action === 'rejete') {
       courrier.status = 'rejete';
