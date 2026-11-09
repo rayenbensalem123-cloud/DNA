@@ -25,9 +25,22 @@ const MIME = {
   '.txt': 'text/plain; charset=utf-8',
 };
 
+// Headers added to every response (API, files and the web app itself).
+const SECURITY_HEADERS = {
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Referrer-Policy': 'no-referrer',
+  'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=()',
+  'Cross-Origin-Opener-Policy': 'same-origin',
+  'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+  'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://*.vercel-storage.com https://vercel.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+};
+
 function send(res, status, data, extraHeaders = {}) {
   const body = JSON.stringify(data);
   res.writeHead(status, {
+    ...SECURITY_HEADERS,
+    'Cache-Control': 'no-store',
     'Content-Type': 'application/json; charset=utf-8',
     'Content-Length': Buffer.byteLength(body),
     ...extraHeaders,
@@ -35,12 +48,18 @@ function send(res, status, data, extraHeaders = {}) {
   res.end(body);
 }
 
-function readBody(req, limitMB = 10) {
+function readBody(req, limitMB = 0.25) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let size = 0;
-    req.on('data', (c) => { size += c.length; if (size > limitMB * 1024 * 1024) { reject(new Error('Payload too large')); req.destroy(); return; } chunks.push(c); });
-    req.on('end', () => { try { resolve(chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {}); } catch (e) { resolve({}); } });
+    let tooBig = false;
+    req.on('data', (c) => {
+      if (tooBig) return;
+      size += c.length;
+      if (size > limitMB * 1024 * 1024) { tooBig = true; chunks.length = 0; const e = new Error('Payload too large'); e.status = 413; reject(e); return; }
+      chunks.push(c);
+    });
+    req.on('end', () => { if (tooBig) return; try { resolve(chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {}); } catch (e) { resolve({}); } });
     req.on('error', reject);
   });
 }
@@ -71,21 +90,57 @@ function justSent(user, letter) {
 const canAttach = (user, letter) => holdsLetter(user, letter) || justSent(user, letter);
 const NOT_IN_COMMITTEE = 'Cette lettre n’est plus dans votre comité : vous pouvez la consulter mais plus la modifier.';
 
-function authUser(req) {
-  const h = req.headers.authorization || '';
-  const token = h.startsWith('Bearer ') ? h.slice(7) : null;
-  if (!token) return null;
-  const [payload, signature, extra] = token.split('.');
+// ---- Login protection ---------------------------------------------------------------
+// Too many wrong passwords from one address (or for one account from one address) → temporary block.
+const failures = new Map();
+const FAIL_WINDOW = 15 * 60 * 1000;
+function clientIp(req) {
+  const fwd = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  return fwd || String(req.headers['x-real-ip'] || req.socket?.remoteAddress || 'unknown');
+}
+function throttleState(key, limit) {
+  const now = Date.now();
+  const entry = failures.get(key);
+  if (!entry || now - entry.first > FAIL_WINDOW) return { blocked: false };
+  return entry.count >= limit ? { blocked: true, retryAfter: Math.ceil((entry.first + FAIL_WINDOW - now) / 1000) } : { blocked: false };
+}
+function noteFailure(key) {
+  const now = Date.now();
+  const entry = failures.get(key);
+  if (!entry || now - entry.first > FAIL_WINDOW) failures.set(key, { first: now, count: 1 });
+  else entry.count += 1;
+  if (failures.size > 5000) for (const [k, v] of failures) if (now - v.first > FAIL_WINDOW) failures.delete(k);
+}
+// Check a password against a throwaway hash when the account does not exist, so response time never reveals which usernames exist.
+const DUMMY_PASSWORD = hashPassword(crypto.randomBytes(12).toString('hex'));
+const sessionVersion = (u) => Number(u?.sessionVersion || 0);
+function signToken(user) {
+  const payload = Buffer.from(JSON.stringify({ userId: user.id, jti: crypto.randomBytes(9).toString('hex'), pv: sessionVersion(user), expiresAt: Date.now() + TOKEN_TTL })).toString('base64url');
+  const signature = crypto.createHmac('sha256', getSessionSecret()).update(payload).digest('base64url');
+  return `${payload}.${signature}`;
+}
+function readToken(token) {
+  const [payload, signature, extra] = String(token || '').split('.');
   if (!payload || !signature || extra) return null;
   const expected = crypto.createHmac('sha256', getSessionSecret()).update(payload).digest('base64url');
   const a = Buffer.from(signature), b = Buffer.from(expected);
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
-  let s;
-  try { s = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')); } catch { return null; }
-  if (!s.userId || s.expiresAt < Date.now()) return null;
+  try { return JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')); } catch { return null; }
+}
+
+function authUser(req) {
+  const h = req.headers.authorization || '';
+  const token = h.startsWith('Bearer ') ? h.slice(7) : null;
+  if (!token) return null;
+  const s = readToken(token);
+  if (!s || !s.userId || !(s.expiresAt >= Date.now())) return null;
   const db = getDB();
+  // A signed-out token stays dead even before it expires.
+  if (s.jti && Array.isArray(db.revokedTokens) && db.revokedTokens.some((r) => r.jti === s.jti)) return null;
   const found = db.users.find((u) => u.id === s.userId) || null;
-  return found ? { ...found, role: effectiveRole(found.role) } : null;
+  // Changing a password or role ends every older session of that account.
+  if (!found || Number(s.pv || 0) !== sessionVersion(found)) return null;
+  return { ...found, role: effectiveRole(found.role) };
 }
 
 function requireAuth(req, res, next) {
@@ -120,6 +175,35 @@ function isUnread(letter) {
   if (at < 0) return false;
   return !histo.slice(at + 1).some((h) => ['vu_comite', 'recu_comite', 'traite_comite'].includes(h.type) && h.committee === letter.commission);
 }
+
+// Input hygiene: cap lengths so nobody can bloat the database with giant values.
+const clip = (value, max) => String(value ?? '').slice(0, max);
+function cleanParty(p) {
+  const o = p && typeof p === 'object' && !Array.isArray(p) ? p : {};
+  return { nom: clip(o.nom, 200), fonction: clip(o.fonction, 200), service: clip(o.service, 200) };
+}
+function cleanDate(value, fallback) {
+  if (!value) return fallback;
+  const d = new Date(String(value));
+  return Number.isNaN(d.getTime()) ? fallback : d.toISOString();
+}
+const FILE_TYPES = {
+  '.pdf': { mime: 'application/pdf', magic: [[0x25, 0x50, 0x44, 0x46]] },
+  '.png': { mime: 'image/png', magic: [[0x89, 0x50, 0x4e, 0x47]] },
+  '.jpg': { mime: 'image/jpeg', magic: [[0xff, 0xd8, 0xff]] },
+  '.jpeg': { mime: 'image/jpeg', magic: [[0xff, 0xd8, 0xff]] },
+};
+// The file must really be what its extension says (no HTML or scripts renamed to .pdf).
+function fileLooksValid(buf, ext) {
+  const type = FILE_TYPES[ext];
+  return Boolean(type) && type.magic.some((m) => m.every((byte, i) => buf[i] === byte));
+}
+// A stored file name must belong to its letter and can never point outside the upload folder.
+function storedNameOk(storedAs) {
+  const name = String(storedAs || '');
+  return /^[\w.-]+$/.test(name) && !name.includes('..');
+}
+const FILE_RESPONSE_HEADERS = { ...SECURITY_HEADERS, 'Content-Security-Policy': "default-src 'none'; sandbox", 'Cache-Control': 'private, no-store' };
 
 // Lower-case and strip accents so "arbitre" finds "Arbitre" and "arbitré".
 function fold(value) { return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
@@ -180,21 +264,40 @@ async function route(req, res) {
   if (pathname === '/api/login' && method === 'POST') {
     const body = await readBody(req);
     const db = getDB();
-    const user = db.users.find((u) => u.username === String(body.username || '').trim().toLowerCase());
-    if (!user || !verifyPassword(String(body.password || ''), user.password)) {
+    const ip = clientIp(req);
+    const username = clip(typeof body.username === 'string' ? body.username : '', 100).trim().toLowerCase();
+    const password = typeof body.password === 'string' ? body.password.slice(0, 200) : '';
+    const keyUser = `u:${ip}:${username}`, keyIp = `i:${ip}`;
+    const blockedUser = throttleState(keyUser, 6), blockedIp = throttleState(keyIp, 30);
+    if (blockedUser.blocked || blockedIp.blocked) {
+      const wait = Math.max(blockedUser.retryAfter || 0, blockedIp.retryAfter || 0);
+      return send(res, 429, { error: 'Trop de tentatives. Réessayez dans quelques minutes.' }, { 'Retry-After': String(wait) });
+    }
+    const user = db.users.find((u) => u.username === username);
+    const valid = verifyPassword(password, user ? user.password : DUMMY_PASSWORD);
+    if (!user || !valid) {
+      noteFailure(keyUser); noteFailure(keyIp);
       return send(res, 401, { error: 'Identifiants invalides' });
     }
-    const payload = Buffer.from(JSON.stringify({ userId: user.id, expiresAt: Date.now() + TOKEN_TTL })).toString('base64url');
-    const signature = crypto.createHmac('sha256', getSessionSecret()).update(payload).digest('base64url');
-    const token = `${payload}.${signature}`;
+    failures.delete(keyUser);
+    const token = signToken(user);
     try { logActivity(db, user, 'login', user.username, {}); await saveDB(db); } catch { /* logging must never block sign-in */ }
     return send(res, 200, { token, user: publicUser(user) });
   }
 
   if (pathname === '/api/logout' && method === 'POST') {
     const h = req.headers.authorization || '';
-    const token = h.startsWith('Bearer ') ? h.slice(7) : null;
-    // The signed token expires after eight hours; logout clears it on the client.
+    const s = readToken(h.startsWith('Bearer ') ? h.slice(7) : null);
+    if (s && s.jti) {
+      // Remember the signed-out token until it would have expired anyway.
+      try {
+        const db = getDB();
+        const now = Date.now();
+        db.revokedTokens = (Array.isArray(db.revokedTokens) ? db.revokedTokens : []).filter((r) => r.exp > now);
+        db.revokedTokens.push({ jti: s.jti, exp: Number(s.expiresAt) || now + TOKEN_TTL });
+        await saveDB(db);
+      } catch { /* the client still forgets the token */ }
+    }
     return send(res, 200, { ok: true });
   }
 
@@ -212,8 +315,8 @@ async function route(req, res) {
     if (method === 'GET') return send(res, 200, { items: db.users.map(publicUser) });
     const body = await readBody(req);
     const username = String(body.username || '').trim().toLowerCase();
-    const name = String(body.name || '').trim();
-    const password = String(body.password || '');
+    const name = clip(body.name, 100).trim();
+    const password = typeof body.password === 'string' ? body.password.slice(0, 200) : '';
     const commission = body.commission ? String(body.commission) : null;
     if (username.length < 3 || !/^[a-z0-9._-]+$/.test(username)) return send(res, 400, { error: 'Identifiant invalide (3 caractères minimum, lettres, chiffres, . _ -)' });
     if (db.users.some((u) => u.username === username)) return send(res, 409, { error: 'Cet identifiant existe déjà' });
@@ -239,9 +342,9 @@ async function route(req, res) {
     const target = db.users.find((u) => u.id === decodeURIComponent(userMatch[1]));
     if (!target) return send(res, 404, { error: 'Compte introuvable' });
     const body = await readBody(req);
-    const name = String(body.name ?? target.name).trim();
+    const name = clip(body.name ?? target.name, 100).trim();
     const commission = body.commission === undefined ? (target.commission || null) : (body.commission ? String(body.commission) : null);
-    const password = body.password === undefined ? '' : String(body.password);
+    const password = typeof body.password === 'string' ? body.password.slice(0, 200) : '';
     if (!name) return send(res, 400, { error: 'Le nom est obligatoire' });
     if (!isValidCommission(db, commission)) return send(res, 400, { error: 'Comité invalide' });
     if (password && password.length < 8) return send(res, 400, { error: 'Le mot de passe doit contenir au moins 8 caractères' });
@@ -250,13 +353,16 @@ async function route(req, res) {
     if (role !== effectiveRole(target.role) && target.id === user.id) return send(res, 400, { error: 'Vous ne pouvez pas changer votre propre rôle' });
     if (target.role === 'admin' && role !== 'admin' && db.users.filter((u) => u.role === 'admin').length <= 1) return send(res, 400, { error: 'Le dernier compte administrateur doit rester administrateur' });
     if (role === 'agent' && !commission) return send(res, 400, { error: 'Choisissez le comité de ce compte' });
+    // A new password, role or comité signs the account out everywhere (old tokens stop working).
+    if (password || role !== effectiveRole(target.role) || commission !== (target.commission || null)) target.sessionVersion = sessionVersion(target) + 1;
     target.name = name;
     target.commission = commission;
     target.role = role;
     if (password) target.password = hashPassword(password);
     logActivity(db, user, 'user.update', target.username, { role: target.role, commission: target.commission, passwordReset: Boolean(password) });
     await saveDB(db);
-    return send(res, 200, { item: publicUser(target) });
+    // Changing your own password keeps you signed in on this device with a fresh token.
+    return send(res, 200, { item: publicUser(target), ...(target.id === user.id ? { token: signToken(target) } : {}) });
   }
 
   if (userMatch && method === 'DELETE') {
@@ -484,21 +590,21 @@ async function route(req, res) {
       const prevCommission = letter.commission || null;
       const nextCommission = body.commission !== undefined ? (body.commission || null) : prevCommission;
       if (!isValidCommission(db, nextCommission)) return send(res, 400, { error: 'Comité invalide' });
-      if (body.ref) letter.ref = body.ref;
-      if (body.numeroLettre !== undefined) letter.numeroLettre = String(body.numeroLettre || '');
+      if (body.ref && user.role === 'admin') letter.ref = clip(body.ref, 60);
+      if (body.numeroLettre !== undefined) letter.numeroLettre = clip(body.numeroLettre, 60);
       Object.assign(letter, {
-        direction: body.direction !== undefined ? body.direction : letter.direction,
-        type: body.type !== undefined ? body.type : letter.type,
-        categorie: body.categorie !== undefined ? body.categorie : letter.categorie,
-        objet: body.objet !== undefined ? body.objet : letter.objet,
-        personneConcernee: body.personneConcernee !== undefined ? String(body.personneConcernee || '') : (letter.personneConcernee || ''),
-        resume: body.resume !== undefined ? body.resume : letter.resume,
-        priorite: body.priorite !== undefined ? body.priorite : letter.priorite,
+        direction: body.direction !== undefined ? (body.direction === 'sortant' ? 'sortant' : 'entrant') : letter.direction,
+        type: body.type !== undefined ? (isValidType(body.type) ? body.type : letter.type) : letter.type,
+        categorie: body.categorie !== undefined ? (isValidCategorie(body.categorie) ? body.categorie : letter.categorie) : letter.categorie,
+        objet: body.objet !== undefined ? clip(body.objet, 300) : letter.objet,
+        personneConcernee: body.personneConcernee !== undefined ? clip(body.personneConcernee, 200) : (letter.personneConcernee || ''),
+        resume: body.resume !== undefined ? clip(body.resume, 5000) : letter.resume,
+        priorite: body.priorite !== undefined ? (isValidPriorite(body.priorite) ? body.priorite : letter.priorite) : letter.priorite,
         statut: nextStatut,
-        expediteur: body.expediteur !== undefined ? body.expediteur : letter.expediteur,
-        destinataire: body.destinataire !== undefined ? body.destinataire : letter.destinataire,
-        dateEmission: body.dateEmission !== undefined ? body.dateEmission : letter.dateEmission,
-        dateReception: body.dateReception !== undefined ? body.dateReception : letter.dateReception,
+        expediteur: body.expediteur !== undefined ? cleanParty(body.expediteur) : letter.expediteur,
+        destinataire: body.destinataire !== undefined ? cleanParty(body.destinataire) : letter.destinataire,
+        dateEmission: body.dateEmission !== undefined ? cleanDate(body.dateEmission, letter.dateEmission) : letter.dateEmission,
+        dateReception: body.dateReception !== undefined ? cleanDate(body.dateReception, letter.dateReception || null) : letter.dateReception,
       });
       letter.commission = nextCommission;
       if (nextCommission !== prevCommission) {
@@ -512,7 +618,7 @@ async function route(req, res) {
           committee: nextCommission,
           fromCommittee: prevCommission || null,
           by: user.id, byName: user.name,
-          note: String(body.commissionNote || ''),
+          note: clip(body.commissionNote, 2000),
         });
         if (body.statut === undefined) letter.statut = 'en_cours';
       }
@@ -565,23 +671,24 @@ async function route(req, res) {
       : [];
     const lettre = {
       id: 'l' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
-      ref: body.ref || nextRef(db),
-      numeroLettre: String(body.numeroLettre || ''),
+      ref: (user.role === 'admin' && body.ref) ? clip(body.ref, 60) : nextRef(db),
+      numeroLettre: clip(body.numeroLettre, 60),
       direction: body.direction === 'sortant' ? 'sortant' : 'entrant',
       type: isValidType(body.type) ? body.type : 'courrier',
       categorie: isValidCategorie(body.categorie) ? body.categorie : 'autre',
-      objet: String(body.objet || ''),
-      personneConcernee: String(body.personneConcernee || ''),
-      resume: String(body.resume || ''),
+      objet: clip(body.objet, 300),
+      personneConcernee: clip(body.personneConcernee, 200),
+      resume: clip(body.resume, 5000),
       priorite: isValidPriorite(body.priorite) ? body.priorite : 'normale',
       statut,
       commission,
       commissionHisto,
-      expediteur: body.expediteur || { nom: '', fonction: '', service: '' },
-      destinataire: body.destinataire || { nom: '', fonction: '', service: '' },
-      dateEmission: body.dateEmission || new Date().toISOString(),
-      dateReception: body.direction === 'entrant' ? (body.dateReception || new Date().toISOString()) : body.dateReception || null,
-      pieces: Array.isArray(body.pieces) ? body.pieces : [],
+      expediteur: cleanParty(body.expediteur),
+      destinataire: cleanParty(body.destinataire),
+      dateEmission: cleanDate(body.dateEmission, new Date().toISOString()),
+      dateReception: body.direction === 'entrant' ? cleanDate(body.dateReception, new Date().toISOString()) : cleanDate(body.dateReception, null),
+      // Files are only ever attached through the upload routes; a client can never name a stored file itself.
+      pieces: [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       createdBy: user.id,
@@ -617,7 +724,7 @@ async function route(req, res) {
       type,
       committee: letter.commission,
       by: user.id, byName: user.name,
-      note: String(body.note || ''),
+      note: clip(body.note, 2000),
     };
     letter.commissionHisto.push(event);
     if (type === 'recu_comite' || type === 'vu_comite') letter.statut = 'en_cours';
