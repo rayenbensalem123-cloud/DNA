@@ -11,10 +11,14 @@ export default function LetterDetail() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { t } = useLanguage();
-  const canManage = user?.role === 'admin' || user?.role === 'agent';
-  const canEdit = user?.role === 'admin';
-  const canHandleCommittee = canManage || user?.role === 'lecture';
+  const isAdmin = user?.role === 'admin';
   const [letter, setLetter] = useState(null);
+  // A comité account can change a letter only while it is in its comité.
+  const holdsLetter = (l) => Boolean(l) && (isAdmin || (user?.role === 'agent' && Boolean(user.commission) && l.commission === user.commission));
+  const canManage = holdsLetter(letter);
+  const canEdit = canManage;
+  const readOnlyComite = user?.role === 'agent' && Boolean(letter) && !canManage;
+  const canHandleCommittee = canManage;
   const [committees, setCommittees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -22,6 +26,24 @@ export default function LetterDetail() {
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
+
+  const timeline = (() => {
+    if (!letter) return [];
+    const nm = (cid) => committees.find((c) => c.id === cid)?.nom || cid || '—';
+    const rows = [{ key: 'created', kind: 'assigne', date: letter.createdAt, label: <>Courrier enregistré</>, by: letter.createdByName || '' }];
+    (letter.commissionHisto || []).forEach((h) => {
+      let label;
+      if (h.type === 'assigne') label = <>Envoyé au comité <strong>{nm(h.committee)}</strong></>;
+      else if (h.type === 'transfert') label = <>Transféré <strong>{nm(h.fromCommittee)} → {nm(h.committee)}</strong></>;
+      else if (h.type === 'retire') label = <>Retiré du comité <strong>{nm(h.fromCommittee)}</strong></>;
+      else if (h.type === 'vu_comite' || h.type === 'recu_comite') label = <>Ouvert par le comité <strong>{nm(h.committee)}</strong></>;
+      else if (h.type === 'traite_comite') label = <>Terminé et archivé par <strong>{nm(h.committee)}</strong></>;
+      else label = <>Note ({nm(h.committee)})</>;
+      rows.push({ key: h.id, kind: h.type, date: h.date, label, note: h.note, by: h.byName });
+    });
+    (letter.pieces || []).forEach((p) => { if (p.uploadedAt) rows.push({ key: 'p' + p.id, kind: 'note', date: p.uploadedAt, label: <>Fichier ajouté : <strong>{p.nom}</strong></> }); });
+    return rows.sort((x, y) => (x.date || '') < (y.date || '') ? -1 : 1);
+  })();
 
   const committeeName = (cid) => (committees.find((c) => c.id === cid)?.nom) || cid || '—';
 
@@ -38,9 +60,8 @@ export default function LetterDetail() {
         setLetter(found);
         setCommittee(found ? (found.commission || '') : '');
         setLoading(false);
-        const alreadySeen = (found?.commissionHisto || []).some((h) => h.type === 'vu_comite' || h.type === 'recu_comite');
-        const canAutoSee = canHandleCommittee && (user?.role !== 'lecture' || found?.commission === user?.commission);
-        if (found?.commission && !alreadySeen && canAutoSee) {
+        const canAutoSee = isAdmin || holdsLetter(found);
+        if (found?.commission && found.unread && canAutoSee) {
           api.addCommissionEvent(found.id, { type: 'vu_comite' })
             .then((updated) => { if (!cancelled) setLetter(updated.item); })
             .catch(() => {});
@@ -135,9 +156,10 @@ export default function LetterDetail() {
         <div className="page-actions">
           <button className="btn btn-secondary" onClick={() => navigate('/archive')}>{t('detail.back')}</button>
           {canEdit && <button className="btn btn-primary" onClick={() => { setError(''); setEditing(true); }}>Modifier</button>}
-          {canManage && <button className="btn btn-danger" onClick={remove}>{t('detail.delete')}</button>}
+          {isAdmin && <button className="btn btn-danger" onClick={remove}>{t('detail.delete')}</button>}
         </div>
       </div>
+      {readOnlyComite && <div className="account-notice" role="status">Cette lettre est maintenant dans le comité « {committeeName(letter.commission)} ». Vous pouvez la consulter, mais plus la modifier.</div>}
       <div className="card">
         {info('detail.numero', letter.numeroLettre || '—')}
         {info('detail.objet', letter.objet)}
@@ -169,23 +191,19 @@ export default function LetterDetail() {
       </div>
 
       <div className="card">
-        <h2 className="card-title">{t('detail.commissionHisto')}</h2>
-        {(letter.commissionHisto || []).length === 0 ? (
-          <div className="muted">{t('detail.noHisto')}</div>
-        ) : (
-          <div className="histo">
-            {[...letter.commissionHisto].reverse().map((h) => (
-              <div key={h.id} className="histo-item">
-                <span className={'histo-dot dot-' + h.type} />
-                <div>
-                  <div>{t('event.' + h.type)} {h.type === 'transfert' && h.fromCommittee ? <strong>— {committees.find((c) => c.id === h.fromCommittee)?.nom || h.fromCommittee} → {committeeName(h.committee)}</strong> : h.type === 'retire' && h.fromCommittee ? <strong>— {committees.find((c) => c.id === h.fromCommittee)?.nom || h.fromCommittee} (retiré)</strong> : <strong>— {committeeName(h.committee)}</strong>}</div>
-                  {h.note && <div className="muted">{h.note}</div>}
-                  <div className="muted small">{fmtDateTime(h.date)} — {h.byName || '—'}</div>
-                </div>
+        <h2 className="card-title">Suivi du courrier</h2>
+        <div className="histo timeline">
+          {timeline.map((h) => (
+            <div key={h.key} className="histo-item">
+              <span className={'histo-dot dot-' + h.kind} />
+              <div>
+                <div>{h.label}</div>
+                {h.note && <div className="muted">{h.note}</div>}
+                <div className="muted small">{fmtDateTime(h.date)}{h.by ? ' — ' + h.by : ''}</div>
               </div>
-            ))}
-          </div>
-        )}
+            </div>
+          ))}
+        </div>
       </div>
 
       {canHandleCommittee && (
@@ -194,7 +212,7 @@ export default function LetterDetail() {
             <h2 className="card-title">{t('detail.committeeActions')}</h2>
             {canManage && <div className="status-actions">
                 <select value={committee} onChange={(e) => setCommittee(e.target.value)}>
-                  <option value="">{t('commission.none')}</option>
+                  {isAdmin && <option value="">{t('commission.none')}</option>}
                   {committees.map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}
                 </select>
                 <button className="btn btn-primary" onClick={assignCommittee} disabled={busy}>{t('detail.transmit')}</button>

@@ -7,11 +7,14 @@ const AuthContext = createContext({
   login: async (username, password) => {},
   logout: async () => {},
   setUser: () => {},
+  welcome: null,
+  endWelcome: () => {},
 });
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [welcome, setWelcome] = useState(null); // set right after a sign-in so the app can greet the user
 
   useEffect(() => {
     let cancelled = false;
@@ -27,6 +30,7 @@ export function AuthProvider({ children }) {
     const d = await api.login(username, password);
     setToken(d.token);
     setUser(d.user);
+    setWelcome({ name: d.user.name, role: d.user.role });
     return d.user;
   };
 
@@ -37,7 +41,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, setUser }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, setUser, welcome, endWelcome: () => setWelcome(null) }}>
       {children}
     </AuthContext.Provider>
   );

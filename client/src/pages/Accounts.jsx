@@ -1,9 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
+import { useAuth } from '../auth';
 
-const emptyAccount = () => ({ name: '', username: '', password: '', commission: '', role: 'lecture' });
+const emptyAccount = () => ({ name: '', username: '', password: '', commission: '', role: 'agent' });
+const ROLE_HINTS = {
+  agent: 'Peut envoyer du courrier à n’importe quel comité, mais ne lit que le courrier reçu par son propre comité.',
+  supervisor: 'Équivalent à l’administrateur : voit tout et valide les courriers.',
+  admin: 'Voit tout : courrier de tous les comités, comptes et suppressions.',
+};
+const ROLE_LABELS = { admin: 'Administration', supervisor: 'Superviseur', agent: 'Comité', lecture: 'Comité' };
 
 export default function Accounts() {
+  const { user: me } = useAuth();
+  const [confirmId, setConfirmId] = useState(null);
   const [accounts, setAccounts] = useState([]);
   const [committees, setCommittees] = useState([]);
   const [form, setForm] = useState(null);
@@ -28,7 +37,7 @@ export default function Accounts() {
   const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
   const edit = (account) => {
     setError(''); setNotice('');
-    setForm({ id: account.id, name: account.name, username: account.username, password: '', commission: account.commission || '', role: account.role || 'lecture' });
+    setForm({ id: account.id, name: account.name, username: account.username, password: '', commission: account.commission || '', role: account.role === 'admin' ? 'admin' : 'agent' });
   };
   const save = async (event) => {
     event.preventDefault();
@@ -49,6 +58,17 @@ export default function Accounts() {
     finally { setBusy(false); }
   };
 
+  const remove = async (account) => {
+    setBusy(true); setError(''); setNotice('');
+    try {
+      await api.deleteUser(account.id);
+      setConfirmId(null);
+      setNotice(`Compte « ${account.name} » supprimé.`);
+      await load();
+    } catch (e) { setError(e.message); setConfirmId(null); }
+    finally { setBusy(false); }
+  };
+
   return (
     <div className="page accounts-page">
       <header className="page-header page-title-header">
@@ -66,8 +86,12 @@ export default function Accounts() {
             <label className="field">Nom complet<input autoComplete="name" value={form.name} onChange={(e) => update('name', e.target.value)} required /></label>
             <label className="field">Identifiant<input autoComplete="username" value={form.username} onChange={(e) => update('username', e.target.value)} required minLength={3} disabled={Boolean(form.id)} /></label>
             <label className="field">{form.id ? 'Nouveau mot de passe (facultatif)' : 'Mot de passe'}<input type="password" autoComplete="new-password" value={form.password} onChange={(e) => update('password', e.target.value)} minLength={form.password ? 8 : undefined} required={!form.id} placeholder={form.id ? 'Laisser vide pour conserver' : '8 caractères minimum'} /></label>
-            <label className="field">Rôle<select value={form.role} onChange={(e) => update('role', e.target.value)}><option value="lecture">Lecteur</option><option value="agent">Agent</option><option value="supervisor">Superviseur</option></select></label>
-            <label className="field">Comité<select value={form.commission} onChange={(e) => update('commission', e.target.value)}><option value="">Aucun comité</option>{committees.map((committee) => <option key={committee.id} value={committee.id}>{committee.nom}</option>)}</select></label>
+            <label className="field">Type de compte<select value={form.role} onChange={(e) => update('role', e.target.value)} disabled={form.id === me?.id}>
+              <option value="agent">Comité</option>
+              <option value="supervisor">Superviseur</option>
+              <option value="admin">Administration</option>
+            </select><span className="muted">{ROLE_HINTS[form.role]}</span></label>
+            <label className="field">{form.role === 'admin' ? 'Comité (facultatif)' : 'Comité'}<select value={form.commission} required={form.role !== 'admin'} onChange={(e) => update('commission', e.target.value)}><option value="">{form.role === 'admin' ? 'Aucun comité' : '— Choisir un comité —'}</option>{committees.map((committee) => <option key={committee.id} value={committee.id}>{committee.nom}</option>)}</select></label>
           </div>
           {error && <div className="form-error" role="alert">{error}</div>}
           <div className="page-actions"><button className="btn btn-primary" disabled={busy}>{busy ? 'Enregistrement…' : 'Enregistrer'}</button><button className="btn btn-secondary" type="button" onClick={() => { setForm(null); setError(''); }}>Annuler</button></div>
@@ -77,13 +101,22 @@ export default function Accounts() {
       <section className="card account-list-card">
         <div className="account-list-heading"><div><h2 className="card-title">Tous les comptes</h2><div className="muted">{accounts.length} compte{accounts.length === 1 ? '' : 's'}</div></div><input className="account-search" type="search" placeholder="Rechercher un compte…" aria-label="Rechercher un compte" value={query} onChange={(e) => setQuery(e.target.value)} /></div>
         <div className="table-wrap"><table className="table account-table">
-          <thead><tr><th>Nom</th><th>Identifiant</th><th>Comité</th><th></th></tr></thead>
+          <thead><tr><th>Nom</th><th>Identifiant</th><th>Type</th><th>Comité</th><th></th></tr></thead>
           <tbody>{filtered.map((account) => <tr key={account.id}>
-            <td className="account-name-cell">{account.name}</td><td className="mono">{account.username}</td>
+            <td className="account-name-cell">{account.name}</td><td className="mono">{account.username}</td><td>{ROLE_LABELS[account.role] || account.role}</td>
             <td>{committees.find((committee) => committee.id === account.commission)?.nom || <span className="muted">Aucun</span>}</td>
-            <td><button className="btn btn-secondary account-edit" onClick={() => edit(account)}>Modifier</button></td>
+            <td className="account-actions">{confirmId === account.id
+              ? <span className="account-confirm" role="group" aria-label={`Confirmer la suppression de ${account.name}`}>
+                  <span>Supprimer ce compte ?</span>
+                  <button className="btn btn-danger" type="button" onClick={() => remove(account)} disabled={busy}>Oui, supprimer</button>
+                  <button className="btn btn-secondary" type="button" onClick={() => setConfirmId(null)} disabled={busy}>Annuler</button>
+                </span>
+              : <>
+                  <button className="btn btn-secondary account-edit" onClick={() => edit(account)}>Modifier</button>
+                  {account.id !== me?.id && account.role !== 'admin' && <button className="btn btn-danger account-delete" type="button" onClick={() => { setError(''); setNotice(''); setConfirmId(account.id); }}>Supprimer</button>}
+                </>}</td>
           </tr>)}
-          {filtered.length === 0 && <tr><td colSpan="4" className="empty-cell">Aucun compte trouvé.</td></tr>}</tbody>
+          {filtered.length === 0 && <tr><td colSpan="5" className="empty-cell">Aucun compte trouvé.</td></tr>}</tbody>
         </table></div>
       </section>
     </div>
