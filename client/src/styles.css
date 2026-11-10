@@ -23,18 +23,11 @@ body {
   font-size: 14px;
 }
 :root[data-theme='dark'] body,
-:root:not([data-theme='light']) body {
-  background:
-    radial-gradient(1100px 620px at 88% -12%, rgba(230,0,27,.10), transparent 62%),
-    radial-gradient(900px 560px at -8% 108%, rgba(150,52,70,.14), transparent 58%),
-    linear-gradient(160deg, #1c1519, #171315 46%, #120e10);
-  background-attachment: fixed;
-}
+:root:not([data-theme='light']) body,
 :root[data-theme='light'] body {
-  background:
-    radial-gradient(1100px 620px at 88% -12%, rgba(230,0,27,.06), transparent 62%),
-    radial-gradient(900px 560px at -8% 108%, rgba(230,0,27,.05), transparent 58%),
-    linear-gradient(160deg, #fbf8f9, #f2edee 48%, #f4f0f1);
+  background-image: linear-gradient(rgba(27,20,23,.48), rgba(27,20,23,.48)), url('/fond.jpg');
+  background-size: cover;
+  background-position: center 38%;
   background-attachment: fixed;
 }
 h1 { font-size: 22px; margin: 0; }
@@ -66,11 +59,11 @@ h2.card-title { font-size: 16px; margin: 0 0 12px; }
 .sidebar {
   width: 268px;
   display: flex; flex-direction: column; padding: 22px 14px;
-  position: sticky; top: 0; height: 100vh; flex-shrink: 0; border-right: 1px solid #4a3940;
+  position: sticky; top: 0; height: 100vh; flex-shrink: 0; border-right: 1px solid #514047;
   color: #f5edef; backdrop-filter: blur(16px);
   background-image:
-    radial-gradient(420px 260px at 14% -4%, rgba(230,0,27,.13), transparent 62%),
-    linear-gradient(180deg, #231a1e, #191316 52%, #130e10);
+    radial-gradient(ellipse at 12% 0%, rgba(230,0,27,.16), transparent 42%),
+    linear-gradient(180deg, rgba(50,39,44,.86), rgba(44,35,39,.87) 60%, rgba(36,29,32,.88));
 }
 .brand { padding: 2px 8px 20px; display: flex; align-items: center; gap: 12px; min-height: 76px; border-bottom: 1px solid rgba(255,255,255,.09); }
 .brand-emblem { width: 48px; height: 48px; object-fit: contain; background: #fff; border: 2px solid rgba(255,255,255,.9); border-radius: 50%; flex-shrink: 0; }
