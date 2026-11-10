@@ -91,10 +91,13 @@ export default function Layout() {
             <NotificationBell />
             <InstallButton />
             <ThemeToggle />
-            <div className="user-info">
-              <div className="user-name">{user?.name}</div>
-              <div className="user-role">{t('auth.role.' + (user?.role || ''))}</div>
-            </div>
+            {user && <div className="user-info">
+              <span className="user-avatar" aria-hidden="true">{(user.name || '?').trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase() || '?'}</span>
+              <div className="user-meta">
+                <div className="user-name">{user.name}</div>
+                <span className={'user-role role-' + (user.role || 'agent')}>{t('auth.role.' + (user.role || ''))}</span>
+              </div>
+            </div>}
             <button className="btn btn-ghost btn-logout" onClick={onLogout} aria-label={t('nav.logout')}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4.5H5.5v15H10M14 8l4 4-4 4M18 12H9" /></svg><span className="btn-label">{t('nav.logout')}</span></button>
           </div>
         </header>
