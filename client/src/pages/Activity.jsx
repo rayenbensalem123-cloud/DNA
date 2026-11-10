@@ -20,8 +20,10 @@ const LABELS = {
   'courrier.reject': 'Courrier rejeté',
   'courrier.delete': 'Courrier rejeté supprimé',
   'courrier.file.view': 'Fichier du courrier ouvert',
+  'committee.create': 'Comité créé',
+  'committee.update': 'Comité renommé',
 };
-const FILTERS = [['', 'Tout'], ['letter', 'Courriers'], ['courrier', 'Numérisation'], ['piece', 'Fichiers'], ['user', 'Comptes'], ['login', 'Connexions']];
+const FILTERS = [['', 'Tout'], ['letter', 'Courriers'], ['courrier', 'Numérisation'], ['piece', 'Fichiers'], ['committee', 'Comités'], ['user', 'Comptes'], ['login', 'Connexions']];
 const EVENT_LABELS = { vu_comite: 'ouvert par le comité', recu_comite: 'reçu par le comité', traite_comite: 'terminé et archivé', note: 'note ajoutée' };
 
 export default function Activity() {

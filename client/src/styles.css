@@ -326,6 +326,21 @@ input[type='date']:hover, input[type='datetime-local']:hover, input[type='time']
 .account-list-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 20px; border-bottom: 1px solid var(--border); }
 .account-list-heading .card-title { margin-bottom: 4px; }
 .account-search { width: min(100%, 280px); }
+
+/* Comité manager (admin) */
+.committee-add { display: flex; gap: 10px; padding: 16px 20px 6px; flex-wrap: wrap; }
+.committee-add input { flex: 1; min-width: 220px; }
+.committee-list { list-style: none; margin: 0; padding: 10px 12px 14px; display: flex; flex-direction: column; gap: 6px; }
+.committee-row {
+  display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: 10px; background: rgba(255,255,255,.02);
+}
+.committee-row-name { flex: 1; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.committee-row .muted { flex-shrink: 0; }
+.committee-row .btn { flex-shrink: 0; }
+.committee-rename { display: flex; gap: 8px; flex: 1; flex-wrap: wrap; align-items: center; }
+.committee-rename input { flex: 1; min-width: 180px; }
+:root[data-theme='light'] .committee-row { background: rgba(255,255,255,.6); }
 .account-table th:first-child, .account-table td:first-child { padding-left: 20px; }
 .account-table th:last-child, .account-table td:last-child { padding-right: 20px; text-align: right; }
 .account-name-cell { font-weight: 650; color: var(--text) !important; }

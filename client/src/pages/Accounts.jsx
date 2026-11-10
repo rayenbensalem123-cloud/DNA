@@ -21,6 +21,10 @@ export default function Accounts() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  // --- Comité management (admin) ---
+  const [newCommittee, setNewCommittee] = useState('');
+  const [editingCommittee, setEditingCommittee] = useState(null); // { id, nom }
+  const [comBusy, setComBusy] = useState(false);
 
   const load = useCallback(async () => {
     const [usersData, committeesData] = await Promise.all([api.users(), api.committees()]);
@@ -71,6 +75,30 @@ export default function Accounts() {
     finally { setBusy(false); }
   };
 
+  const addCommittee = async (event) => {
+    event.preventDefault();
+    setComBusy(true); setError(''); setNotice('');
+    try {
+      const d = await api.createCommittee(newCommittee);
+      setNotice(`Comité « ${d.item.nom} » créé.`);
+      setNewCommittee('');
+      await load();
+    } catch (e) { setError(e.message); }
+    finally { setComBusy(false); }
+  };
+
+  const renameCommittee = async (event) => {
+    event.preventDefault();
+    setComBusy(true); setError(''); setNotice('');
+    try {
+      await api.updateCommittee(editingCommittee.id, editingCommittee.nom);
+      setNotice(`Comité renommé en « ${editingCommittee.nom.trim().replace(/\s+/g, ' ')} ».`);
+      setEditingCommittee(null);
+      await load();
+    } catch (e) { setError(e.message); }
+    finally { setComBusy(false); }
+  };
+
   return (
     <div className="page accounts-page">
       <header className="page-header page-title-header">
@@ -95,6 +123,33 @@ export default function Accounts() {
           <div className="page-actions"><button className="btn btn-primary" disabled={busy}>{busy ? 'Enregistrement…' : 'Enregistrer'}</button><button className="btn btn-secondary" type="button" onClick={() => { setForm(null); setError(''); }}>Annuler</button></div>
         </form>
       </section>}
+
+      <section className="card committee-manager">
+        <div className="account-list-heading"><div><h2 className="card-title">Comités</h2><div className="muted">{committees.length} comité{committees.length === 1 ? '' : 's'} — utilisés par les comptes et les courriers</div></div></div>
+        <form className="committee-add" onSubmit={addCommittee}>
+          <input aria-label="Nom du nouveau comité" placeholder="Nom du nouveau comité…" value={newCommittee} onChange={(e) => setNewCommittee(e.target.value)} required minLength={2} maxLength={80} />
+          <button className="btn btn-primary" type="submit" disabled={comBusy || !newCommittee.trim()}>+ Ajouter le comité</button>
+        </form>
+        <ul className="committee-list">
+          {committees.map((committee) => (
+            <li key={committee.id} className="committee-row">
+              {editingCommittee?.id === committee.id ? (
+                <form className="committee-rename" onSubmit={renameCommittee}>
+                  <input aria-label="Nouveau nom du comité" value={editingCommittee.nom} onChange={(e) => setEditingCommittee({ ...editingCommittee, nom: e.target.value })} required minLength={2} maxLength={80} autoFocus />
+                  <button className="btn btn-primary" type="submit" disabled={comBusy}>{comBusy ? '…' : 'Enregistrer'}</button>
+                  <button className="btn btn-secondary" type="button" onClick={() => setEditingCommittee(null)} disabled={comBusy}>Annuler</button>
+                </form>
+              ) : (
+                <>
+                  <span className="committee-row-name">{committee.nom}</span>
+                  <span className="muted">{accounts.filter((a) => a.commission === committee.id).length} compte{accounts.filter((a) => a.commission === committee.id).length === 1 ? '' : 's'}</span>
+                  <button className="btn btn-secondary" type="button" onClick={() => { setEditingCommittee({ id: committee.id, nom: committee.nom }); setError(''); }}>Renommer</button>
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+      </section>
 
       <section className="card account-list-card">
         <div className="account-list-heading"><div><h2 className="card-title">Tous les comptes</h2><div className="muted">{accounts.length} compte{accounts.length === 1 ? '' : 's'}</div></div><input className="account-search" type="search" placeholder="Rechercher un compte…" aria-label="Rechercher un compte" value={query} onChange={(e) => setQuery(e.target.value)} /></div>

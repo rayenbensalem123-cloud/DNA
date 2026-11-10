@@ -433,6 +433,37 @@ async function route(req, res) {
     return send(res, 200, { items: db.committees });
   }
 
+  // ---- Comité management (create + rename), admin only ----
+  const committeeIdMatch = /^\/api\/committees\/([A-Za-z0-9_-]+)$/.exec(pathname);
+  if ((pathname === '/api/committees' && method === 'POST') || (committeeIdMatch && method === 'PATCH')) {
+    const user = requireAuth(req, res);
+    if (!user) return;
+    if (user.role !== 'admin') return send(res, 403, { error: 'Droits insuffisants' });
+    const db = getDB();
+    const body = await readBody(req);
+    const nom = String(body.nom || '').trim().replace(/\s+/g, ' ');
+    if (nom.length < 2 || nom.length > 80) return send(res, 400, { error: 'Le nom du comité doit contenir entre 2 et 80 caractères' });
+    if (db.committees.some((c) => c.nom.toLowerCase() === nom.toLowerCase())) return send(res, 400, { error: 'Un comité porte déjà ce nom' });
+
+    if (method === 'POST') {
+      const committee = { id: 'cm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), nom };
+      db.committees.push(committee);
+      logActivity(db, user, 'committee.create', nom, { committeeId: committee.id, by: user.name });
+      await saveDB(db);
+      return send(res, 201, { item: committee });
+    }
+
+    // PATCH: rename; references stay valid because everything points to the id
+    const committee = db.committees.find((c) => c.id === committeeIdMatch[1]);
+    if (!committee) return send(res, 404, { error: 'Comité introuvable' });
+    if (committee.nom === nom) return send(res, 200, { item: committee });
+    const oldNom = committee.nom;
+    committee.nom = nom;
+    logActivity(db, user, 'committee.update', nom, { committeeId: committee.id, oldName: oldNom, by: user.name });
+    await saveDB(db);
+    return send(res, 200, { item: committee });
+  }
+
   if (pathname === '/api/blob-upload' && method === 'POST') {
     let body;
     try { body = await readBody(req, 1); }
