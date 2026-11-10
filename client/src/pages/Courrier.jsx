@@ -32,6 +32,21 @@ export default function Courrier() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Opening the validation page clears the red badge on the "Courrier" button:
+  // its count is the number of unread rejection notifications for this user.
+  useEffect(() => {
+    let cancelled = false;
+    api.courrierNotifications().then(async (d) => {
+      const unread = (d.items || []).filter((n) => !n.read);
+      for (const n of unread) {
+        if (cancelled) return;
+        await api.markCourrierNotificationRead(n.id).catch(() => {});
+      }
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+
   const handleFiles = async (files) => {
     setBusy(true);
     setError('');

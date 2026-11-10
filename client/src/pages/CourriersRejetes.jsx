@@ -33,6 +33,20 @@ export default function CourriersRejetes() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Same as the validation page: reviewing the rejected list clears the red
+  // badge on the "Courrier" button.
+  useEffect(() => {
+    let cancelled = false;
+    api.courrierNotifications().then(async (d) => {
+      const unread = (d.items || []).filter((n) => !n.read);
+      for (const n of unread) {
+        if (cancelled) return;
+        await api.markCourrierNotificationRead(n.id).catch(() => {});
+      }
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
   const remove = async (courrier) => {
     setBusy(true);
     setError('');
