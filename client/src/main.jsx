@@ -14,7 +14,11 @@ window.addEventListener('unhandledrejection', (e) => {
 });
 
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
-  window.addEventListener('load', () => { navigator.serviceWorker.register('/sw.js').catch(() => {}); });
+  window.addEventListener('load', () => {
+    // updateViaCache:'none' so the browser always rechecks sw.js itself,
+    // and every reload fetches the fresh index.html (network-first in sw).
+    navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).then((reg) => reg.update().catch(() => {})).catch(() => {});
+  });
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(
