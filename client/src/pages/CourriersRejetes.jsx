@@ -105,7 +105,7 @@ export default function CourriersRejetes() {
                     <td className="date-cell">{fmtDate(c.validatedAt || c.uploadedAt)}</td>
                     <td>
                       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                        <button className="btn btn-ghost" onClick={() => api.openCourrierFile(c.id)}>Voir</button>
+                        <button className="btn btn-ghost" onClick={() => api.openCourrierFile(c.id, c.nom)}>Voir</button>
                         {canDelete && <button className="btn btn-danger" onClick={() => setConfirmId(c.id)}>Supprimer</button>}
                       </div>
                     </td>

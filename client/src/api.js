@@ -1,4 +1,5 @@
 import { upload } from '@vercel/blob/client';
+import { openPdf } from './components/PdfViewer';
 
 const TOKEN_KEY = 'bo_token';
 
@@ -63,15 +64,14 @@ export const api = {
     for (const f of files) await api.uploadPieceDirect(d.item.id, f);
     return d;
   },
-  openPiece: async (letterId, pieceId) => {
+  openPiece: async (letterId, pieceId, title = '') => {
     const res = await fetch(`/api/letters/${letterId}/pieces/${pieceId}`, {
       headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {},
     });
     if (!res.ok) throw new Error('Fichier non disponible');
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
-    window.open(url, '_blank');
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    openPdf({ url, title, mime: blob.type });
   },
   // Courriers (scanned files awaiting validation)
   listCourriers: (status = '') => req('/api/courriers' + (status ? `?status=${encodeURIComponent(status)}` : '')),
@@ -99,13 +99,12 @@ export const api = {
   },
   toSend: () => req('/api/to-send'),
   deleteCourrier: (id) => req(`/api/courriers/${id}`, { method: 'DELETE' }),
-  openCourrierFile: async (id) => {
+  openCourrierFile: async (id, title = '') => {
     const res = await fetch(`/api/courriers/${id}/file`, { headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {} });
     if (!res.ok) throw new Error('Fichier non disponible');
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
-    window.open(url, '_blank');
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    openPdf({ url, title, mime: blob.type });
   },
   // Notifications (courrier rejections)
   courrierNotifications: () => req('/api/courrier-notifications'),

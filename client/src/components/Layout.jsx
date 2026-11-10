@@ -2,6 +2,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth';
 import { useLanguage } from '../i18n';
 import LetterCreateModal from './LetterCreateModal';
+import PdfViewer from './PdfViewer';
 import ThemeToggle from './ThemeToggle';
 import NotificationBell from './NotificationBell';
 import InstallButton from './InstallButton';
@@ -109,6 +110,7 @@ export default function Layout() {
       {showLetterModal && (
         <LetterCreateModal onClose={() => navigate(location.pathname, { replace: true })} />
       )}
+      <PdfViewer />
     </div>
   );
 }

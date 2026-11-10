@@ -50,7 +50,7 @@ export default function ToSend() {
   };
 
   const open = async (item) => {
-    try { await api.openPiece(item.id, item.pieceId); } catch (e) { setError(e.message); }
+    try { await api.openPiece(item.id, item.pieceId, item.fileName || item.ref || item.objet || 'Pièce jointe'); } catch (e) { setError(e.message); }
   };
 
   return (

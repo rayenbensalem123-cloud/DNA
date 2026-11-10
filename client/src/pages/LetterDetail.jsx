@@ -135,9 +135,9 @@ export default function LetterDetail() {
     } catch (e) { setError(e.message || 'Erreur'); }
   };
 
-  const openPiece = async (pieceId) => {
+  const openPiece = async (pieceId, nom = '') => {
     setError('');
-    try { await api.openPiece(letter.id, pieceId); }
+    try { await api.openPiece(letter.id, pieceId, nom); }
     catch (e) { setError(e.message || 'Erreur'); }
   };
 
@@ -183,7 +183,7 @@ export default function LetterDetail() {
               {letter.pieces.map((p) => (
                 <div key={p.id} className="file-row">
                   {p.hasFile
-                    ? <button type="button" className="btn-link" onClick={() => openPiece(p.id)}>{p.nom}</button>
+                    ? <button type="button" className="btn-link" onClick={() => openPiece(p.id, p.nom)}>{p.nom}</button>
                     : <span>{p.nom}</span>}
                   <span className="muted">{p.taille ? fmtSize(p.taille) : ''}{p.hasFile ? '' : ' (' + t('detail.demoFile') + ')'}</span>
                 </div>

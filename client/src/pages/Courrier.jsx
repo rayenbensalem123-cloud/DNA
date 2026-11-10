@@ -128,7 +128,7 @@ export default function Courrier() {
                   <td className="date-cell">{fmtDate(c.uploadedAt)}</td>
                   <td>
                     <div style={{ display: 'flex', gap: 8 }}>
-                      <button className="btn btn-ghost" onClick={() => api.openCourrierFile(c.id)}>Voir</button>
+                      <button className="btn btn-ghost" onClick={() => api.openCourrierFile(c.id, c.nom)}>Voir</button>
                       <button className="btn btn-primary" onClick={() => validate(c)} disabled={busy}>Valider</button>
                       <button className="btn btn-danger" onClick={() => { setRejecting(c); setReason(''); }} disabled={busy}>Rejeter</button>
                     </div>
