@@ -439,6 +439,9 @@ async function route(req, res) {
     const user = requireAuth(req, res);
     if (!user) return;
     if (user.role !== 'admin') return send(res, 403, { error: 'Droits insuffisants' });
+    // Force a fresh read: warm serverless instances keep an in-memory copy of
+    // the state, which can predate a committee created moments ago.
+    await initializeDB();
     const db = getDB();
     const body = await readBody(req);
     const nom = String(body.nom || '').trim().replace(/\s+/g, ' ');
