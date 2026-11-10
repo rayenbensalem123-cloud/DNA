@@ -90,6 +90,42 @@ function justSent(user, letter) {
 const canAttach = (user, letter) => holdsLetter(user, letter) || justSent(user, letter);
 const NOT_IN_COMMITTEE = 'Cette lettre n’est plus dans votre comité : vous pouvez la consulter mais plus la modifier.';
 
+// ---- Short-lived signed file links ----
+// The browser (iframe/img) cannot send the Authorization header, so files are
+// opened through a signed, expiring URL. This lets the viewer stream the file
+// directly instead of downloading it twice (function -> client blob).
+function signFileToken(userId, kind, id, ttlMs = 120000) {
+  const exp = Date.now() + ttlMs;
+  const payload = `${userId}|${kind}|${id}|${exp}`;
+  const sig = crypto.createHmac('sha256', getSessionSecret()).update(payload).digest('base64url');
+  return `${Buffer.from(payload).toString('base64url')}.${sig}`;
+}
+function verifyFileToken(tk, kind, id) {
+  try {
+    const [p64, sig] = String(tk || '').split('.');
+    if (!p64 || !sig) return null;
+    const payload = Buffer.from(p64, 'base64url').toString('utf8');
+    const expect = crypto.createHmac('sha256', getSessionSecret()).update(payload).digest('base64url');
+    const a = Buffer.from(sig);
+    const b = Buffer.from(expect);
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+    const [userId, k, i, exp] = payload.split('|');
+    if (k !== kind || i !== id || Number(exp) < Date.now()) return null;
+    return userId;
+  } catch { return null; }
+}
+// Accept either the Authorization header or a valid signed token for one file.
+function authUserForFile(req, res, kind, id, db) {
+  const tk = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`).searchParams.get('tk');
+  const tkUser = tk && verifyFileToken(tk, kind, id);
+  if (tkUser) {
+    const found = db.users.find((u) => u.id === tkUser);
+    if (found) return { ...found, role: effectiveRole(found.role) };
+    return null;
+  }
+  return requireAuth(req, res);
+}
+
 function isAdminLike(u) { return !!u && (u.role === 'admin' || u.role === 'supervisor'); }
 
 // ---- Login protection ---------------------------------------------------------------
@@ -209,7 +245,7 @@ function storedNameOk(storedAs) {
   const name = String(storedAs || '');
   return /^[\w.-]+$/.test(name) && !name.includes('..');
 }
-const FILE_RESPONSE_HEADERS = { ...SECURITY_HEADERS, 'Content-Security-Policy': "default-src 'none'; sandbox", 'Cache-Control': 'private, no-store' };
+const FILE_RESPONSE_HEADERS = { ...SECURITY_HEADERS, 'X-Frame-Options': 'SAMEORIGIN', 'Content-Security-Policy': "default-src 'none'; sandbox", 'Cache-Control': 'private, no-store' };
 
 // Lower-case and strip accents so "arbitre" finds "Arbitre" and "arbitré".
 function fold(value) { return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
@@ -279,7 +315,8 @@ const server = http.createServer(async (req, res) => {
 });
 
 async function route(req, res) {
-  await initializeDB();
+  // Reads may use the short-TTL cache; writes always start from fresh state.
+  await initializeDB(req.method !== 'GET' && req.method !== 'HEAD');
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
   const pathname = url.pathname;
   const method = req.method;
@@ -441,7 +478,7 @@ async function route(req, res) {
     if (user.role !== 'admin') return send(res, 403, { error: 'Droits insuffisants' });
     // Force a fresh read: warm serverless instances keep an in-memory copy of
     // the state, which can predate a committee created moments ago.
-    await initializeDB();
+    await initializeDB(true);
     const db = getDB();
     const body = await readBody(req);
     const nom = String(body.nom || '').trim().replace(/\s+/g, ' ');
@@ -890,7 +927,7 @@ async function route(req, res) {
     }
 
     if (method === 'GET' && pieceId) {
-      const user = requireAuth(req, res);
+      const user = authUserForFile(req, res, 'piece', `${letterId}/${pieceId}`, db);
       if (!user) return;
       if (!canSeeLetter(user, letter)) return send(res, 404, { error: 'Fichier non disponible' });
       const piece = (letter.pieces || []).find((p) => p.id === pieceId);
@@ -943,6 +980,37 @@ async function route(req, res) {
       await saveDB(db);
       return send(res, 200, { ok: true });
     }
+  }
+
+  // ---- Signed file links (for the in-app viewer) ----
+  if (pathname === '/api/file-link' && method === 'GET') {
+    const user = requireAuth(req, res);
+    if (!user) return;
+    const db = getDB();
+    const kind = url.searchParams.get('kind') || '';
+    const id = String(url.searchParams.get('id') || '');
+    let target = null;
+    let ok = false;
+    let base = '';
+    if (kind === 'courrier') {
+      const c = (db.courriers || []).find((x) => x.id === id);
+      ok = !!c && !!c.storedAs && (isAdminLike(user) || c.uploadedBy === user.id);
+      target = c;
+      base = `/api/courriers/${id}/file`;
+    } else if (kind === 'piece') {
+      const sep = id.indexOf('/');
+      const letterId = sep > 0 ? id.slice(0, sep) : '';
+      const pieceId = sep > 0 ? id.slice(sep + 1) : '';
+      const letter = (db.letters || []).find((l) => l.id === letterId);
+      const piece = letter ? (letter.pieces || []).find((p) => p.id === pieceId) : null;
+      ok = !!letter && !!piece && !!piece.storedAs && canSeeLetter(user, letter);
+      target = piece;
+      base = `/api/letters/${letterId}/pieces/${pieceId}`;
+    }
+    if (!ok || !target) return send(res, 404, { error: 'Fichier non disponible' });
+    const ext = path.extname(target.nom || '').toLowerCase();
+    const mime = ext === '.pdf' ? 'application/pdf' : ext === '.png' ? 'image/png' : (ext === '.jpg' || ext === '.jpeg') ? 'image/jpeg' : 'application/octet-stream';
+    return send(res, 200, { url: `${base}?tk=${signFileToken(user.id, kind, id)}`, mime });
   }
 
   // ---- Courriers (scanned files awaiting supervisor validation) ----
@@ -1118,9 +1186,9 @@ async function route(req, res) {
 
   const courrierFileMatch = /^\/api\/courriers\/([A-Za-z0-9_-]+)\/file$/.exec(pathname);
   if (courrierFileMatch && method === 'GET') {
-    const user = requireAuth(req, res);
-    if (!user) return;
     const db = getDB();
+    const user = authUserForFile(req, res, 'courrier', courrierFileMatch[1], db);
+    if (!user) return;
     const courrier = db.courriers.find((c) => c.id === courrierFileMatch[1]);
     if (!courrier || !courrier.storedAs) return send(res, 404, { error: 'Fichier non disponible' });
     // access: admin/supervisor or uploader

@@ -147,13 +147,19 @@ function database() {
   return Promise.resolve(sqlClient);
 }
 
-export async function initializeDB() {
+const STATE_CACHE_TTL = 3000; // ms a cached copy stays good for read-only requests
+let lastSync = 0;
+
+export async function initializeDB(force = false) {
   const b = backend();
   if (b === 'file') {
     getDB();
     return;
   }
   if (b === 'supabase') {
+    // Warm instances reuse the in-memory copy for reads; writes always pass
+    // force=true so they work on fresh state (the revision lock still guards).
+    if (!force && cache && dbRevision !== null && Date.now() - lastSync < STATE_CACHE_TTL) return;
     const sb = await getSupabase();
     const { data, error } = await sb.from('dna_app_state').select('revision, data').eq('id', 'main').maybeSingle();
     if (error) throw new Error('Supabase read failed: ' + (error.message || error.code));
@@ -164,10 +170,12 @@ export async function initializeDB() {
       if (insErr) throw new Error('Supabase insert failed: ' + (insErr.message || insErr.code));
       cache = initial;
       dbRevision = 1;
+      lastSync = Date.now();
       return;
     }
     cache = typeof data.data === 'string' ? JSON.parse(data.data) : data.data;
     dbRevision = Number(data.revision);
+    lastSync = Date.now();
     if (isDemoSeed(cache)) {
       cache = seed();
       migrate(cache);
@@ -223,7 +231,7 @@ export function saveDB(db) {
 
 async function saveSupabaseDB(db) {
   const sb = await getSupabase();
-  if (dbRevision === null) await initializeDB();
+  if (dbRevision === null) await initializeDB(true);
   const newRevision = (dbRevision || 0) + 1;
   const { data, error } = await sb.from('dna_app_state')
     .update({ data: db, revision: newRevision })
@@ -237,6 +245,7 @@ async function saveSupabaseDB(db) {
     throw error;
   }
   dbRevision = Number(data[0].revision);
+  lastSync = Date.now();
 }
 
 async function saveRemoteDB(db) {

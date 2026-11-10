@@ -9,7 +9,7 @@
   ],
   "headers": [
     {
-      "source": "/(.*)",
+      "source": "/((?!api/).*)",
       "headers": [
         {
           "key": "X-Content-Type-Options",
