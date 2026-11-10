@@ -11,8 +11,6 @@
   --sidebar-text: #e8dfe1;
   --sidebar-active: #39151c;
   --danger: #ff7886;
-  /* Subtle film-grain noise tile used as a texture layer by the app. */
-  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240' viewBox='0 0 240 240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
 * { box-sizing: border-box; }
@@ -25,28 +23,20 @@ body {
   font-size: 14px;
 }
 :root[data-theme='dark'] body,
-:root:not([data-theme='light']) body,
-:root[data-theme='light'] body {
-  background-image: linear-gradient(rgba(27,20,23,.48), rgba(27,20,23,.48)), url('/fond.jpg');
-  background-size: cover;
-  background-position: center 38%;
+:root:not([data-theme='light']) body {
+  background:
+    radial-gradient(1100px 620px at 88% -12%, rgba(230,0,27,.10), transparent 62%),
+    radial-gradient(900px 560px at -8% 108%, rgba(150,52,70,.14), transparent 58%),
+    linear-gradient(160deg, #1c1519, #171315 46%, #120e10);
   background-attachment: fixed;
 }
-
-/* ---------- Texture design ---------- */
-/* Fine film-grain laid over the whole app (pointer-transparent, above every
-   surface incl. cards/modals/topbar). Low opacity so it stays subtle. */
-body::after {
-  content: '';
-  position: fixed; inset: 0; z-index: 2147483000;
-  pointer-events: none;
-  background-image: var(--grain);
-  background-size: 240px 240px;
-  background-repeat: repeat;
-  mix-blend-mode: overlay;
-  opacity: .045;
+:root[data-theme='light'] body {
+  background:
+    radial-gradient(1100px 620px at 88% -12%, rgba(230,0,27,.06), transparent 62%),
+    radial-gradient(900px 560px at -8% 108%, rgba(230,0,27,.05), transparent 58%),
+    linear-gradient(160deg, #fbf8f9, #f2edee 48%, #f4f0f1);
+  background-attachment: fixed;
 }
-:root[data-theme='light'] body::after { opacity: .06; }
 h1 { font-size: 22px; margin: 0; }
 h2.card-title { font-size: 16px; margin: 0 0 12px; }
 .muted { color: var(--muted); font-size: 13px; }
@@ -76,11 +66,11 @@ h2.card-title { font-size: 16px; margin: 0 0 12px; }
 .sidebar {
   width: 268px;
   display: flex; flex-direction: column; padding: 22px 14px;
-  position: sticky; top: 0; height: 100vh; flex-shrink: 0; border-right: 1px solid #514047;
+  position: sticky; top: 0; height: 100vh; flex-shrink: 0; border-right: 1px solid #4a3940;
   color: #f5edef; backdrop-filter: blur(16px);
-  background-image: var(--grain), radial-gradient(ellipse at 12% 0%, rgba(140,47,63,.30), transparent 40%), linear-gradient(180deg, rgba(56,42,46,.82), rgba(48,38,41,.82) 72%, rgba(41,35,38,.82));
-  background-size: 240px 240px, auto, auto;
-  background-blend-mode: soft-light, normal, normal;
+  background-image:
+    radial-gradient(420px 260px at 14% -4%, rgba(230,0,27,.13), transparent 62%),
+    linear-gradient(180deg, #231a1e, #191316 52%, #130e10);
 }
 .brand { padding: 2px 8px 20px; display: flex; align-items: center; gap: 12px; min-height: 76px; border-bottom: 1px solid rgba(255,255,255,.09); }
 .brand-emblem { width: 48px; height: 48px; object-fit: contain; background: #fff; border: 2px solid rgba(255,255,255,.9); border-radius: 50%; flex-shrink: 0; }
@@ -99,9 +89,7 @@ h2.card-title { font-size: 16px; margin: 0 0 12px; }
 .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .topbar {
   height: 72px; border-bottom: 1px solid var(--border);
-  background-image: var(--grain), linear-gradient(rgba(20,16,18,.85), rgba(20,16,18,.85));
-  background-size: 240px 240px, auto;
-  background-blend-mode: soft-light, normal;
+  background: rgba(23,17,20,.85);
   display: flex; align-items: center; justify-content: space-between; padding: 0 28px;
   position: sticky; top: 0; z-index: 20; backdrop-filter: blur(16px);
   box-shadow: 0 4px 20px rgba(0,0,0,.25);
@@ -576,12 +564,7 @@ input[type='date']:hover, input[type='datetime-local']:hover, input[type='time']
   --primary-soft: #fff0f2;
   --danger: #b91c1c;
 }
-:root[data-theme='light'] .topbar {
-  backdrop-filter: blur(18px);
-  background-image: var(--grain), linear-gradient(rgba(255,255,255,.74), rgba(255,255,255,.74));
-  background-size: 240px 240px, auto;
-  background-blend-mode: soft-light, normal;
-}
+:root[data-theme='light'] .topbar { background: rgba(255,253,254,.8); backdrop-filter: blur(18px); }
 :root[data-theme='light'] .lang-toggle,
 :root[data-theme='light'] .theme-toggle { background: #fff; border-color: #e4dadd; color: #514448; }
 :root[data-theme='light'] .lang-toggle:hover,
