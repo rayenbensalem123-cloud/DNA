@@ -1,5 +1,8 @@
-import { route } from '../../server/index.js';
+import { route } from '../server/index.js';
 
+// Single entry point for the whole API. Vercel routes every /api/* request
+// here via the rewrite in vercel.json, so one warm instance serves them all
+// (no per-path cold starts on page loads).
 export default async function handler(req, res) {
   try {
     await route(req, res);
