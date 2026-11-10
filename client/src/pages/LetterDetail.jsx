@@ -5,6 +5,7 @@ import { useAuth } from '../auth';
 import { useLanguage } from '../i18n';
 import { fmtDate, fmtDateTime, fmtSize } from '../utils';
 import LetterForm from '../components/LetterForm';
+import Select from '../components/Select';
 
 export default function LetterDetail() {
   const { id } = useParams();
@@ -213,10 +214,7 @@ export default function LetterDetail() {
           {(canManage || letter.commission) && <div className="card">
             <h2 className="card-title">{t('detail.committeeActions')}</h2>
             {canManage && <div className="status-actions">
-                <select value={committee} onChange={(e) => setCommittee(e.target.value)}>
-                  {isAdmin && <option value="">{t('commission.none')}</option>}
-                  {committees.map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}
-                </select>
+                <Select ariaLabel="Comité" value={committee} onChange={(v) => setCommittee(v)} options={[...(isAdmin ? [{ value: '', label: t('commission.none') }] : []), ...committees.map((c) => ({ value: c.id, label: c.nom }))]} />
                 <button className="btn btn-primary" onClick={assignCommittee} disabled={busy}>{t('detail.transmit')}</button>
               </div>}
             {letter.commission && (

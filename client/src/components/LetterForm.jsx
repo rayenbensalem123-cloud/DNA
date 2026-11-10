@@ -3,6 +3,7 @@ import { api } from '../api';
 import { useLanguage } from '../i18n';
 import { useAuth } from '../auth';
 import { fmtSize, todayInputValue } from '../utils';
+import Select from './Select';
 
 const SUBJECTS = [
   "Plainte d'un club",
@@ -54,6 +55,7 @@ export default function LetterForm({ onSubmit, onCancel, busy = false, error = '
   const [committees, setCommittees] = useState([]);
   const [files, setFiles] = useState([]);
   const [fileError, setFileError] = useState('');
+  const [formError, setFormError] = useState('');
   const [dragging, setDragging] = useState(false);
   const [form, setForm] = useState(() => initialForm(initialLetter, initialDirection));
   const set = (key, value) => setForm((current) => ({ ...current, [key]: value }));
@@ -88,6 +90,10 @@ export default function LetterForm({ onSubmit, onCancel, busy = false, error = '
   const submit = (event) => {
     event.preventDefault();
     if (fileError) return;
+    // Custom themed dropdowns can't rely on HTML `required`, so validate here.
+    if (!initialLetter && !form.objet) { setFormError('Choisissez le sujet de la lettre.'); return; }
+    if (!initialLetter && !form.commission) { setFormError('Choisissez le comité destinataire.'); return; }
+    setFormError('');
     const objet = form.objet === 'autre' ? form.objetAutre.trim() : form.objet;
     onSubmit({
       numeroLettre: form.numeroLettre,
@@ -150,34 +156,21 @@ export default function LetterForm({ onSubmit, onCancel, busy = false, error = '
         <div className="form-grid">
           <label className="field"><span>N° du courrier</span><input value={form.numeroLettre} onChange={(event) => set('numeroLettre', event.target.value)} placeholder="N° ..." /></label>
           <label className="field"><span>Direction</span>
-            <select value={form.direction} onChange={(event) => set('direction', event.target.value)}>
-              <option value="entrant">Entrant</option><option value="sortant">Sortant</option>
-            </select>
+            <Select ariaLabel="Direction" value={form.direction} onChange={(v) => set('direction', v)} options={[{ value: 'entrant', label: 'Entrant' }, { value: 'sortant', label: 'Sortant' }]} />
           </label>
           <label className="field"><span>Type</span>
-            <select value={form.type} onChange={(event) => set('type', event.target.value)}>
-              <option value="courrier">Courrier</option><option value="officielle">Lettre officielle</option><option value="note">Note</option><option value="arrete">Arrêté</option><option value="decret">Décret</option><option value="mandat">Mandat</option><option value="autre">Autre</option>
-            </select>
+            <Select ariaLabel="Type" value={form.type} onChange={(v) => set('type', v)} options={[{ value: 'courrier', label: 'Courrier' }, { value: 'officielle', label: 'Lettre officielle' }, { value: 'note', label: 'Note' }, { value: 'arrete', label: 'Arrêté' }, { value: 'decret', label: 'Décret' }, { value: 'mandat', label: 'Mandat' }, { value: 'autre', label: 'Autre' }]} />
           </label>
           <label className="field"><span>Importance</span>
-            <select value={form.priorite} onChange={(event) => set('priorite', event.target.value)}>
-              <option value="normale">Normale</option><option value="urgente">Urgente</option><option value="confidentielle">Confidentielle</option>
-            </select>
+            <Select ariaLabel="Importance" value={form.priorite} onChange={(v) => set('priorite', v)} options={[{ value: 'normale', label: 'Normale' }, { value: 'urgente', label: 'Urgente' }, { value: 'confidentielle', label: 'Confidentielle' }]} />
           </label>
           <label className="field"><span>{isAdmin ? 'Comité destinataire' : (initialLetter ? 'Comité (changez-le pour transférer)' : 'Comité destinataire')}</span>
-            <select value={form.commission} required={!isAdmin && !initialLetter} onChange={(event) => set('commission', event.target.value)}>
-              <option value="">{isAdmin ? '— Aucun —' : '— Choisir un comité —'}</option>
-              {committees.map((committee) => <option key={committee.id} value={committee.id}>{committee.nom}</option>)}
-            </select>
+            <Select ariaLabel="Comité" value={form.commission} onChange={(v) => set('commission', v)} placeholder={isAdmin ? '— Aucun —' : '— Choisir un comité —'} options={[{ value: '', label: isAdmin ? '— Aucun —' : '— Choisir un comité —' }, ...committees.map((committee) => ({ value: committee.id, label: committee.nom }))]} />
           </label>
         </div>
 
         <label className="field full"><span>Objet</span>
-          <select value={form.objet} required={!initialLetter} onChange={(event) => selectSubject(event.target.value)}>
-            <option value="">— Choisir le sujet —</option>
-            {SUBJECTS.map((subject) => <option key={subject} value={subject}>{subject}</option>)}
-            <option value="autre">Autre</option>
-          </select>
+          <Select ariaLabel="Objet" value={form.objet} onChange={(v) => selectSubject(v)} placeholder="— Choisir le sujet —" options={[{ value: '', label: '— Choisir le sujet —' }, ...SUBJECTS.map((subject) => ({ value: subject, label: subject })), { value: 'autre', label: 'Autre' }]} />
         </label>
 
         {contact && (
@@ -198,6 +191,7 @@ export default function LetterForm({ onSubmit, onCancel, busy = false, error = '
           <label className="field"><span>Date de réception</span><input type="date" value={form.dateReception} onChange={(event) => set('dateReception', event.target.value)} /></label>
         </div>
         <label className="field full"><span>Résumé</span><textarea rows={3} value={form.resume} onChange={(event) => set('resume', event.target.value)} /></label>
+        {formError && <div className="form-error" role="alert">{formError}</div>}
         {error && <div className="form-error" role="alert">{error}</div>}
       </div>
       <div className="modal-foot">

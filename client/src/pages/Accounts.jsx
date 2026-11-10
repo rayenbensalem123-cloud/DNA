@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, setToken } from '../api';
 import { useAuth } from '../auth';
+import Select from '../components/Select';
 
 const emptyAccount = () => ({ name: '', username: '', password: '', commission: '', role: 'agent' });
 const ROLE_HINTS = {
@@ -87,12 +88,8 @@ export default function Accounts() {
             <label className="field">Nom complet<input autoComplete="name" value={form.name} onChange={(e) => update('name', e.target.value)} required /></label>
             <label className="field">Identifiant<input autoComplete="username" value={form.username} onChange={(e) => update('username', e.target.value)} required minLength={3} disabled={Boolean(form.id)} /></label>
             <label className="field">{form.id ? 'Nouveau mot de passe (facultatif)' : 'Mot de passe'}<input type="password" autoComplete="new-password" value={form.password} onChange={(e) => update('password', e.target.value)} minLength={form.password ? 8 : undefined} required={!form.id} placeholder={form.id ? 'Laisser vide pour conserver' : '8 caractères minimum'} /></label>
-            <label className="field">Type de compte<select value={form.role} onChange={(e) => update('role', e.target.value)} disabled={form.id === me?.id}>
-              <option value="agent">Comité</option>
-              <option value="supervisor">Superviseur</option>
-              <option value="admin">Administration</option>
-            </select><span className="muted">{ROLE_HINTS[form.role]}</span></label>
-            <label className="field">{form.role === 'admin' ? 'Comité (facultatif)' : 'Comité'}<select value={form.commission} required={form.role !== 'admin'} onChange={(e) => update('commission', e.target.value)}><option value="">{form.role === 'admin' ? 'Aucun comité' : '— Choisir un comité —'}</option>{committees.map((committee) => <option key={committee.id} value={committee.id}>{committee.nom}</option>)}</select></label>
+            <label className="field">Type de compte<Select ariaLabel="Type de compte" value={form.role} onChange={(v) => update('role', v)} disabled={form.id === me?.id} options={[{ value: 'agent', label: 'Comité' }, { value: 'supervisor', label: 'Superviseur' }, { value: 'admin', label: 'Administration' }]} /><span className="muted">{ROLE_HINTS[form.role]}</span></label>
+            <label className="field">{form.role === 'admin' ? 'Comité (facultatif)' : 'Comité'}<Select ariaLabel="Comité" value={form.commission} onChange={(v) => update('commission', v)} placeholder={form.role === 'admin' ? 'Aucun comité' : '— Choisir un comité —'} options={[{ value: '', label: form.role === 'admin' ? 'Aucun comité' : '— Choisir un comité —' }, ...committees.map((committee) => ({ value: committee.id, label: committee.nom }))]} /></label>
           </div>
           {error && <div className="form-error" role="alert">{error}</div>}
           <div className="page-actions"><button className="btn btn-primary" disabled={busy}>{busy ? 'Enregistrement…' : 'Enregistrer'}</button><button className="btn btn-secondary" type="button" onClick={() => { setForm(null); setError(''); }}>Annuler</button></div>

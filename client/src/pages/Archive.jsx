@@ -4,6 +4,7 @@ import { api } from '../api';
 import { useAuth } from '../auth';
 import { useLanguage } from '../i18n';
 import { fmtDate } from '../utils';
+import Select from '../components/Select';
 
 export default function Archive() {
   const { t } = useLanguage();
@@ -106,16 +107,9 @@ export default function Archive() {
           </div>
           <div className="filters">
             <input aria-label="Rechercher dans l’archive" placeholder={t('letters.searchPlaceholder')} value={filters.q} onChange={(event) => set('q', event.target.value)} />
-            <select aria-label="Direction" value={filters.direction} onChange={(event) => set('direction', event.target.value)}>
-              <option value="">Toutes les directions</option><option value="entrant">Entrant</option><option value="sortant">Sortant</option>
-            </select>
-            <select aria-label="Statut" value={filters.statut} onChange={(event) => set('statut', event.target.value)}>
-              <option value="">Tous les statuts</option>
-              {['recu', 'en_cours', 'archive'].map((status) => <option key={status} value={status}>{t('status.' + status)}</option>)}
-            </select>
-            <select aria-label="Importance" value={filters.priorite} onChange={(event) => set('priorite', event.target.value)}>
-              <option value="">Toutes les importances</option><option value="normale">Normale</option><option value="urgente">Urgente</option><option value="confidentielle">Confidentielle</option>
-            </select>
+            <Select ariaLabel="Direction" value={filters.direction} onChange={(v) => set('direction', v)} options={[{ value: '', label: 'Toutes les directions' }, { value: 'entrant', label: 'Entrant' }, { value: 'sortant', label: 'Sortant' }]} />
+            <Select ariaLabel="Statut" value={filters.statut} onChange={(v) => set('statut', v)} options={[{ value: '', label: 'Tous les statuts' }, ...['recu', 'en_cours', 'archive'].map((status) => ({ value: status, label: t('status.' + status) }))]} />
+            <Select ariaLabel="Importance" value={filters.priorite} onChange={(v) => set('priorite', v)} options={[{ value: '', label: 'Toutes les importances' }, { value: 'normale', label: 'Normale' }, { value: 'urgente', label: 'Urgente' }, { value: 'confidentielle', label: 'Confidentielle' }]} />
             <button type="button" className="btn btn-secondary" onClick={() => setShowMore((v) => !v)} aria-expanded={showMore}>Plus de filtres{advancedCount ? ` (${advancedCount})` : ''}</button>
             {hasFilters && <button type="button" className="btn btn-ghost" onClick={resetFilters}>Réinitialiser</button>}
           </div>
@@ -123,11 +117,7 @@ export default function Archive() {
             <label className="filter-field"><span>Du</span><input type="date" value={filters.from} max={filters.to || undefined} onChange={(event) => set('from', event.target.value)} /></label>
             <label className="filter-field"><span>Au</span><input type="date" value={filters.to} min={filters.from || undefined} onChange={(event) => set('to', event.target.value)} /></label>
             <label className="filter-field"><span>Expéditeur</span><input placeholder="Nom, fonction, service…" value={filters.expediteur} onChange={(event) => set('expediteur', event.target.value)} /></label>
-            {!committeeId && <label className="filter-field"><span>Comité</span><select value={filters.commission} onChange={(event) => set('commission', event.target.value)}>
-              <option value="">Tous les comités</option>
-              {committees.map((committee) => <option key={committee.id} value={committee.id}>{committee.nom}</option>)}
-              <option value="non_assigne">Sans comité</option>
-            </select></label>}
+            {!committeeId && <label className="filter-field"><span>Comité</span><Select ariaLabel="Comité" value={filters.commission} onChange={(v) => set('commission', v)} options={[{ value: '', label: 'Tous les comités' }, ...committees.map((committee) => ({ value: committee.id, label: committee.nom })), { value: 'non_assigne', label: 'Sans comité' }]} /></label>}
           </div>}
           {loading ? <div className="card-pad">{t('common.loading')}</div> : (
             <div className="table-wrap"><table className="table archive-table">
