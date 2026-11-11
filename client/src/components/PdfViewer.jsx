@@ -2,12 +2,16 @@ import { useEffect, useState } from 'react';
 
 // Module-level registry: any code (api.js, pages…) can open a document in the
 // in-app viewer without prop drilling. PdfViewer is mounted once in Layout.
+//
+// openPdf({ title }) opens the modal immediately (spinner), a second
+// openPdf({ url, mime }) fills it in — so clicking "Voir" shows the viewer
+// before the link request even returns.
 let current = null;
 const listeners = new Set();
 
-export function openPdf({ url, title = '', mime = '' }) {
-  if (!url) return;
-  current = { url, title, mime };
+export function openPdf(patch = {}) {
+  current = { url: '', title: '', mime: '', ...(current || {}), ...patch };
+  if (!current.title && !current.url) return;
   listeners.forEach((fn) => fn(current));
 }
 
@@ -19,12 +23,15 @@ export function closePdf() {
 
 export default function PdfViewer() {
   const [doc, setDoc] = useState(null);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     const fn = (d) => setDoc(d);
     listeners.add(fn);
     return () => { listeners.delete(fn); };
   }, []);
+
+  useEffect(() => { setLoaded(false); }, [doc?.url]);
 
   useEffect(() => {
     if (!doc) return;
@@ -53,9 +60,14 @@ export default function PdfViewer() {
           </button>
         </div>
         <div className="pdf-body">
-          {isImage
-            ? <img src={doc.url} alt={label} />
-            : <iframe src={doc.url} title={label} />}
+          {doc.url && isImage && <img src={doc.url} alt={label} onLoad={() => setLoaded(true)} />}
+          {doc.url && !isImage && <iframe src={doc.url} title={label} onLoad={() => setLoaded(true)} />}
+          {!loaded && (
+            <div className="pdf-loading" aria-live="polite">
+              <div className="pdf-spinner" aria-hidden="true" />
+              <span>Chargement du document…</span>
+            </div>
+          )}
         </div>
       </div>
     </div>

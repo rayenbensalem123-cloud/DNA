@@ -1,5 +1,5 @@
 import { upload } from '@vercel/blob/client';
-import { openPdf } from './components/PdfViewer';
+import { openPdf, closePdf } from './components/PdfViewer';
 
 const TOKEN_KEY = 'bo_token';
 
@@ -65,8 +65,11 @@ export const api = {
     return d;
   },
   openPiece: async (letterId, pieceId, title = '') => {
-    const d = await req(`/api/file-link?kind=piece&id=${encodeURIComponent(letterId + '/' + pieceId)}`);
-    openPdf({ url: d.url, title, mime: d.mime });
+    openPdf({ title: title || 'Document' });
+    try {
+      const d = await req(`/api/file-link?kind=piece&id=${encodeURIComponent(letterId + '/' + pieceId)}`);
+      openPdf({ url: d.url, mime: d.mime });
+    } catch (e) { closePdf(); throw e; }
   },
   // Courriers (scanned files awaiting validation)
   listCourriers: (status = '') => req('/api/courriers' + (status ? `?status=${encodeURIComponent(status)}` : '')),
@@ -95,8 +98,19 @@ export const api = {
   toSend: () => req('/api/to-send'),
   deleteCourrier: (id) => req(`/api/courriers/${id}`, { method: 'DELETE' }),
   openCourrierFile: async (id, title = '') => {
-    const d = await req(`/api/file-link?kind=courrier&id=${encodeURIComponent(id)}`);
-    openPdf({ url: d.url, title, mime: d.mime });
+    openPdf({ title: title || 'Document' });
+    try {
+      const d = await req(`/api/file-link?kind=courrier&id=${encodeURIComponent(id)}`);
+      openPdf({ url: d.url, mime: d.mime });
+    } catch (e) { closePdf(); throw e; }
+  },
+  // Best-effort prefetch: mints the (stable) link and lets the browser cache
+  // the file, so a later open is instant. Used on hover/touch of open buttons.
+  warmFile: async (kind, id) => {
+    try {
+      const d = await req(`/api/file-link?kind=${kind}&id=${encodeURIComponent(id)}`);
+      if (d.url) fetch(d.url, { priority: 'low' }).catch(() => {});
+    } catch { /* warming is optional */ }
   },
   // Notifications (courrier rejections)
   courrierNotifications: () => req('/api/courrier-notifications'),

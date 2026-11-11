@@ -92,10 +92,12 @@ const NOT_IN_COMMITTEE = 'Cette lettre n’est plus dans votre comité : vous po
 
 // ---- Short-lived signed file links ----
 // The browser (iframe/img) cannot send the Authorization header, so files are
-// opened through a signed, expiring URL. This lets the viewer stream the file
-// directly instead of downloading it twice (function -> client blob).
-function signFileToken(userId, kind, id, ttlMs = 120000) {
-  const exp = Date.now() + ttlMs;
+// opened through a signed, expiring URL. The expiry is bucketed to 30-minute
+// boundaries: the same viewer file mints the same URL within the bucket, so
+// the browser caches the response and re-opening is instant.
+function signFileToken(userId, kind, id) {
+  const BUCKET = 30 * 60 * 1000;
+  const exp = Math.ceil((Date.now() + BUCKET) / BUCKET) * BUCKET;
   const payload = `${userId}|${kind}|${id}|${exp}`;
   const sig = crypto.createHmac('sha256', getSessionSecret()).update(payload).digest('base64url');
   return `${Buffer.from(payload).toString('base64url')}.${sig}`;
@@ -245,7 +247,7 @@ function storedNameOk(storedAs) {
   const name = String(storedAs || '');
   return /^[\w.-]+$/.test(name) && !name.includes('..');
 }
-const FILE_RESPONSE_HEADERS = { ...SECURITY_HEADERS, 'X-Frame-Options': 'SAMEORIGIN', 'Content-Security-Policy': "default-src 'none'; sandbox", 'Cache-Control': 'private, no-store' };
+const FILE_RESPONSE_HEADERS = { ...SECURITY_HEADERS, 'X-Frame-Options': 'SAMEORIGIN', 'Content-Security-Policy': "default-src 'none'; sandbox", 'Cache-Control': 'private, max-age=1800' };
 
 // Lower-case and strip accents so "arbitre" finds "Arbitre" and "arbitré".
 function fold(value) { return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
@@ -932,7 +934,8 @@ async function route(req, res) {
       if (!canSeeLetter(user, letter)) return send(res, 404, { error: 'Fichier non disponible' });
       const piece = (letter.pieces || []).find((p) => p.id === pieceId);
       if (!piece || !piece.storedAs) return send(res, 404, { error: 'Fichier non disponible' });
-      try { logActivity(db, user, 'letter.file.view', letter.ref, { letterId: letter.id, file: piece.nom }); await saveDB(db); } catch { /* logging the view must never stop the file from opening */ }
+      // Log the view AFTER the file has streamed (see courrier handler).
+      const logView = () => { try { logActivity(db, user, 'letter.file.view', letter.ref, { letterId: letter.id, file: piece.nom }); Promise.resolve(saveDB(db)).catch(() => {}); } catch { /* logging must never break the file */ } };
       if (process.env.VERCEL) {
         const { get } = await import('@vercel/blob');
         const blob = await get(piece.storedAs, { access: 'private' });
@@ -942,6 +945,7 @@ async function route(req, res) {
         res.writeHead(200, { ...FILE_RESPONSE_HEADERS, 'Content-Type': mime, 'Content-Disposition': fileDisposition(piece.nom) });
         const { Readable } = await import('node:stream');
         Readable.fromWeb(blob.stream).pipe(res);
+        res.on('finish', logView);
         return;
       }
       if (!storedNameOk(piece.storedAs)) return send(res, 404, { error: 'Fichier non disponible' });
@@ -957,6 +961,7 @@ async function route(req, res) {
         'Content-Disposition': fileDisposition(piece.nom),
       });
       res.end(data);
+      logView();
       return;
     }
 
@@ -1193,7 +1198,9 @@ async function route(req, res) {
     if (!courrier || !courrier.storedAs) return send(res, 404, { error: 'Fichier non disponible' });
     // access: admin/supervisor or uploader
     if (!isAdminLike(user) && courrier.uploadedBy !== user.id) return send(res, 404, { error: 'Fichier non disponible' });
-    try { logActivity(db, user, 'courrier.file.view', courrier.nom, { courrierId: courrier.id }); await saveDB(db); } catch { /* logging the view must never stop the file from opening */ }
+    // Log the view AFTER the file has streamed: a synchronous save here (a
+    // database write) would delay the first byte of the PDF by ~1s.
+    const logView = () => { try { logActivity(db, user, 'courrier.file.view', courrier.nom, { courrierId: courrier.id }); Promise.resolve(saveDB(db)).catch(() => {}); } catch { /* logging must never break the file */ } };
     if (process.env.VERCEL) {
       const { get } = await import('@vercel/blob');
       const blob = await get(courrier.storedAs, { access: 'private' });
@@ -1203,6 +1210,7 @@ async function route(req, res) {
       res.writeHead(200, { ...FILE_RESPONSE_HEADERS, 'Content-Type': mime, 'Content-Disposition': fileDisposition(courrier.nom) });
       const { Readable } = await import('node:stream');
       Readable.fromWeb(blob.stream).pipe(res);
+      res.on('finish', logView);
       return;
     }
     if (!storedNameOk(courrier.storedAs)) return send(res, 404, { error: 'Fichier non disponible' });
@@ -1213,6 +1221,7 @@ async function route(req, res) {
     const data = fs.readFileSync(filePath);
     res.writeHead(200, { ...FILE_RESPONSE_HEADERS, 'Content-Type': mime, 'Content-Length': data.length, 'Content-Disposition': fileDisposition(courrier.nom) });
     res.end(data);
+    logView();
     return;
   }
 

@@ -183,7 +183,7 @@ export default function LetterDetail() {
               {letter.pieces.map((p) => (
                 <div key={p.id} className="file-row">
                   {p.hasFile
-                    ? <button type="button" className="btn-link" onClick={() => openPiece(p.id, p.nom)}>{p.nom}</button>
+                    ? <button type="button" className="btn-link" onClick={() => openPiece(p.id, p.nom)} onMouseEnter={() => api.warmFile('piece', `${letter.id}/${p.id}`)} onTouchStart={() => api.warmFile('piece', `${letter.id}/${p.id}`)}>{p.nom}</button>
                     : <span>{p.nom}</span>}
                   <span className="muted">{p.taille ? fmtSize(p.taille) : ''}{p.hasFile ? '' : ' (' + t('detail.demoFile') + ')'}</span>
                 </div>

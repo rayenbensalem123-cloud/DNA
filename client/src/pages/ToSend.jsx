@@ -79,7 +79,7 @@ export default function ToSend() {
                     <div className="send-file">{item.fileName || item.ref}</div>
                     <div className="muted small">{item.ref} · validé{item.validatedBy ? ` par ${item.validatedBy}` : ''} le {fmtDate(item.validatedAt)}{item.uploadedByName ? ` · ajouté par ${item.uploadedByName}` : ''}</div>
                   </div>
-                  {item.pieceId && <button type="button" className="btn btn-secondary" onClick={() => open(item)}>Ouvrir le fichier</button>}
+                  {item.pieceId && <button type="button" className="btn btn-secondary" onClick={() => open(item)} onMouseEnter={() => api.warmFile('piece', `${item.id}/${item.pieceId}`)} onTouchStart={() => api.warmFile('piece', `${item.id}/${item.pieceId}`)}>Ouvrir le fichier</button>}
                 </div>
                 <div className="send-form">
                   <label className="filter-field send-wide"><span>Objet</span><input value={d.objet} maxLength={300} onChange={(event) => setField(item, 'objet', event.target.value)} /></label>
