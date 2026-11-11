@@ -16,6 +16,9 @@ export default function Courrier() {
   const [rejecting, setRejecting] = useState(null);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
+  // Validation is a bureau decision; a comité granted the "courriers"
+  // permission can deposit scans but not validate or reject them.
+  const isBureau = user?.role === 'admin' || user?.role === 'supervisor';
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -108,7 +111,7 @@ export default function Courrier() {
             {busy ? 'Téléversement...' : 'Téléverser des courriers'}
             <input type="file" accept=".pdf,.jpg,.jpeg,.png" multiple style={{ display: 'none' }} onChange={(e) => { if (e.target.files && e.target.files.length) handleFiles(Array.from(e.target.files)); e.target.value = ''; }} disabled={busy} />
           </label>
-          <button className="btn btn-secondary" onClick={() => navigate('/courriers-rejetes')}>Courriers rejetés</button>
+          {isBureau && <button className="btn btn-secondary" onClick={() => navigate('/courriers-rejetes')}>Courriers rejetés</button>}
         </div>
       </div>
 
@@ -129,8 +132,10 @@ export default function Courrier() {
                   <td>
                     <div style={{ display: 'flex', gap: 8 }}>
                       <button className="btn btn-ghost" onClick={() => api.openCourrierFile(c.id, c.nom)} onMouseEnter={() => api.warmFile('courrier', c.id)} onTouchStart={() => api.warmFile('courrier', c.id)}>Voir</button>
-                      <button className="btn btn-primary" onClick={() => validate(c)} disabled={busy}>Valider</button>
-                      <button className="btn btn-danger" onClick={() => { setRejecting(c); setReason(''); }} disabled={busy}>Rejeter</button>
+                      {isBureau && <>
+                        <button className="btn btn-primary" onClick={() => validate(c)} disabled={busy}>Valider</button>
+                        <button className="btn btn-danger" onClick={() => { setRejecting(c); setReason(''); }} disabled={busy}>Rejeter</button>
+                      </>}
                     </div>
                   </td>
                 </tr>

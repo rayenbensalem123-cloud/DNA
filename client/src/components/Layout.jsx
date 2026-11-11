@@ -23,8 +23,10 @@ export default function Layout() {
   const { t } = useLanguage();
   const navigate = useNavigate();
   const location = useLocation();
-  const canAdd = user?.role === 'admin' || user?.role === 'agent';
+  const perms = user?.permissions || {};
   const isAdminLike = user?.role === 'admin' || user?.role === 'supervisor';
+  const allowed = (perm) => isAdminLike || Boolean(perms[perm]);
+  const canAdd = allowed('create');
   const showLetterModal = canAdd && new URLSearchParams(location.search).get('newLetter') === '1';
 
   const [rejectionUnread, setRejectionUnread] = useState(0);
@@ -62,7 +64,7 @@ export default function Layout() {
           <NavLink to="/archive" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}>
             <NavIcon type="letters" /><span className="nav-text">Archive{transferCount > 0 && <span className="nav-badge" title={`${transferCount} transfert${transferCount > 1 ? 's' : ''} en attente`}>{transferCount}</span>}</span>
           </NavLink>
-          {isAdminLike && <NavLink to="/courrier" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}>
+          {allowed('courriers') && <NavLink to="/courrier" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}>
             <NavIcon type="letters" /><span className="nav-text">Courrier</span>
           </NavLink>}
           {isAdminLike && <NavLink to="/a-envoyer" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}>
@@ -71,10 +73,10 @@ export default function Layout() {
           {isAdminLike && <NavLink to="/courriers-rejetes" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}>
             <NavIcon type="letters" /><span className="nav-text">Rejetés</span>
           </NavLink>}
-          {user?.role === 'admin' && <NavLink to="/comptes" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}>
+          {allowed('users') && <NavLink to="/comptes" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}>
             <NavIcon type="users" /><span className="nav-text">Comptes</span>
           </NavLink>}
-          {user?.role === 'admin' && <NavLink to="/activite" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}>
+          {allowed('journal') && <NavLink to="/activite" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}>
             <NavIcon type="activity" /><span className="nav-text">Journal d’activité</span>
           </NavLink>}
         </nav>
@@ -86,7 +88,7 @@ export default function Layout() {
             {canAdd && <button className="btn btn-primary btn-add" type="button" aria-label="Ajouter un courrier" onClick={() => navigate('/?newLetter=1')}>
               <span className="plus" aria-hidden="true">+</span><span className="btn-label">Ajouter un courrier</span>
             </button>}
-            {isAdminLike && <button className="btn btn-secondary" type="button" onClick={() => navigate('/courrier')}>
+            {allowed('courriers') && <button className="btn btn-secondary" type="button" onClick={() => navigate('/courrier')}>
               Courrier {rejectionUnread > 0 && <span style={{ background: 'var(--primary)', color: '#fff', fontSize: 10, fontWeight: 700, borderRadius: 999, padding: '1px 5px', marginLeft: 4 }}>{rejectionUnread}</span>}
             </button>}
           </div>

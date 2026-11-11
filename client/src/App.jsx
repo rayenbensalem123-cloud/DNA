@@ -75,6 +75,14 @@ function AdminOnly({ children }) {
   return user?.role === 'admin' || user?.role === 'supervisor' ? children : <Navigate to="/" replace />;
 }
 
+// Routes the admin can delegate: the page opens for the bureau or for any
+// account granted the matching permission.
+function PermRoute({ perm, children }) {
+  const { user } = useAuth();
+  const ok = Boolean(user) && (user.role === 'admin' || user.role === 'supervisor' || user?.permissions?.[perm]);
+  return ok ? children : <Navigate to="/" replace />;
+}
+
 export default function App() {
   return (
     <ThemeProvider>
@@ -89,8 +97,8 @@ export default function App() {
                 <Route index element={<ErrorBoundary label="dashboard"><Dashboard /></ErrorBoundary>} />
                 <Route path="archive/comites/:committeeId" element={<ErrorBoundary label="archive"><Archive /></ErrorBoundary>} />
                 <Route path="archive" element={<ErrorBoundary label="archive"><Archive /></ErrorBoundary>} />
-                <Route path="comptes" element={<AdminOnly><ErrorBoundary label="accounts"><Accounts /></ErrorBoundary></AdminOnly>} />
-                <Route path="activite" element={<AdminOnly><ErrorBoundary label="activity"><Activity /></ErrorBoundary></AdminOnly>} />
+                <Route path="comptes" element={<PermRoute perm="users"><ErrorBoundary label="accounts"><Accounts /></ErrorBoundary></PermRoute>} />
+                <Route path="activite" element={<PermRoute perm="journal"><ErrorBoundary label="activity"><Activity /></ErrorBoundary></PermRoute>} />
                 <Route path="courrier" element={<ErrorBoundary label="courrier"><Courrier /></ErrorBoundary>} />
                 <Route path="a-envoyer" element={<AdminOnly><ErrorBoundary label="tosend"><ToSend /></ErrorBoundary></AdminOnly>} />
                 <Route path="courriers-rejetes" element={<ErrorBoundary label="rejetes"><CourriersRejetes /></ErrorBoundary>} />

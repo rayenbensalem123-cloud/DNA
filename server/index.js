@@ -64,19 +64,21 @@ function readBody(req, limitMB = 0.25) {
   });
 }
 
-function publicUser(u) { return { id: u.id, username: u.username, name: u.name, role: effectiveRole(u.role), commission: u.commission || null, createdAt: u.createdAt }; }
+function publicUser(u) { return { id: u.id, username: u.username, name: u.name, role: effectiveRole(u.role), commission: u.commission || null, createdAt: u.createdAt, permissions: userPerms(u), readOnly: !!u.readOnly }; }
 
 // ---- Access by comité ---------------------------------------------------------------
 // Two kinds of accounts: Administration (role "admin": sees and does everything) and comité accounts
 // (role "agent", older "lecture" accounts behave the same). A comité account can send a letter to any
 // comité, but only reads the letters its own comité received, and only changes a letter while it is in
 // its comité. It cannot see what other comités receive or handle.
-const effectiveRole = (role) => (role === 'admin' || role === 'supervisor' ? role : 'agent');
+const effectiveRole = (role) => (['admin', 'supervisor', 'chef', 'agent'].includes(role) ? role : 'agent');
 function receivedBy(letter, committee) {
   return letter.commission === committee || (Array.isArray(letter.commissionHisto) && letter.commissionHisto.some((h) => h.committee === committee));
 }
 function canSeeLetter(user, letter) {
   if (isAdminLike(user)) return true;
+  // The admin can grant a comité account the right to see every comité's mail.
+  if (can(user, 'view_all')) return true;
   return user.commission ? receivedBy(letter, user.commission) : letter.createdBy === user.id;
 }
 function holdsLetter(user, letter) {
@@ -87,7 +89,7 @@ function holdsLetter(user, letter) {
 function justSent(user, letter) {
   return letter.createdBy === user.id && Date.now() - Date.parse(letter.createdAt || 0) < 15 * 60 * 1000;
 }
-const canAttach = (user, letter) => holdsLetter(user, letter) || justSent(user, letter);
+const canAttach = (user, letter) => !isReadOnly(user) && (holdsLetter(user, letter) || justSent(user, letter)) && (isAdminLike(user) || can(user, 'files'));
 const NOT_IN_COMMITTEE = 'Cette lettre n’est plus dans votre comité : vous pouvez la consulter mais plus la modifier.';
 
 // ---- Short-lived signed file links ----
@@ -203,8 +205,39 @@ function requireAuth(req, res, next) {
   return user;
 }
 
-const ROLES = ['admin', 'supervisor', 'agent'];
+const ROLES = ['admin', 'supervisor', 'chef', 'agent'];
 const normalizeRole = (r) => (r === 'lecture' ? 'agent' : r);
+// ---- Permissions ----------------------------------------------------------------------
+// The admin can delegate (and revoke at any time) individual powers to any
+// chef/agent account: every check below consults these flags per request, so a
+// change applies on the very next call — no re-login needed.
+const PERMISSIONS = ['view_all', 'tracking', 'journal', 'create', 'edit', 'transfer', 'files', 'courriers', 'delete', 'users', 'committees'];
+// A newly created chef starts with the full powers of its comité; a new agent
+// starts read-only. The admin can change both afterwards.
+const CHEF_DEFAULT_PERMS = { create: true, edit: true, files: true, transfer: true };
+// Accounts created before the permissions system existed keep today's powers.
+const LEGACY_COMITE_PERMS = { create: true, edit: true, files: true, transfer: true };
+const isComiteRole = (u) => !!u && (u.role === 'agent' || u.role === 'chef');
+function userPerms(user) {
+  if (!user) return {};
+  if (user.role === 'admin' || user.role === 'supervisor') return Object.fromEntries(PERMISSIONS.map((p) => [p, true]));
+  if (user.permissions && typeof user.permissions === 'object' && !Array.isArray(user.permissions)) return user.permissions;
+  return { ...LEGACY_COMITE_PERMS };
+}
+const can = (user, perm) => !!userPerms(user)[perm];
+const isReadOnly = (u) => isComiteRole(u) && !!u.readOnly;
+function sanitizePerms(input) {
+  const out = {};
+  if (input && typeof input === 'object' && !Array.isArray(input)) {
+    for (const p of PERMISSIONS) if (input[p]) out[p] = true;
+  }
+  return out;
+}
+function denyReadOnly(user, res) {
+  if (!isReadOnly(user)) return false;
+  send(res, 403, { error: 'Ce compte est en lecture seule' });
+  return true;
+}
 function isValidStatut(s) { return ['recu', 'en_cours', 'archive'].includes(s); }
 function isValidType(t) { return ['officielle', 'arrete', 'decret', 'note', 'courrier', 'mandat', 'autre'].includes(t); }
 function isValidCategorie(c) { return ['administration', 'juridique', 'finances', 'rh', 'communication', 'securite', 'autre'].includes(c); }
@@ -215,7 +248,7 @@ const COMMISSION_EVENTS = ['recu_comite', 'vu_comite', 'traite_comite', 'note'];
 
 function logActivity(db, user, action, target, details) {
   if (!Array.isArray(db.activity)) db.activity = [];
-  db.activity.push({ id: 'a' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), date: new Date().toISOString(), userId: user?.id || null, userName: user?.name || '—', userRole: isAdminLike(user) ? (user.role === 'supervisor' ? 'supervisor' : 'admin') : 'agent', commission: user?.commission || null, action, target: String(target || ''), details: details || {} });
+  db.activity.push({ id: 'a' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), date: new Date().toISOString(), userId: user?.id || null, userName: user?.name || '—', userRole: user ? effectiveRole(user.role) : 'agent', commission: user?.commission || null, action, target: String(target || ''), details: details || {} });
   if (db.activity.length > 3000) db.activity.splice(0, db.activity.length - 3000);
 }
 
@@ -308,11 +341,14 @@ function letterView(user, l) {
   if (isAdminLike(user)) {
     return { ...base, comiteVu: l.commission ? !isUnread(l) : null };
   }
+  // The admin can grant a comité account the right to see the tracking history
+  // and the "seen by comité" indicator (usually together with view_all).
+  const seesTracking = can(user, 'tracking');
   return {
     ...base,
-    commissionHisto: [],
+    commissionHisto: seesTracking ? base.commissionHisto : [],
     transferred: (Array.isArray(l.commissionHisto) ? l.commissionHisto : []).some((h) => h.type === 'transfert'),
-    comiteVu: null,
+    comiteVu: seesTracking && l.commission ? !isUnread(l) : null,
     // A comité sees a pending transfer only on letters it currently holds.
     pendingTransfer: holdsLetter(user, l) ? (l.pendingTransfer || null) : null,
   };
@@ -388,9 +424,11 @@ async function route(req, res) {
   if (pathname === '/api/users' && (method === 'GET' || method === 'POST')) {
     const user = requireAuth(req, res);
     if (!user) return;
-    if (!isAdminLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
+    const manageUsers = user.role === 'admin' || can(user, 'users');
+    if (!manageUsers) return send(res, 403, { error: 'Droits insuffisants' });
     const db = getDB();
     if (method === 'GET') return send(res, 200, { items: db.users.map(publicUser) });
+    if (denyReadOnly(user, res)) return;
     const body = await readBody(req);
     const username = String(body.username || '').trim().toLowerCase();
     const name = clip(body.name, 100).trim();
@@ -398,13 +436,22 @@ async function route(req, res) {
     const commission = body.commission ? String(body.commission) : null;
     const role = body.role === undefined ? 'agent' : normalizeRole(String(body.role));
     if (!ROLES.includes(role)) return send(res, 400, { error: 'Rôle invalide' });
-    if (role === 'agent' && !commission) return send(res, 400, { error: 'Choisissez le comité de ce compte' });
+    // A delegated account manager may create chef/agent accounts only, and
+    // never grants roles or permissions.
+    if (!isAdminLike(user) && !['chef', 'agent'].includes(role)) return send(res, 403, { error: 'Seul le bureau d’ordre peut créer ce type de compte' });
+    if ((role === 'agent' || role === 'chef') && !commission) return send(res, 400, { error: 'Choisissez le comité de ce compte' });
     if (username.length < 3 || !/^[a-z0-9._-]+$/.test(username)) return send(res, 400, { error: 'Identifiant invalide (3 caractères minimum, lettres, chiffres, . _ -)' });
     if (db.users.some((u) => u.username === username)) return send(res, 409, { error: 'Cet identifiant existe déjà' });
     if (!name) return send(res, 400, { error: 'Le nom est obligatoire' });
     if (password.length < 8) return send(res, 400, { error: 'Le mot de passe doit contenir au moins 8 caractères' });
     if (!isValidCommission(db, commission)) return send(res, 400, { error: 'Comité invalide' });
-    const created = { id: 'u' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex'), username, name, password: hashPassword(password), role, commission, createdAt: new Date().toISOString() };
+    // A chef starts with the full powers of its comité, an agent starts
+    // read-only; the bureau adjusts either at any time.
+    let permissions;
+    if (isAdminLike(user) && body.permissions !== undefined) permissions = sanitizePerms(body.permissions);
+    else if (role === 'chef') permissions = { ...CHEF_DEFAULT_PERMS };
+    else permissions = {};
+    const created = { id: 'u' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex'), username, name, password: hashPassword(password), role, commission, permissions, readOnly: isAdminLike(user) ? !!body.readOnly : false, createdAt: new Date().toISOString() };
     db.users.push(created);
     logActivity(db, user, 'user.create', created.username, { role: created.role, commission: created.commission });
     await saveDB(db);
@@ -415,29 +462,40 @@ async function route(req, res) {
   if (userMatch && method === 'PATCH') {
     const user = requireAuth(req, res);
     if (!user) return;
-    if (!isAdminLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
+    const manageUsers = user.role === 'admin' || can(user, 'users');
+    if (!manageUsers) return send(res, 403, { error: 'Droits insuffisants' });
     const db = getDB();
     const target = db.users.find((u) => u.id === decodeURIComponent(userMatch[1]));
     if (!target) return send(res, 404, { error: 'Compte introuvable' });
+    // A delegated account manager cannot touch bureau accounts.
+    if (!isAdminLike(user) && ['admin', 'supervisor'].includes(effectiveRole(target.role))) return send(res, 403, { error: 'Droits insuffisants' });
+    if (denyReadOnly(user, res)) return;
     const body = await readBody(req);
     const name = clip(body.name ?? target.name, 100).trim();
     const commission = body.commission === undefined ? (target.commission || null) : (body.commission ? String(body.commission) : null);
     const password = typeof body.password === 'string' ? body.password.slice(0, 200) : '';
     const role = body.role === undefined ? effectiveRole(target.role) : normalizeRole(String(body.role));
     if (!ROLES.includes(role)) return send(res, 400, { error: 'Rôle invalide' });
+    if (!isAdminLike(user) && role !== effectiveRole(target.role)) return send(res, 403, { error: 'Seul le bureau d’ordre peut changer un rôle' });
     if (!name) return send(res, 400, { error: 'Le nom est obligatoire' });
     if (!isValidCommission(db, commission)) return send(res, 400, { error: 'Comité invalide' });
     if (password && password.length < 8) return send(res, 400, { error: 'Le mot de passe doit contenir au moins 8 caractères' });
     if (role !== effectiveRole(target.role) && target.id === user.id) return send(res, 400, { error: 'Vous ne pouvez pas changer votre propre rôle' });
     if (target.role === 'admin' && role !== 'admin' && db.users.filter((u) => u.role === 'admin').length <= 1) return send(res, 400, { error: 'Le dernier compte administrateur doit rester administrateur' });
-    if (role === 'agent' && !commission) return send(res, 400, { error: 'Choisissez le comité de ce compte' });
+    if ((role === 'agent' || role === 'chef') && !commission) return send(res, 400, { error: 'Choisissez le comité de ce compte' });
     // A new password, role or comité signs the account out everywhere (old tokens stop working).
     if (password || role !== effectiveRole(target.role) || commission !== (target.commission || null)) target.sessionVersion = sessionVersion(target) + 1;
     target.name = name;
     target.commission = commission;
     target.role = role;
     if (password) target.password = hashPassword(password);
-    logActivity(db, user, 'user.update', target.username, { role: target.role, commission: target.commission, passwordReset: Boolean(password) });
+    // Role and permissions are bureau-only changes; they apply on the next
+    // request without signing the account out.
+    if (isAdminLike(user)) {
+      if (body.permissions !== undefined) target.permissions = sanitizePerms(body.permissions);
+      if (body.readOnly !== undefined) target.readOnly = !!body.readOnly;
+    }
+    logActivity(db, user, 'user.update', target.username, { role: target.role, commission: target.commission, passwordReset: Boolean(password), permissions: isAdminLike(user) && body.permissions !== undefined ? Object.keys(target.permissions || {}).length : undefined, readOnly: isAdminLike(user) && body.readOnly !== undefined ? !!target.readOnly : undefined });
     await saveDB(db);
     // Changing your own password keeps you signed in on this device with a fresh token.
     return send(res, 200, { item: publicUser(target), ...(target.id === user.id ? { token: signToken(target) } : {}) });
@@ -446,11 +504,14 @@ async function route(req, res) {
   if (userMatch && method === 'DELETE') {
     const user = requireAuth(req, res);
     if (!user) return;
-    if (!isAdminLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
+    const manageUsers = user.role === 'admin' || can(user, 'users');
+    if (!manageUsers) return send(res, 403, { error: 'Droits insuffisants' });
     const db = getDB();
     const id = decodeURIComponent(userMatch[1]);
     const target = db.users.find((u) => u.id === id);
     if (!target) return send(res, 404, { error: 'Compte introuvable' });
+    if (!isAdminLike(user) && ['admin', 'supervisor'].includes(effectiveRole(target.role))) return send(res, 403, { error: 'Droits insuffisants' });
+    if (denyReadOnly(user, res)) return;
     if (target.id === user.id) return send(res, 400, { error: 'Vous ne pouvez pas supprimer votre propre compte' });
     if (target.role === 'admin' && db.users.filter((u) => u.role === 'admin').length <= 1) return send(res, 400, { error: 'Le dernier compte administrateur ne peut pas être supprimé' });
     db.users = db.users.filter((u) => u.id !== id);
@@ -462,7 +523,7 @@ async function route(req, res) {
   if (pathname === '/api/activity' && method === 'GET') {
     const user = requireAuth(req, res);
     if (!user) return;
-    if (!isAdminLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
+    if (!isAdminLike(user) && !can(user, 'journal')) return send(res, 403, { error: 'Droits insuffisants' });
     const db = getDB();
     const action = url.searchParams.get('action') || '';
     const limit = Math.min(parseInt(url.searchParams.get('limit') || '200', 10) || 200, 1000);
@@ -493,7 +554,8 @@ async function route(req, res) {
   if ((pathname === '/api/committees' && method === 'POST') || (committeeIdMatch && method === 'PATCH')) {
     const user = requireAuth(req, res);
     if (!user) return;
-    if (user.role !== 'admin') return send(res, 403, { error: 'Droits insuffisants' });
+    if (user.role !== 'admin' && !can(user, 'committees')) return send(res, 403, { error: 'Droits insuffisants' });
+    if (denyReadOnly(user, res)) return;
     // Force a fresh read: warm serverless instances keep an in-memory copy of
     // the state, which can predate a committee created moments ago.
     await initializeDB(true);
@@ -533,12 +595,12 @@ async function route(req, res) {
         body,
         onBeforeGenerateToken: async (pathnameForBlob, clientPayload) => {
           const user = authUser(req);
-          if (!user || !['admin', 'supervisor', 'agent'].includes(user.role)) throw new Error('Droits insuffisants pour ajouter un fichier');
+          if (!user || !isAdminLike(user) && !isComiteRole(user)) throw new Error('Droits insuffisants pour ajouter un fichier');
           let details;
           try { details = JSON.parse(clientPayload || '{}'); } catch { throw new Error('Informations du fichier invalides'); }
           if (details.courrier) {
-            // Scanned courriers: admin / supervisor only.
-            if (!isAdminLike(user)) throw new Error('Droits insuffisants pour ajouter un fichier');
+            // Scanned courriers: bureau, or a comité granted the permission.
+            if (!isAdminLike(user) && !(isComiteRole(user) && can(user, 'courriers') && !isReadOnly(user))) throw new Error('Droits insuffisants pour ajouter un fichier');
             const crExt = path.extname(sanitizeFilename(details.filename)).toLowerCase();
             if (!['.pdf', '.jpg', '.jpeg', '.png'].includes(crExt)) throw new Error('Format non pris en charge pour un gros fichier (PDF, JPG ou PNG)');
             if (!pathnameForBlob.startsWith('cr-') || path.extname(pathnameForBlob).toLowerCase() !== crExt) throw new Error('Chemin de fichier invalide');
@@ -656,7 +718,9 @@ async function route(req, res) {
           view.expediteur?.nom, view.destinataire?.nom, view.expediteur?.fonction, view.destinataire?.fonction, view.expediteur?.service, view.destinataire?.service, view.service,
           view.createdByName, names(view.commission),
           ...(view.pieces || []).map((p) => p.nom),
-          ...(isAdminLike(user) ? (l.commissionHisto || []).map((h) => h.note) : []),
+          // letterView already hides the tracking history (and its notes) from
+          // accounts without the "tracking" permission.
+          ...(view.commissionHisto || []).map((h) => h.note),
         ].join(' '));
         // Every word must match somewhere, in any order.
         if (!q.split(/\s+/).every((word) => hay.includes(word))) return false;
@@ -705,11 +769,15 @@ async function route(req, res) {
     if (method === 'PATCH') {
       const user = requireAuth(req, res);
       if (!user) return;
-      if (!['admin', 'supervisor', 'agent'].includes(user.role)) return send(res, 403, { error: 'Droits insuffisants' });
+      if (!isAdminLike(user) && !isComiteRole(user)) return send(res, 403, { error: 'Droits insuffisants' });
       const letter = db.letters.find((l) => l.id === id);
       if (!letter) return send(res, 404, { error: 'Lettre introuvable' });
       if (!canSeeLetter(user, letter)) return send(res, 404, { error: 'Lettre introuvable' });
-      if (!holdsLetter(user, letter)) return send(res, 403, { error: NOT_IN_COMMITTEE });
+      // Field edits: the bureau, or a comité account holding the letter (or, if
+      // the admin granted view_all, any letter it can see) with the "edit"
+      // permission. Read-only accounts may edit nothing.
+      const mayEdit = isAdminLike(user) || (can(user, 'edit') && !isReadOnly(user) && (can(user, 'view_all') || holdsLetter(user, letter)));
+      if (!mayEdit) return send(res, 403, { error: isReadOnly(user) ? 'Ce compte est en lecture seule' : (holdsLetter(user, letter) ? 'Permission « modifier les courriers » requise' : NOT_IN_COMMITTEE) });
       const body = await readBody(req);
       const nextStatut = body.statut !== undefined ? body.statut : letter.statut;
       if (!isValidStatut(nextStatut)) return send(res, 400, { error: 'Statut invalide' });
@@ -718,8 +786,12 @@ async function route(req, res) {
       if (!isValidCommission(db, nextCommission)) return send(res, 400, { error: 'Comité invalide' });
       // A comité's transfer needs bureau approval: record a pending request
       // instead of moving the letter. Admin/supervisor transfers stay instant.
+      // The "transfer" permission authorizes *requesting* the move.
       const wantsCommission = body.commission !== undefined && nextCommission !== prevCommission;
       if (!isAdminLike(user) && wantsCommission) {
+        if (isReadOnly(user)) return denyReadOnly(user, res);
+        if (!can(user, 'transfer')) return send(res, 403, { error: 'Permission « transférer » requise' });
+        if (!holdsLetter(user, letter)) return send(res, 403, { error: NOT_IN_COMMITTEE });
         letter.pendingTransfer = {
           to: nextCommission,
           note: clip(body.commissionNote, 2000),
@@ -775,9 +847,10 @@ async function route(req, res) {
     if (method === 'DELETE') {
       const user = requireAuth(req, res);
       if (!user) return;
-      if (!isAdminLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
       const letter = db.letters.find((l) => l.id === id);
       if (!letter) return send(res, 404, { error: 'Lettre introuvable' });
+      // The bureau, or a comité account explicitly granted the "delete" permission.
+      if (!isAdminLike(user) && !(can(user, 'delete') && !isReadOnly(user) && canSeeLetter(user, letter))) return send(res, 403, { error: 'Droits insuffisants' });
       for (const p of letter.pieces || []) {
         if (p.storedAs) {
           if (process.env.VERCEL) {
@@ -800,7 +873,7 @@ async function route(req, res) {
   if (pathname === '/api/letters' && method === 'POST') {
     const user = requireAuth(req, res);
     if (!user) return;
-    if (!isAdminLike(user) && user.role !== 'agent') return send(res, 403, { error: 'Droits insuffisants' });
+    if (!isAdminLike(user) && !(isComiteRole(user) && can(user, 'create'))) return send(res, 403, { error: 'Droits insuffisants' });
     const body = await readBody(req);
     const db = getDB();
     if (!isValidCommission(db, body.commission || null)) return send(res, 400, { error: 'Comité invalide' });
@@ -859,6 +932,9 @@ async function route(req, res) {
     if (!COMMISSION_EVENTS.includes(type)) return send(res, 400, { error: 'Type d\'événement invalide' });
     const canManage = holdsLetter(user, letter);
     if (!canManage) return send(res, 403, { error: NOT_IN_COMMITTEE });
+    // Tracking events ("vu", "traité") stay holder-only actions, but a
+    // read-only account may not record any.
+    if (isReadOnly(user) && !isAdminLike(user)) return denyReadOnly(user, res);
     if (type !== 'note' && !letter.commission) return send(res, 400, { error: 'Aucun comité assigné' });
     if (type === 'vu_comite' && !isUnread(letter)) return send(res, 200, { item: letterView(user, letter) });
     const event = {
@@ -921,6 +997,7 @@ async function route(req, res) {
       if (!isAdminLike(user) && !(user.id === pending.requestedBy && holdsLetter(user, letter))) {
         return send(res, 403, { error: 'Seul l’auteur de la demande ou le bureau d’ordre peut l’annuler' });
       }
+      if (!isAdminLike(user) && isReadOnly(user)) return denyReadOnly(user, res);
       letter.pendingTransfer = null;
       letter.updatedAt = new Date().toISOString();
       logActivity(db, user, 'letter.transfer.cancel', letter.ref, { letterId: letter.id, to: pending.to });
@@ -967,7 +1044,7 @@ async function route(req, res) {
   if (completedUploadMatch && method === 'POST') {
     const user = requireAuth(req, res);
     if (!user) return;
-    if (!['admin', 'supervisor', 'agent'].includes(user.role)) return send(res, 403, { error: 'Droits insuffisants' });
+    if (!isAdminLike(user) && !isComiteRole(user)) return send(res, 403, { error: 'Droits insuffisants' });
     const db = getDB();
     const letterId = completedUploadMatch[1];
     const letter = db.letters.find((item) => item.id === letterId);
@@ -1009,7 +1086,7 @@ async function route(req, res) {
     if (method === 'POST') {
       const user = requireAuth(req, res);
       if (!user) return;
-      if (!['admin', 'supervisor', 'agent'].includes(user.role)) return send(res, 403, { error: 'Droits insuffisants' });
+      if (!isAdminLike(user) && !isComiteRole(user)) return send(res, 403, { error: 'Droits insuffisants' });
       if (!canAttach(user, letter) && !canSeeLetter(user, letter)) return send(res, 404, { error: 'Lettre introuvable' });
       if (!canAttach(user, letter)) return send(res, 403, { error: NOT_IN_COMMITTEE });
       let body;
@@ -1089,7 +1166,8 @@ async function route(req, res) {
     if (method === 'DELETE' && pieceId) {
       const user = requireAuth(req, res);
       if (!user) return;
-      if (!isAdminLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
+      // The bureau, or a comité account explicitly granted the "delete" permission.
+      if (!isAdminLike(user) && !(can(user, 'delete') && !isReadOnly(user) && canSeeLetter(user, letter))) return send(res, 403, { error: 'Droits insuffisants' });
       const idx = (letter.pieces || []).findIndex((p) => p.id === pieceId);
       if (idx < 0) return send(res, 404, { error: 'Fichier introuvable' });
       const [removed] = letter.pieces.splice(idx, 1);
@@ -1155,8 +1233,8 @@ async function route(req, res) {
       items = [...items].sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
       return send(res, 200, { items });
     }
-    // POST: upload a scanned courrier (admin / supervisor only)
-    if (!isAdminLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
+    // POST: upload a scanned courrier (bureau, or a comité granted the permission)
+    if (!isAdminLike(user) && !(isComiteRole(user) && can(user, 'courriers') && !isReadOnly(user))) return send(res, 403, { error: 'Droits insuffisants' });
     let body;
     try { body = await readBody(req, 14); } catch (e) { return send(res, 413, { error: 'Fichier trop volumineux (max ~10 Mo)' }); }
     const filename = sanitizeFilename(body.filename);
@@ -1187,7 +1265,7 @@ async function route(req, res) {
   if (pathname === '/api/courriers/complete' && method === 'POST') {
     const user = requireAuth(req, res);
     if (!user) return;
-    if (!isAdminLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
+    if (!isAdminLike(user) && !(isComiteRole(user) && can(user, 'courriers') && !isReadOnly(user))) return send(res, 403, { error: 'Droits insuffisants' });
     let body;
     try { body = await readBody(req, 1); } catch { return send(res, 400, { error: 'Requête invalide' }); }
     const pathnameForBlob = String(body.pathname || '');

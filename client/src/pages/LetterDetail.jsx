@@ -13,15 +13,23 @@ export default function LetterDetail() {
   const { user } = useAuth();
   const { t } = useLanguage();
   const isAdmin = user?.role === 'admin';
-  // The tracking history (entry, transfers, committee events) is private to the bureau d'ordre.
-  const canSeeHistory = isAdmin || user?.role === 'supervisor';
+  // The tracking history (entry, transfers, committee events) is private to the bureau d'ordre,
+  // unless the admin granted the "tracking" permission to this account.
+  const canSeeHistory = isAdmin || user?.role === 'supervisor' || Boolean(user?.permissions?.tracking);
+  const perms = user?.permissions || {};
+  const isReadOnly = !!user?.readOnly && !isAdmin && user?.role !== 'supervisor';
+  const isBureau = isAdmin || user?.role === 'supervisor';
+  const isComite = user?.role === 'agent' || user?.role === 'chef';
   const [letter, setLetter] = useState(null);
-  // A comité account can change a letter only while it is in its comité.
-  const holdsLetter = (l) => Boolean(l) && (isAdmin || (user?.role === 'agent' && Boolean(user.commission) && l.commission === user.commission));
+  // A comité account holds the letters currently in its comité.
+  const holdsLetter = (l) => Boolean(l) && (isBureau || (isComite && Boolean(user.commission) && l.commission === user.commission));
   const canManage = holdsLetter(letter);
-  const canEdit = canManage;
-  const readOnlyComite = user?.role === 'agent' && Boolean(letter) && !canManage;
+  // Field edits: bureau, or a comité with the "edit" permission holding the
+  // letter (anywhere, if "view_all" was also granted). Read-only: nothing.
+  const canEdit = Boolean(letter) && !isReadOnly && (isBureau || (perms.edit && (canManage || perms.view_all)));
+  const readOnlyComite = isComite && Boolean(letter) && !canEdit;
   const canHandleCommittee = canManage;
+  const canTransfer = Boolean(letter) && !isReadOnly && (isBureau || (perms.transfer && canManage));
   const [committees, setCommittees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -184,7 +192,7 @@ export default function LetterDetail() {
         <div className="page-actions">
           <button className="btn btn-secondary" onClick={() => navigate('/archive')}>{t('detail.back')}</button>
           {canEdit && <button className="btn btn-primary" onClick={() => { setError(''); setEditing(true); }}>Modifier</button>}
-          {isAdmin && <button className="btn btn-danger" onClick={remove}>{t('detail.delete')}</button>}
+          {(isBureau || perms.delete) && <button className="btn btn-danger" onClick={remove}>{t('detail.delete')}</button>}
         </div>
       </div>
       {readOnlyComite && <div className="account-notice" role="status">Cette lettre est maintenant dans le comité « {committeeName(letter.commission)} ». Vous pouvez la consulter, mais plus la modifier.</div>}
@@ -199,14 +207,14 @@ export default function LetterDetail() {
               {pendingTransfer.note ? <> — « {pendingTransfer.note} »</> : null}
             </span>
           </div>
-          {canSeeHistory ? (
+          {isBureau ? (
             <div className="pending-transfer-actions">
               <button className="btn btn-primary btn-sm" onClick={() => decideTransfer('approve')} disabled={busy}>Approuver</button>
               <button className="btn btn-secondary btn-sm" onClick={() => decideTransfer('reject')} disabled={busy}>Refuser</button>
             </div>
-          ) : (
+          ) : (!isReadOnly && (
             <button className="btn btn-secondary btn-sm" onClick={() => decideTransfer('cancel')} disabled={busy}>Annuler la demande</button>
-          )}
+          ))}
         </div>
       )}
       <div className="card">
@@ -259,16 +267,16 @@ export default function LetterDetail() {
         <>
           {(canManage || letter.commission) && <div className="card">
             <h2 className="card-title">{t('detail.committeeActions')}</h2>
-            {canManage && <div className="status-actions">
-                <Select ariaLabel="Comité" value={committee} onChange={(v) => setCommittee(v)} options={[...(isAdmin ? [{ value: '', label: t('commission.none') }] : []), ...committees.map((c) => ({ value: c.id, label: c.nom }))]} />
+            {canTransfer && <div className="status-actions">
+                <Select ariaLabel="Comité" value={committee} onChange={(v) => setCommittee(v)} options={[...(isBureau ? [{ value: '', label: t('commission.none') }] : []), ...committees.map((c) => ({ value: c.id, label: c.nom }))]} />
                 <button className="btn btn-primary" onClick={assignCommittee} disabled={busy}>{t('detail.transmit')}</button>
               </div>}
-            {letter.commission && (
+            {letter.commission && !isReadOnly && (
               <div className="status-actions">
                 {letter.statut !== 'archive' && <button className="btn btn-primary" onClick={() => addEvent('traite_comite')} disabled={busy}>{t('detail.markTreated')}</button>}
               </div>
             )}
-            {canManage && <label className="field">
+            {canManage && !isReadOnly && <label className="field">
               <span>{t('detail.note')}</span>
               <textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder={t('detail.notePlaceholder')} />
             </label>}

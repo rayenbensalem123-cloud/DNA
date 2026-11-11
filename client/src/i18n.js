@@ -22,6 +22,7 @@ import { createContext, useContext, useState, createElement } from 'react';
   'auth.demo': 'Comptes démonstration',
   'auth.role.admin': 'Administrateur',
   'auth.role.supervisor': 'Superviseur',
+  'auth.role.chef': 'Chef de comité',
   'auth.role.agent': 'Agent',
   'auth.role.lecture': 'Lecteur',
 
@@ -189,6 +190,7 @@ const en = {
   'auth.demo': 'Demo accounts',
   'auth.role.admin': 'Administrator',
   'auth.role.supervisor': 'Supervisor',
+  'auth.role.chef': 'Head of committee',
   'auth.role.agent': 'Agent',
   'auth.role.lecture': 'Reader',
 

@@ -9,7 +9,7 @@ import CountUp from '../components/CountUp';
 export default function Dashboard() {
   const { t } = useLanguage();
   const { user } = useAuth();
-  const canSeeTracking = user?.role === 'admin' || user?.role === 'supervisor';
+  const canSeeTracking = user?.role === 'admin' || user?.role === 'supervisor' || Boolean(user?.permissions?.tracking);
   const navigate = useNavigate();
   const [stats, setStats] = useState(null);
   const [recent, setRecent] = useState([]);

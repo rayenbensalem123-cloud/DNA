@@ -10,8 +10,8 @@ export default function Archive() {
   const { t } = useLanguage();
   const { user } = useAuth();
   // Only the bureau d'ordre (admin + supervisor) may see the tracking history
-  // and the "seen by comité" tick.
-  const canSeeTracking = user?.role === 'admin' || user?.role === 'supervisor';
+  // and the "seen by comité" tick — unless the admin granted the permission.
+  const canSeeTracking = user?.role === 'admin' || user?.role === 'supervisor' || Boolean(user?.permissions?.tracking);
   const navigate = useNavigate();
   const location = useLocation();
   const { committeeId } = useParams();
