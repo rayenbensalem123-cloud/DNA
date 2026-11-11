@@ -59,6 +59,8 @@ export default function LetterForm({ onSubmit, onCancel, busy = false, error = '
   const [formError, setFormError] = useState('');
   const [dragging, setDragging] = useState(false);
   const [pdfSubject, setPdfSubject] = useState('');
+  const [pdfReading, setPdfReading] = useState(false);
+  const [pdfOcr, setPdfOcr] = useState(false);
   const [form, setForm] = useState(() => initialForm(initialLetter, initialDirection));
   const set = (key, value) => setForm((current) => ({ ...current, [key]: value }));
 
@@ -84,13 +86,17 @@ export default function LetterForm({ onSubmit, onCancel, busy = false, error = '
     }
     setFiles((current) => [...current, ...accepted]);
     // Read the first PDF and suggest its subject when none was picked yet.
+    // Scanned PDFs go through OCR, which takes a few seconds — show progress.
     const firstPdf = accepted.find((f) => /\.pdf$/i.test(f.name));
     if (firstPdf) {
-      extractPdfSubject(firstPdf).then((sujet) => {
+      setPdfReading(true);
+      extractPdfSubject(firstPdf, (phase) => { if (phase === 'ocr') setPdfOcr(true); }).then((sujet) => {
+        setPdfReading(false);
+        setPdfOcr(false);
         if (!sujet) return;
         setPdfSubject(sujet);
         setForm((current) => (current.objet ? current : { ...current, objet: 'autre', objetAutre: sujet }));
-      }).catch(() => {});
+      }).catch(() => { setPdfReading(false); setPdfOcr(false); });
     }
   };
 
@@ -149,8 +155,14 @@ export default function LetterForm({ onSubmit, onCancel, busy = false, error = '
             <span className="muted">PDF, JPG ou PNG — 25 Mo max par fichier</span>
           </label>
           {fileError && <div className="form-error modal-file-error" role="alert">{fileError}</div>}
-          {pdfSubject && (
-            <div className="pdf-subject-hint">Sujet lu dans le PDF : « {pdfSubject} » {form.objet ? '' : '— pré-rempli ci-dessous, modifiable.'}</div>
+          {(pdfReading || pdfSubject) && (
+            <div className={'pdf-subject-hint' + (pdfOcr && !pdfSubject ? ' pdf-ocr-progress' : '')}>
+              {pdfSubject
+                ? <>Sujet lu dans le PDF : « {pdfSubject} » {form.objet ? '' : '— pré-rempli ci-dessous, modifiable.'}</>
+                : pdfOcr
+                  ? <>Lecture du PDF (OCR du scan) en cours… ça peut prendre quelques secondes.</>
+                  : <>Lecture du PDF en cours…</>}
+            </div>
           )}
           {files.length > 0 && (
             <div className="file-list">

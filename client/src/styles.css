@@ -1038,3 +1038,5 @@ body.pdf-open { overflow: hidden; }
 /* Subject read from an attached PDF (letter form + courrier queue) */
 .pdf-subject-hint { margin-top: 6px; padding: 8px 10px; border: 1px solid rgba(217,177,59,.35); border-radius: 8px; background: rgba(217,177,59,.08); color: #ecd9a0; font-size: 12.5px; }
 :root[data-theme='light'] .pdf-subject-hint { background: #fdf6e3; border-color: #e8d5a4; color: #7a5a10; }
+.pdf-ocr-progress { animation: pdf-ocr-pulse 1.6s ease-in-out infinite; }
+@keyframes pdf-ocr-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .65; } }

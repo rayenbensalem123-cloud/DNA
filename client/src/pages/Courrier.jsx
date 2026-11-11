@@ -57,10 +57,13 @@ export default function Courrier() {
     setNotice('');
     try {
       // Read each PDF: the extracted subject becomes the letter's title when
-      // the bureau validates the scan (instead of the file name).
+      // the bureau validates the scan (instead of the file name). Scans go
+      // through OCR — a few seconds each, so show what is happening.
       let readCount = 0;
       for (const file of files) {
-        const sujet = await extractPdfSubject(file);
+        const sujet = await extractPdfSubject(file, (phase) => {
+          if (phase === 'ocr') setNotice('Lecture du PDF « ' + file.name + ' » (OCR du scan)… ça peut prendre quelques secondes.');
+        });
         if (sujet) readCount++;
         await api.uploadCourrierFile(file, sujet);
       }
