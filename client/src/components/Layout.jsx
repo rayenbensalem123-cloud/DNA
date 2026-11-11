@@ -54,7 +54,6 @@ export default function Layout() {
           <img className="brand-emblem" src="/federation-tunisienne-logo.webp" alt="" />
           <div className="brand-copy">
             <div className="brand-title">Direction Nationale<br />d’Arbitrage</div>
-            <div className="brand-sub">Fédération Tunisienne de Football</div>
           </div>
         </div>
         <nav className="nav">
