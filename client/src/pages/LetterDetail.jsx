@@ -29,6 +29,8 @@ export default function LetterDetail() {
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [notice, setNotice] = useState('');
+  const pendingTransfer = letter?.pendingTransfer || null;
 
   const timeline = (() => {
     if (!letter) return [];
@@ -85,19 +87,41 @@ export default function LetterDetail() {
     setBusy(true);
     setError('');
     try {
-      const { files = [], ...changes } = data;
-      if ((changes.commission || null) !== (letter.commission || null)) {
-        changes.statut = changes.commission ? 'en_cours' : 'recu';
+      const { files = [], commission, ...changes } = data;
+      const commissionChanged = (commission || null) !== (letter.commission || null);
+      const bureau = isAdmin || user?.role === 'supervisor';
+      if (commissionChanged && bureau) {
+        changes.commission = commission;
+        changes.statut = commission ? 'en_cours' : 'recu';
       }
+      // A comité's commission change becomes a transfer *request*: the server
+      // answers early with a pendingTransfer and applies no other fields, so
+      // field edits must be sent in a separate call before the transfer.
       await api.updateLetter(letter.id, changes);
+      if (commissionChanged && !bureau) {
+        const d = await api.updateLetter(letter.id, { commission: commission || null });
+        if (d.pendingApproval) setNotice(d.message || 'Transfert soumis — en attente d’approbation du bureau d’ordre');
+      }
       for (const file of files) {
         await api.uploadPieceDirect(letter.id, file);
       }
       const refreshed = await api.listLetters({ limit: 500, sort: 'date' });
       const updated = refreshed.items.find((item) => item.id === letter.id);
       if (updated) setLetter(updated);
-      setCommittee(updated?.commission || changes.commission || '');
+      setCommittee(updated?.commission || commission || '');
       setEditing(false);
+    } catch (e) { setError(e.message || 'Erreur'); }
+    finally { setBusy(false); }
+  };
+
+  const decideTransfer = async (action) => {
+    if (!letter?.pendingTransfer) return;
+    setBusy(true);
+    setError('');
+    try {
+      const d = await api.transferApproval(letter.id, action);
+      setLetter(d.item);
+      setNotice(d.message || '');
     } catch (e) { setError(e.message || 'Erreur'); }
     finally { setBusy(false); }
   };
@@ -111,6 +135,7 @@ export default function LetterDetail() {
       const nextStatut = changed ? (committee ? 'en_cours' : 'recu') : letter.statut;
       const d = await api.updateLetter(letter.id, { commission: committee || null, statut: nextStatut });
       setLetter(d.item);
+      setNotice(d.pendingApproval ? (d.message || 'Transfert soumis — en attente d’approbation du bureau d’ordre') : '');
     } catch (e) { setError(e.message || 'Erreur'); }
     setBusy(false);
   };
@@ -163,6 +188,27 @@ export default function LetterDetail() {
         </div>
       </div>
       {readOnlyComite && <div className="account-notice" role="status">Cette lettre est maintenant dans le comité « {committeeName(letter.commission)} ». Vous pouvez la consulter, mais plus la modifier.</div>}
+      {pendingTransfer && (
+        <div className="pending-transfer-notice" role="status">
+          <div className="pending-transfer-copy">
+            <strong>Transfert en attente d’approbation</strong>
+            <span>
+              Demande de transfert vers « {committeeName(pendingTransfer.to)} »
+              {pendingTransfer.requestedByName ? ` — demandé par ${pendingTransfer.requestedByName}` : ''}
+              {pendingTransfer.requestedAt ? ` le ${fmtDateTime(pendingTransfer.requestedAt)}` : ''}
+              {pendingTransfer.note ? <> — « {pendingTransfer.note} »</> : null}
+            </span>
+          </div>
+          {canSeeHistory ? (
+            <div className="pending-transfer-actions">
+              <button className="btn btn-primary btn-sm" onClick={() => decideTransfer('approve')} disabled={busy}>Approuver</button>
+              <button className="btn btn-secondary btn-sm" onClick={() => decideTransfer('reject')} disabled={busy}>Refuser</button>
+            </div>
+          ) : (
+            <button className="btn btn-secondary btn-sm" onClick={() => decideTransfer('cancel')} disabled={busy}>Annuler la demande</button>
+          )}
+        </div>
+      )}
       <div className="card">
         {info('detail.numero', letter.numeroLettre || '—')}
         {info('detail.objet', letter.objet)}
@@ -230,6 +276,7 @@ export default function LetterDetail() {
 
         </>
       )}
+      {notice && <div className="account-notice" role="status">{notice}</div>}
       {error && <div className="form-error">{error}</div>}
       {editing && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setEditing(false); }}>
         <section className="modal" role="dialog" aria-modal="true" aria-labelledby="letter-edit-title">

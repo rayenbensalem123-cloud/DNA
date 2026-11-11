@@ -29,12 +29,14 @@ export default function Layout() {
 
   const [rejectionUnread, setRejectionUnread] = useState(0);
   const [toSendCount, setToSendCount] = useState(0);
+  const [transferCount, setTransferCount] = useState(0);
   useEffect(() => {
     if (!user) return;
     const load = () => api.courrierNotifications().then((d) => setRejectionUnread((d.items || []).filter((n) => !n.read).length)).catch(() => {});
     const loadToSend = () => { if (isAdminLike) api.toSend().then((d) => setToSendCount((d.waiting || []).length)).catch(() => {}); };
-    load(); loadToSend();
-    const timer = setInterval(() => { load(); loadToSend(); }, 30000);
+    const loadTransfers = () => { if (isAdminLike) api.transferRequests().then((d) => setTransferCount((d.items || []).length)).catch(() => {}); };
+    load(); loadToSend(); loadTransfers();
+    const timer = setInterval(() => { load(); loadToSend(); loadTransfers(); }, 30000);
     return () => clearInterval(timer);
   }, [user, location.pathname]);
 
@@ -58,7 +60,7 @@ export default function Layout() {
             <NavIcon type="dashboard" /><span className="nav-text">{t('nav.dashboard')}</span>
           </NavLink>
           <NavLink to="/archive" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}>
-            <NavIcon type="letters" /><span className="nav-text">Archive</span>
+            <NavIcon type="letters" /><span className="nav-text">Archive{transferCount > 0 && <span className="nav-badge" title={`${transferCount} transfert${transferCount > 1 ? 's' : ''} en attente`}>{transferCount}</span>}</span>
           </NavLink>
           {isAdminLike && <NavLink to="/courrier" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}>
             <NavIcon type="letters" /><span className="nav-text">Courrier</span>

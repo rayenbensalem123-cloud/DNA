@@ -21,6 +21,7 @@ export default function Archive() {
   const [committees, setCommittees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({ q: '', direction: '', statut: '', priorite: '', bucket: '', from: '', to: '', expediteur: '', commission: '' });
+  const [transferQueue, setTransferQueue] = useState([]);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -29,6 +30,20 @@ export default function Archive() {
 
   useEffect(() => { api.committees().then((d) => setCommittees(d.items || [])).catch(() => {}); }, []);
   useEffect(() => { api.listLetters({ limit: 500, sort: 'date' }).then((d) => setAllItems(d.items || [])).catch(() => {}); }, []);
+
+  // Transfer requests waiting for bureau approval (admin/supervisor only).
+  const loadTransferQueue = () => { if (canSeeTracking) api.transferRequests().then((d) => setTransferQueue(d.items || [])).catch(() => {}); };
+  useEffect(loadTransferQueue, []);
+
+  const decideTransfer = async (letterId, action) => {
+    try {
+      const d = await api.transferApproval(letterId, action);
+      setTransferQueue((current) => current.filter((x) => x.letterId !== letterId));
+      setAllItems((current) => current.map((l) => (l.id === letterId ? (d.item || l) : l)));
+    } catch { /* the queue reloads on the next visit */ }
+  };
+
+  const committeeName = (id) => committees.find((c) => c.id === id)?.nom || 'Sans comité';
 
   useEffect(() => {
     let cancelled = false;
@@ -81,6 +96,39 @@ export default function Archive() {
         </div>
         {(selectedCommittee || hasFilters) && <button className="btn btn-secondary" onClick={() => navigate('/archive')}>← Tous les courriers</button>}
       </div>
+
+      {canSeeTracking && transferQueue.length > 0 && (
+        <div className="card transfer-queue-card">
+          <div className="transfer-queue-heading">
+            <h2 className="card-title">Demandes de transfert <span className="transfer-queue-count">{transferQueue.length}</span></h2>
+            <span className="muted">Un comité a demandé de transférer un courrier — à vous de décider</span>
+          </div>
+          <div className="transfer-queue-list">
+            {transferQueue.map((req) => (
+              <div className="transfer-queue-row" key={req.letterId}>
+                <div className="transfer-queue-main">
+                  <button type="button" className="transfer-queue-ref" onClick={() => navigate('/lettres/' + req.letterId)}>{req.ref}</button>
+                  <span className="transfer-queue-objet">{req.objet || '—'}</span>
+                </div>
+                <div className="transfer-queue-path">
+                  <span className="committee-pill">{committeeName(req.from)}</span>
+                  <span className="transfer-queue-arrow">→</span>
+                  <span className="committee-pill">{committeeName(req.to)}</span>
+                </div>
+                <div className="transfer-queue-meta">
+                  <span>Demandé par <strong>{req.requestedByName || '—'}</strong></span>
+                  <span>· {fmtDate(req.requestedAt)}</span>
+                </div>
+                {req.note && <div className="transfer-queue-note">« {req.note} »</div>}
+                <div className="transfer-queue-actions">
+                  <button type="button" className="btn btn-primary btn-sm" onClick={() => decideTransfer(req.letterId, 'approve')}>Approuver</button>
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => decideTransfer(req.letterId, 'reject')}>Refuser</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {!committeeId && !hasFilters && (
         <section className="committee-grid" aria-label="Comités">

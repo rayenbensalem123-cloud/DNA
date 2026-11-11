@@ -115,5 +115,8 @@ export const api = {
   // Notifications (courrier rejections)
   courrierNotifications: () => req('/api/courrier-notifications'),
   markCourrierNotificationRead: (id) => req(`/api/courrier-notifications/${id}`, { method: 'PATCH', body: { read: true } }),
+  // Transfer requests awaiting bureau approval (admin/supervisor)
+  transferRequests: () => req('/api/transfer-requests'),
+  transferApproval: (letterId, action, note = '') => req(`/api/letters/${encodeURIComponent(letterId)}/transfer-approval`, { method: 'POST', body: { action, note } }),
 };
 

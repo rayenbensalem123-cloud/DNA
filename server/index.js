@@ -313,6 +313,8 @@ function letterView(user, l) {
     commissionHisto: [],
     transferred: (Array.isArray(l.commissionHisto) ? l.commissionHisto : []).some((h) => h.type === 'transfert'),
     comiteVu: null,
+    // A comité sees a pending transfer only on letters it currently holds.
+    pendingTransfer: holdsLetter(user, l) ? (l.pendingTransfer || null) : null,
   };
 }
 
@@ -714,6 +716,23 @@ async function route(req, res) {
       const prevCommission = letter.commission || null;
       const nextCommission = body.commission !== undefined ? (body.commission || null) : prevCommission;
       if (!isValidCommission(db, nextCommission)) return send(res, 400, { error: 'Comité invalide' });
+      // A comité's transfer needs bureau approval: record a pending request
+      // instead of moving the letter. Admin/supervisor transfers stay instant.
+      const wantsCommission = body.commission !== undefined && nextCommission !== prevCommission;
+      if (!isAdminLike(user) && wantsCommission) {
+        letter.pendingTransfer = {
+          to: nextCommission,
+          note: clip(body.commissionNote, 2000),
+          requestedBy: user.id,
+          requestedByName: user.name,
+          requestedAt: new Date().toISOString(),
+        };
+        letter.updatedAt = new Date().toISOString();
+        logActivity(db, user, 'letter.transfer.request', letter.ref, { letterId: letter.id, from: prevCommission, to: nextCommission });
+        await saveDB(db);
+        return send(res, 200, { item: letterView(user, letter), pendingApproval: true, message: 'Transfert soumis — en attente d’approbation du bureau d’ordre' });
+      }
+      if (wantsCommission) letter.pendingTransfer = null;
       if (body.ref && isAdminLike(user)) letter.ref = clip(body.ref, 60);
       if (body.numeroLettre !== undefined) letter.numeroLettre = clip(body.numeroLettre, 60);
       Object.assign(letter, {
@@ -857,6 +876,90 @@ async function route(req, res) {
     logActivity(db, user, 'letter.event', letter.ref, { letterId: letter.id, type });
     await saveDB(db);
     return send(res, 200, { item: letterView(user, db.letters.find((l) => l.id === letter.id)) });
+  }
+
+  // ---- Transfer approvals -------------------------------------------------------------
+  // A comité's transfer request is stored on the letter as `pendingTransfer` until
+  // a supervisor/admin approves it (then it is applied), rejects it, or the
+  // requester (or an admin) cancels it.
+  if (pathname === '/api/transfer-requests' && method === 'GET') {
+    const user = requireAuth(req, res);
+    if (!user) return;
+    if (!isAdminLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
+    const db = getDB();
+    const items = db.letters
+      .filter((l) => l.pendingTransfer)
+      .map((l) => ({
+        letterId: l.id,
+        ref: l.ref || '',
+        objet: l.objet || '',
+        from: l.commission || null,
+        to: l.pendingTransfer.to,
+        note: l.pendingTransfer.note || '',
+        requestedByName: l.pendingTransfer.requestedByName || '',
+        requestedAt: l.pendingTransfer.requestedAt,
+      }))
+      .sort((a, b) => (a.requestedAt < b.requestedAt ? -1 : 1));
+    return send(res, 200, { items });
+  }
+
+  const approvalMatch = /^\/api\/letters\/([A-Za-z0-9_-]+)\/transfer-approval$/.exec(pathname);
+  if (approvalMatch && method === 'POST') {
+    const user = requireAuth(req, res);
+    if (!user) return;
+    const db = getDB();
+    const letter = db.letters.find((l) => l.id === approvalMatch[1]);
+    if (!letter || !letter.pendingTransfer) return send(res, 404, { error: 'Demande de transfert introuvable' });
+    const body = await readBody(req);
+    const action = String(body.action || '');
+    if (!['approve', 'reject', 'cancel'].includes(action)) return send(res, 400, { error: 'Action invalide' });
+    const pending = letter.pendingTransfer;
+    const prevCommission = letter.commission || null;
+
+    if (action === 'cancel') {
+      // The requester (while they still hold the letter) or an admin may cancel.
+      if (!isAdminLike(user) && !(user.id === pending.requestedBy && holdsLetter(user, letter))) {
+        return send(res, 403, { error: 'Seul l’auteur de la demande ou le bureau d’ordre peut l’annuler' });
+      }
+      letter.pendingTransfer = null;
+      letter.updatedAt = new Date().toISOString();
+      logActivity(db, user, 'letter.transfer.cancel', letter.ref, { letterId: letter.id, to: pending.to });
+      await saveDB(db);
+      return send(res, 200, { item: letterView(user, letter), message: 'Demande de transfert annulée' });
+    }
+
+    // approve / reject: bureau d'ordre only
+    if (!isAdminLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
+    if (action === 'reject') {
+      letter.pendingTransfer = null;
+      letter.updatedAt = new Date().toISOString();
+      logActivity(db, user, 'letter.transfer.reject', letter.ref, { letterId: letter.id, from: prevCommission, to: pending.to });
+      await saveDB(db);
+      return send(res, 200, { item: letterView(user, letter), message: 'Transfert refusé' });
+    }
+    // approve: the destination committee must still exist
+    if (!isValidCommission(db, pending.to)) {
+      letter.pendingTransfer = null;
+      await saveDB(db);
+      return send(res, 400, { error: 'Le comité destinataire n’existe plus — demande annulée' });
+    }
+    letter.commission = pending.to;
+    letter.commissionHisto.push({
+      id: 'h' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+      date: new Date().toISOString(),
+      type: 'transfert',
+      committee: pending.to,
+      fromCommittee: prevCommission || null,
+      by: pending.requestedBy || null, byName: pending.requestedByName || '',
+      approvedBy: user.id, approvedByName: user.name,
+      note: pending.note || '',
+    });
+    letter.statut = 'en_cours';
+    letter.pendingTransfer = null;
+    letter.updatedAt = new Date().toISOString();
+    logActivity(db, user, 'letter.transfer.approve', letter.ref, { letterId: letter.id, from: prevCommission, to: pending.to });
+    await saveDB(db);
+    return send(res, 200, { item: letterView(user, letter), message: 'Transfert approuvé' });
   }
 
   // Attachments (scanned letter PDF): upload / stream / delete
