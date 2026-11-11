@@ -117,7 +117,11 @@ function verifyFileToken(tk, kind, id) {
   } catch { return null; }
 }
 // Accept either the Authorization header or a valid signed token for one file.
+// A present Authorization user always wins: file links are for headerless
+// requests (viewer iframe/img) and never upgrade an authenticated caller.
 function authUserForFile(req, res, kind, id, db) {
+  const headerUser = authUser(req);
+  if (headerUser) return headerUser;
   const tk = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`).searchParams.get('tk');
   const tkUser = tk && verifyFileToken(tk, kind, id);
   if (tkUser) {
@@ -132,25 +136,34 @@ function isAdminLike(u) { return !!u && (u.role === 'admin' || u.role === 'super
 
 // ---- Login protection ---------------------------------------------------------------
 // Too many wrong passwords from one address (or for one account from one address) → temporary block.
-const failures = new Map();
+// Counters live in the shared state, not in instance memory: serverless can
+// route consecutive requests to different instances, and a memory-only
+// counter would reset every time (limit effectively bypassed).
 const FAIL_WINDOW = 15 * 60 * 1000;
 function clientIp(req) {
   const fwd = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
   return fwd || String(req.headers['x-real-ip'] || req.socket?.remoteAddress || 'unknown');
 }
-function throttleState(key, limit) {
+function throttleMap(db) {
+  if (!db.throttle || typeof db.throttle !== 'object' || Array.isArray(db.throttle)) db.throttle = {};
+  return db.throttle;
+}
+function throttleState(db, key, limit) {
   const now = Date.now();
-  const entry = failures.get(key);
+  const entry = throttleMap(db)[key];
   if (!entry || now - entry.first > FAIL_WINDOW) return { blocked: false };
   return entry.count >= limit ? { blocked: true, retryAfter: Math.ceil((entry.first + FAIL_WINDOW - now) / 1000) } : { blocked: false };
 }
-function noteFailure(key) {
+function noteFailure(db, key) {
   const now = Date.now();
-  const entry = failures.get(key);
-  if (!entry || now - entry.first > FAIL_WINDOW) failures.set(key, { first: now, count: 1 });
+  const map = throttleMap(db);
+  // prune expired entries so the state cannot grow unbounded
+  for (const k of Object.keys(map)) if (now - map[k].first > FAIL_WINDOW) delete map[k];
+  const entry = map[key];
+  if (!entry || now - entry.first > FAIL_WINDOW) map[key] = { first: now, count: 1 };
   else entry.count += 1;
-  if (failures.size > 5000) for (const [k, v] of failures) if (now - v.first > FAIL_WINDOW) failures.delete(k);
 }
+const failuresClear = (db, key) => { delete throttleMap(db)[key]; };
 // Check a password against a throwaway hash when the account does not exist, so response time never reveals which usernames exist.
 const DUMMY_PASSWORD = hashPassword(crypto.randomBytes(12).toString('hex'));
 const sessionVersion = (u) => Number(u?.sessionVersion || 0);
@@ -330,7 +343,7 @@ async function route(req, res) {
     const username = clip(typeof body.username === 'string' ? body.username : '', 100).trim().toLowerCase();
     const password = typeof body.password === 'string' ? body.password.slice(0, 200) : '';
     const keyUser = `u:${ip}:${username}`, keyIp = `i:${ip}`;
-    const blockedUser = throttleState(keyUser, 6), blockedIp = throttleState(keyIp, 30);
+    const blockedUser = throttleState(db, keyUser, 6), blockedIp = throttleState(db, keyIp, 30);
     if (blockedUser.blocked || blockedIp.blocked) {
       const wait = Math.max(blockedUser.retryAfter || 0, blockedIp.retryAfter || 0);
       return send(res, 429, { error: 'Trop de tentatives. Réessayez dans quelques minutes.' }, { 'Retry-After': String(wait) });
@@ -338,10 +351,11 @@ async function route(req, res) {
     const user = db.users.find((u) => u.username === username);
     const valid = verifyPassword(password, user ? user.password : DUMMY_PASSWORD);
     if (!user || !valid) {
-      noteFailure(keyUser); noteFailure(keyIp);
+      noteFailure(db, keyUser); noteFailure(db, keyIp);
+      try { await saveDB(db); } catch { /* the block still applies on the next attempt */ }
       return send(res, 401, { error: 'Identifiants invalides' });
     }
-    failures.delete(keyUser);
+    failuresClear(db, keyUser);
     const token = signToken(user);
     try { logActivity(db, user, 'login', user.username, {}); await saveDB(db); } catch { /* logging must never block sign-in */ }
     return send(res, 200, { token, user: publicUser(user) });
@@ -631,12 +645,16 @@ async function route(req, res) {
       }
       if (q) {
         const names = (id) => (db.committees || []).find((c) => c.id === id)?.nom || '';
+        // Search over what the caller is allowed to see: tracking notes are
+        // bureau-private, so a comité must not be able to probe their content
+        // through search matches.
+        const view = letterView(user, l);
         const hay = fold([
-          l.ref, l.numeroLettre, l.objet, l.personneConcernee, l.resume,
-          l.expediteur?.nom, l.destinataire?.nom, l.expediteur?.fonction, l.destinataire?.fonction, l.expediteur?.service, l.destinataire?.service, l.service,
-          l.createdByName, names(l.commission),
-          ...(l.pieces || []).map((p) => p.nom),
-          ...(l.commissionHisto || []).map((h) => h.note),
+          view.ref, view.numeroLettre, view.objet, view.personneConcernee, view.resume,
+          view.expediteur?.nom, view.destinataire?.nom, view.expediteur?.fonction, view.destinataire?.fonction, view.expediteur?.service, view.destinataire?.service, view.service,
+          view.createdByName, names(view.commission),
+          ...(view.pieces || []).map((p) => p.nom),
+          ...(isAdminLike(user) ? (l.commissionHisto || []).map((h) => h.note) : []),
         ].join(' '));
         // Every word must match somewhere, in any order.
         if (!q.split(/\s+/).every((word) => hay.includes(word))) return false;
@@ -1182,6 +1200,8 @@ async function route(req, res) {
         read: false,
         createdAt: new Date().toISOString(),
       });
+      // cap: notifications must never grow unbounded in the shared state
+      if (db.notifications.length > 500) db.notifications = db.notifications.slice(-500);
       logActivity(db, user, 'courrier.reject', courrier.nom, { courrierId: courrier.id, reason: courrier.rejectionReason || '', sender: courrier.uploadedByName || '', by: user.name });
       await saveDB(db);
       return send(res, 200, { item: courrier });
