@@ -73,13 +73,13 @@ export const api = {
   },
   // Courriers (scanned files awaiting validation)
   listCourriers: (status = '') => req('/api/courriers' + (status ? `?status=${encodeURIComponent(status)}` : '')),
-  uploadCourrier: (filename, dataBase64) => req('/api/courriers', { method: 'POST', body: { filename, dataBase64 } }),
+  uploadCourrier: (filename, dataBase64, sujet = '') => req('/api/courriers', { method: 'POST', body: { filename, dataBase64, sujet } }),
   validateCourrier: (id, note = '') => req(`/api/courriers/${id}`, { method: 'PATCH', body: { action: 'valide', note } }),
   rejectCourrier: (id, reason) => req(`/api/courriers/${id}`, { method: 'PATCH', body: { action: 'rejete', rejectionReason: reason } }),
   // Files go straight from the browser to storage (signed upload URL), then a
   // small "complete" call records them. Falls back to the in-request upload
   // when direct storage is unavailable (local development).
-  uploadCourrierFile: async (file) => {
+  uploadCourrierFile: async (file, sujet = '') => {
     const toBase64 = () => new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(String(r.result).split(',')[1] || ''); r.onerror = reject; r.readAsDataURL(file); });
     try {
       const safeName = file.name.replace(/[^\w.\-\u00C0-\u017F]/g, '_');
@@ -89,9 +89,9 @@ export const api = {
         headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {},
         multipart: file.size > 5 * 1024 * 1024,
       });
-      return await req('/api/courriers/complete', { method: 'POST', body: { filename: file.name, pathname: blob.pathname } });
+      return await req('/api/courriers/complete', { method: 'POST', body: { filename: file.name, pathname: blob.pathname, sujet } });
     } catch (error) {
-      if (file.size <= 9 * 1024 * 1024) return api.uploadCourrier(file.name, await toBase64());
+      if (file.size <= 9 * 1024 * 1024) return api.uploadCourrier(file.name, await toBase64(), sujet);
       throw error;
     }
   },

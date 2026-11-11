@@ -12,6 +12,7 @@ const TOKEN_TTL = 1000 * 60 * 60 * 8; // 8h
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
   '.webmanifest': 'application/manifest+json; charset=utf-8',
@@ -1238,6 +1239,9 @@ async function route(req, res) {
     let body;
     try { body = await readBody(req, 14); } catch (e) { return send(res, 413, { error: 'Fichier trop volumineux (max ~10 Mo)' }); }
     const filename = sanitizeFilename(body.filename);
+    // Subject read from the PDF in the browser; becomes the letter's title
+    // when this scan is validated.
+    const sujet = clip(String(body.sujet || '').trim(), 160);
     if (!/^[A-Za-z0-9+/=\s]+$/.test(String(body.dataBase64 || ''))) return send(res, 400, { error: 'Données base64 invalides' });
     const buf = Buffer.from(String(body.dataBase64), 'base64');
     if (!buf.length) return send(res, 400, { error: 'Fichier vide' });
@@ -1247,7 +1251,7 @@ async function route(req, res) {
     if (process.env.VERCEL) {
       const { put } = await import('@vercel/blob');
       const blob = await put(storedAs, buf, { access: 'private', contentType: filename.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream', addRandomSuffix: true });
-      const courrier = { id: 'cr' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), nom: filename, taille: buf.length, storedAs: blob.pathname, uploadedBy: user.id, uploadedByName: user.name, uploadedAt, status: 'a_valider', note: '', rejectionReason: '', validatedBy: null, validatedAt: null, letterId: null };
+      const courrier = { id: 'cr' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), nom: filename, sujet, taille: buf.length, storedAs: blob.pathname, uploadedBy: user.id, uploadedByName: user.name, uploadedAt, status: 'a_valider', note: '', rejectionReason: '', validatedBy: null, validatedAt: null, letterId: null };
       db.courriers.push(courrier);
       logActivity(db, user, 'courrier.upload', filename, { courrierId: courrier.id });
       await saveDB(db);
@@ -1255,7 +1259,7 @@ async function route(req, res) {
     }
     fs.mkdirSync(UPLOAD_DIR, { recursive: true });
     fs.writeFileSync(path.join(UPLOAD_DIR, storedAs), buf);
-    const courrier = { id: 'cr' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), nom: filename, taille: buf.length, storedAs, uploadedBy: user.id, uploadedByName: user.name, uploadedAt, status: 'a_valider', note: '', rejectionReason: '', validatedBy: null, validatedAt: null, letterId: null };
+    const courrier = { id: 'cr' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), nom: filename, sujet, taille: buf.length, storedAs, uploadedBy: user.id, uploadedByName: user.name, uploadedAt, status: 'a_valider', note: '', rejectionReason: '', validatedBy: null, validatedAt: null, letterId: null };
     db.courriers.push(courrier);
     logActivity(db, user, 'courrier.upload', filename, { courrierId: courrier.id });
     await saveDB(db);
@@ -1277,11 +1281,16 @@ async function route(req, res) {
       const blob = await head(pathnameForBlob, { access: 'private' });
       if (blob.size > 25 * 1024 * 1024) return send(res, 413, { error: 'Fichier trop volumineux (25 Mo maximum)' });
       const db = getDB();
+      // Subject read from the PDF in the browser.
+      const sujet = clip(String(body.sujet || '').trim(), 160);
       let courrier = db.courriers.find((c) => c.storedAs === pathnameForBlob);
       if (!courrier) {
-        courrier = { id: 'cr' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), nom: filename, taille: blob.size, storedAs: pathnameForBlob, uploadedBy: user.id, uploadedByName: user.name, uploadedAt: new Date().toISOString(), status: 'a_valider', note: '', rejectionReason: '', validatedBy: null, validatedAt: null, letterId: null };
+        courrier = { id: 'cr' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), nom: filename, sujet, taille: blob.size, storedAs: pathnameForBlob, uploadedBy: user.id, uploadedByName: user.name, uploadedAt: new Date().toISOString(), status: 'a_valider', note: '', rejectionReason: '', validatedBy: null, validatedAt: null, letterId: null };
         db.courriers.push(courrier);
         logActivity(db, user, 'courrier.upload', filename, { courrierId: courrier.id });
+        await saveDB(db);
+      } else if (sujet && !courrier.sujet) {
+        courrier.sujet = sujet;
         await saveDB(db);
       }
       return send(res, 201, { item: courrier });
@@ -1330,7 +1339,8 @@ async function route(req, res) {
       return send(res, 409, { error: courrier.status === 'valide' ? 'Ce courrier a déjà été validé' : 'Ce courrier a déjà été traité' });
     }
     if (action === 'valide') {
-      // auto-create a letter (status recu) with the PDF attached
+      // auto-create a letter (status recu) with the PDF attached; the title is
+      // the subject read from the PDF when available, else the file name
       const letter = {
         id: 'l' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
         ref: nextRef(db),
@@ -1338,7 +1348,7 @@ async function route(req, res) {
         direction: 'entrant',
         type: 'courrier',
         categorie: 'administration',
-        objet: courrier.nom.replace(/\.pdf$/i, ''),
+        objet: clip(courrier.sujet || courrier.nom.replace(/\.pdf$/i, ''), 200),
         personneConcernee: '',
         resume: clip(body.note, 5000),
         priorite: 'normale',

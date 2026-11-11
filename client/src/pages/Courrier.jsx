@@ -4,6 +4,7 @@ import { api } from '../api';
 import { useAuth } from '../auth';
 import { useLanguage } from '../i18n';
 import { fmtDate, fmtSize } from '../utils';
+import { extractPdfSubject } from '../utils/pdfSubject';
 
 export default function Courrier() {
   const { user } = useAuth();
@@ -55,8 +56,15 @@ export default function Courrier() {
     setError('');
     setNotice('');
     try {
-      for (const file of files) await api.uploadCourrierFile(file);
-      setNotice(files.length + ' courrier(s) téléversé(s).');
+      // Read each PDF: the extracted subject becomes the letter's title when
+      // the bureau validates the scan (instead of the file name).
+      let readCount = 0;
+      for (const file of files) {
+        const sujet = await extractPdfSubject(file);
+        if (sujet) readCount++;
+        await api.uploadCourrierFile(file, sujet);
+      }
+      setNotice(files.length + ' courrier(s) téléversé(s)' + (readCount ? ` — sujet lu automatiquement pour ${readCount}.` : '.'));
       await load();
     } catch (e) {
       setError(e.message);
@@ -125,7 +133,7 @@ export default function Courrier() {
             <tbody>
               {items.map((c) => (
                 <tr key={c.id}>
-                  <td><span className="file-pill">Fichier {c.nom}</span></td>
+                  <td><span className="file-pill">Fichier {c.nom}</span>{c.sujet && <div className="muted small" style={{ marginTop: 4 }}>Titre lu : {c.sujet}</div>}</td>
                   <td>{fmtSize(c.taille)}</td>
                   <td>{c.uploadedByName || '—'}</td>
                   <td className="date-cell">{fmtDate(c.uploadedAt)}</td>

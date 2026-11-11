@@ -3,6 +3,7 @@ import { api } from '../api';
 import { useLanguage } from '../i18n';
 import { useAuth } from '../auth';
 import { fmtSize, todayInputValue } from '../utils';
+import { extractPdfSubject } from '../utils/pdfSubject';
 import Select from './Select';
 
 const SUBJECTS = [
@@ -57,6 +58,7 @@ export default function LetterForm({ onSubmit, onCancel, busy = false, error = '
   const [fileError, setFileError] = useState('');
   const [formError, setFormError] = useState('');
   const [dragging, setDragging] = useState(false);
+  const [pdfSubject, setPdfSubject] = useState('');
   const [form, setForm] = useState(() => initialForm(initialLetter, initialDirection));
   const set = (key, value) => setForm((current) => ({ ...current, [key]: value }));
 
@@ -81,6 +83,15 @@ export default function LetterForm({ onSubmit, onCancel, busy = false, error = '
       }
     }
     setFiles((current) => [...current, ...accepted]);
+    // Read the first PDF and suggest its subject when none was picked yet.
+    const firstPdf = accepted.find((f) => /\.pdf$/i.test(f.name));
+    if (firstPdf) {
+      extractPdfSubject(firstPdf).then((sujet) => {
+        if (!sujet) return;
+        setPdfSubject(sujet);
+        setForm((current) => (current.objet ? current : { ...current, objet: 'autre', objetAutre: sujet }));
+      }).catch(() => {});
+    }
   };
 
   const selectSubject = (value) => {
@@ -138,6 +149,9 @@ export default function LetterForm({ onSubmit, onCancel, busy = false, error = '
             <span className="muted">PDF, JPG ou PNG — 25 Mo max par fichier</span>
           </label>
           {fileError && <div className="form-error modal-file-error" role="alert">{fileError}</div>}
+          {pdfSubject && (
+            <div className="pdf-subject-hint">Sujet lu dans le PDF : « {pdfSubject} » {form.objet ? '' : '— pré-rempli ci-dessous, modifiable.'}</div>
+          )}
           {files.length > 0 && (
             <div className="file-list">
               {files.map((file, index) => (
