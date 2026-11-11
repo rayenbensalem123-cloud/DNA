@@ -65,12 +65,27 @@ h2.card-title { font-size: 16px; margin: 0 0 12px; }
     radial-gradient(ellipse at 12% 0%, rgba(230,0,27,.16), transparent 42%),
     linear-gradient(180deg, rgba(50,39,44,.86), rgba(44,35,39,.87) 60%, rgba(36,29,32,.88));
 }
-.brand { padding: 2px 8px 20px; display: flex; align-items: center; gap: 12px; min-height: 76px; border-bottom: 1px solid rgba(255,255,255,.09); }
-.brand-emblem { width: 48px; height: 48px; object-fit: contain; background: #fff; border: 2px solid rgba(255,255,255,.9); border-radius: 50%; flex-shrink: 0; }
+/* Brand block: federation emblem framed like an official seal (white edge,
+   thin gold ring echoing the login screen), condensed institutional title. */
+.brand { padding: 4px 10px 20px; display: flex; align-items: center; gap: 13px; min-height: 84px; border-bottom: 1px solid rgba(255,255,255,.09); }
+.brand-emblem {
+  width: 52px; height: 52px; object-fit: contain; background: #fff; border-radius: 50%;
+  padding: 2px; flex-shrink: 0;
+  box-shadow: 0 0 0 2.5px rgba(255,255,255,.95), 0 0 0 4.5px rgba(217,177,59,.7), 0 6px 18px rgba(0,0,0,.45), 0 0 24px rgba(217,177,59,.10);
+}
 .brand-copy { min-width: 0; }
-.brand-title { font-size: 15px; font-weight: 750; line-height: 1.2; color: #fff; }
+.brand-title {
+  font-family: 'Barlow Condensed', 'Inter', sans-serif;
+  font-size: 19.5px; font-weight: 700; line-height: 1.08; letter-spacing: .035em;
+  text-transform: uppercase; color: #fff;
+}
 .brand-title.big { font-size: 32px; text-align: center; margin: 12px 0 4px; color: var(--text); }
-.brand-sub { margin-top: 5px; color: #c0adb1; font-size: 10px; }
+.brand-sub {
+  margin-top: 6px; color: #b8a4a9; font-size: 9px; font-weight: 650;
+  letter-spacing: .15em; text-transform: uppercase;
+  display: flex; align-items: center; gap: 6px;
+}
+.brand-sub::before { content: ''; width: 14px; height: 1px; background: linear-gradient(90deg, rgba(217,177,59,.85), rgba(217,177,59,0)); flex-shrink: 0; }
 .nav { margin-top: 25px; display: flex; flex-direction: column; gap: 6px; }
 .nav-link { display: flex; align-items: center; gap: 12px; color: #d0c1c5; padding: 12px 13px; border-radius: 10px; text-decoration: none; font-weight: 550; transition: background .15s ease,color .15s ease; }
 .nav-link svg { width: 18px; height: 18px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
@@ -835,8 +850,9 @@ input[type='date']:hover, input[type='datetime-local']:hover, input[type='time']
 @media (max-width: 600px) {
   /* one slim top bar: brand on the left, small icon buttons on the right */
   .topbar { height: 56px; min-height: 56px; padding: calc(6px + env(safe-area-inset-top)) 12px 6px; flex-wrap: nowrap; justify-content: space-between; }
-  .topbar-brand { display: flex; align-items: center; gap: 10px; font-weight: 750; font-size: 16px; min-width: 0; }
-  .topbar-brand img { width: 34px; height: 34px; border-radius: 50%; background: #fff; padding: 2px; object-fit: contain; flex-shrink: 0; }
+  .topbar-brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .topbar-brand img { width: 34px; height: 34px; border-radius: 50%; background: #fff; padding: 2px; object-fit: contain; flex-shrink: 0; box-shadow: 0 0 0 2px #fff, 0 0 0 3.5px rgba(217,177,59,.7), 0 4px 12px rgba(0,0,0,.35); }
+  .topbar-brand span { font-family: 'Barlow Condensed', 'Inter', sans-serif; font-size: 18px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
   .topbar-left { width: auto; flex: 0 0 0; min-width: 0; }
   .topbar-right { width: auto; gap: 8px; }
   .theme-toggle span, .btn-logout .btn-label { display: none; }
@@ -884,7 +900,7 @@ input[type='date']:hover, input[type='datetime-local']:hover, input[type='time']
   .stat-card-top { margin-bottom: 2px; }
   .stat-grid > .stat-card:last-child:nth-child(odd) { grid-column: 1 / -1; }
   .topbar:has(.install-btn) .topbar-brand span { display: none; }
-  .topbar-brand span { white-space: nowrap; font-size: 15px; }
+  .topbar-brand span { white-space: nowrap; }
   .install-btn { padding: 0 10px; height: 40px; font-size: 12px; }
 }
 
