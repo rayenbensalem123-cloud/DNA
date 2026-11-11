@@ -274,7 +274,9 @@ select:hover { border-color: #6b545b; }
 .tselect-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tselect-menu, .tselect-menu.up {
   /* position/left/top are set inline (fixed coords computed in Select.jsx) */
-  z-index: 260;
+  /* Above the modal backdrop (900) since menus open inside modals; the
+     splash sits at 1000 and stays on top. */
+  z-index: 950;
   margin: 0; padding: 6px; list-style: none;
   max-height: 300px; overflow-y: auto;
   background: var(--card); border: 1px solid var(--border); border-radius: 10px;
