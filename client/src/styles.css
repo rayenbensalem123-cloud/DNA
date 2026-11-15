@@ -1040,3 +1040,32 @@ body.pdf-open { overflow: hidden; }
 :root[data-theme='light'] .pdf-subject-hint { background: #fdf6e3; border-color: #e8d5a4; color: #7a5a10; }
 .pdf-ocr-progress { animation: pdf-ocr-pulse 1.6s ease-in-out infinite; }
 @keyframes pdf-ocr-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .65; } }
+
+/* ── UI polish pass: focus, legibility, touch targets, status clarity ── */
+:focus-visible { outline: 2px solid #ffd3d8; outline-offset: 2px; box-shadow: 0 0 0 4px rgba(230,0,27,.55); border-radius: 8px; }
+:root[data-theme='light'] :focus-visible { outline-color: var(--primary-dark); box-shadow: 0 0 0 4px rgba(230,0,27,.25); }
+input:focus, select:focus, textarea:focus { outline: 2px solid #ffd3d8; outline-offset: 0; box-shadow: 0 0 0 4px rgba(230,0,27,.35); }
+:root[data-theme='light'] input:focus, :root[data-theme='light'] select:focus, :root[data-theme='light'] textarea:focus { outline-color: var(--primary-dark); box-shadow: 0 0 0 4px rgba(230,0,27,.18); }
+.btn:disabled, button:disabled { cursor: not-allowed; }
+.btn, .nav-link, .link-button, .btn-link { -webkit-tap-highlight-color: transparent; }
+.btn { transition: transform .15s ease, background .15s ease, box-shadow .15s ease, border-color .15s ease; }
+.nav-link .nav-text, .user-role, .nav-badge { font-size: max(12px, 1em); }
+.user-role, .stat-label, .card-footer, .muted { font-size: 12px; }
+.nav-badge { font-size: 12px; line-height: 1.5; font-weight: 700; }
+@media (max-width: 600px) {
+  .btn, .btn-add, .btn-logout, select, input:not([type='checkbox']):not([type='radio']), .nav-link { min-height: 44px; }
+  .btn { padding: 10px 14px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+  .link-button, .btn-link { min-height: 44px; display: inline-flex; align-items: center; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+  .btn:hover:not(:disabled) { transform: none; }
+}
+@media (max-width: 600px) {
+  .nav { overflow-x: auto; scroll-snap-type: x proximity; scrollbar-width: none; -webkit-overflow-scrolling: touch; justify-content: flex-start; }
+  .nav::-webkit-scrollbar { display: none; }
+  .nav-link { flex: 1 0 64px; scroll-snap-align: start; min-height: 52px; }
+  .nav-link .nav-text { font-size: 11px; white-space: nowrap; }
+  .bell-btn, .theme-toggle { min-width: 44px; min-height: 44px; }
+}
+@media (max-width: 600px) { .nav { padding: 5px 4px; } }
