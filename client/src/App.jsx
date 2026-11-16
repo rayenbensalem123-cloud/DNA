@@ -15,6 +15,8 @@ import Activity from './pages/Activity';
 import Courrier from './pages/Courrier';
 import CourriersRejetes from './pages/CourriersRejetes';
 import ToSend from './pages/ToSend';
+import Registre from './pages/Registre';
+import Gmail from './pages/Gmail';
 import Splash from './components/Splash';
 
 const BOOT_MIN_MS = 1500;
@@ -72,14 +74,14 @@ function Protected({ children }) {
 
 function AdminOnly({ children }) {
   const { user } = useAuth();
-  return user?.role === 'admin' || user?.role === 'supervisor' ? children : <Navigate to="/" replace />;
+  return user?.role === 'admin' || user?.role === 'supervisor' || user?.role === 'daf' ? children : <Navigate to="/" replace />;
 }
 
 // Routes the admin can delegate: the page opens for the bureau or for any
 // account granted the matching permission.
 function PermRoute({ perm, children }) {
   const { user } = useAuth();
-  const ok = Boolean(user) && (user.role === 'admin' || user.role === 'supervisor' || user?.permissions?.[perm]);
+  const ok = Boolean(user) && (user.role === 'admin' || user.role === 'supervisor' || user.role === 'daf' || user?.permissions?.[perm]);
   return ok ? children : <Navigate to="/" replace />;
 }
 
@@ -102,6 +104,9 @@ export default function App() {
                 <Route path="courrier" element={<ErrorBoundary label="courrier"><Courrier /></ErrorBoundary>} />
                 <Route path="a-envoyer" element={<AdminOnly><ErrorBoundary label="tosend"><ToSend /></ErrorBoundary></AdminOnly>} />
                 <Route path="courriers-rejetes" element={<ErrorBoundary label="rejetes"><CourriersRejetes /></ErrorBoundary>} />
+                <Route path="registres" element={<AdminOnly><ErrorBoundary label="registre"><Registre /></ErrorBoundary></AdminOnly>} />
+                <Route path="registres/:committeeId" element={<AdminOnly><ErrorBoundary label="registre"><Registre /></ErrorBoundary></AdminOnly>} />
+                <Route path="gmail" element={<AdminOnly><ErrorBoundary label="gmail"><Gmail /></ErrorBoundary></AdminOnly>} />
                 <Route path="lettres" element={<Navigate to="/archive" replace />} />
                 <Route path="lettres/nouveau" element={<Navigate to="/?newLetter=1" replace />} />
                 <Route path="lettres/:id" element={<ErrorBoundary label="letterdetail"><LetterDetail /></ErrorBoundary>} />

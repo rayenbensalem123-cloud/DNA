@@ -5,8 +5,8 @@ const THEME_KEY = 'bo_theme';
 
 export function ThemeProvider({ children }) {
   const [theme, setTheme] = useState(() => {
-    try { return localStorage.getItem(THEME_KEY) === 'light' ? 'light' : 'dark'; }
-    catch { return 'dark'; }
+    try { return localStorage.getItem(THEME_KEY) === 'dark' ? 'dark' : 'light'; }
+    catch { return 'light'; }
   });
 
   useEffect(() => {

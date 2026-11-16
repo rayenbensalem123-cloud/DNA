@@ -36,7 +36,10 @@ export const api = {
   committees: () => req('/api/committees'),
   createCommittee: (nom) => req('/api/committees', { method: 'POST', body: { nom } }),
   updateCommittee: (id, nom) => req(`/api/committees/${id}`, { method: 'PATCH', body: { nom } }),
-  activity: (action = '') => req('/api/activity?limit=500' + (action ? '&action=' + encodeURIComponent(action) : '')),
+  activity: (action = '', extra = {}) => {
+    const p = new URLSearchParams({ limit: 500, ...(action ? { action } : {}), ...extra });
+    return req('/api/activity?' + p.toString());
+  },
   notifications: () => req('/api/notifications'),
   users: () => req('/api/users'),
   createUser: (data) => req('/api/users', { method: 'POST', body: data }),
@@ -74,6 +77,7 @@ export const api = {
   // Courriers (scanned files awaiting validation)
   listCourriers: (status = '') => req('/api/courriers' + (status ? `?status=${encodeURIComponent(status)}` : '')),
   uploadCourrier: (filename, dataBase64, sujet = '') => req('/api/courriers', { method: 'POST', body: { filename, dataBase64, sujet } }),
+  validateCourrierDaf: (id, note = '') => req(`/api/courriers/${id}`, { method: 'PATCH', body: { action: 'valide_daf', note } }),
   validateCourrier: (id, note = '') => req(`/api/courriers/${id}`, { method: 'PATCH', body: { action: 'valide', note } }),
   rejectCourrier: (id, reason) => req(`/api/courriers/${id}`, { method: 'PATCH', body: { action: 'rejete', rejectionReason: reason } }),
   // Files go straight from the browser to storage (signed upload URL), then a
@@ -118,5 +122,18 @@ export const api = {
   // Transfer requests awaiting bureau approval (admin/supervisor)
   transferRequests: () => req('/api/transfer-requests'),
   transferApproval: (letterId, action, note = '') => req(`/api/letters/${encodeURIComponent(letterId)}/transfer-approval`, { method: 'POST', body: { action, note } }),
+  // Chat + presence (poll-based)
+  chat: (channel = 'general', after = '') => req('/api/chat?channel=' + encodeURIComponent(channel) + (after ? '&after=' + encodeURIComponent(after) : '')),
+  chatChannels: () => req('/api/chat'),
+  markChatRead: (channel) => req('/api/chat/read', { method: 'POST', body: { channel } }),
+  sendChat: (channel, text) => req('/api/chat', { method: 'POST', body: { channel, text } }),
+  // Settings (admin) — Gmail IMAP credentials
+  getSettings: () => req('/api/settings'),
+  saveSettings: (body) => req('/api/settings', { method: 'PUT', body }),
+  // Gmail inbox (bureau)
+  gmailMessages: () => req('/api/gmail/messages'),
+  gmailMessage: (uid) => req(`/api/gmail/messages/${uid}`),
+  gmailUnread: () => req('/api/gmail/unread'),
+  gmailAck: (uid) => req('/api/gmail/ack', { method: 'POST', body: { uid } }),
 };
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { fmtDateTime } from '../utils';
+import { downloadCsv, downloadXlsx, printPdf } from '../utils/exportFile';
 
 const LABELS = {
   login: 'Connexion à la plateforme',
@@ -16,20 +17,25 @@ const LABELS = {
   'user.update': 'Compte modifié',
   'user.delete': 'Compte supprimé',
   'courrier.upload': 'Courrier numérisé téléversé',
-  'courrier.validate': 'Courrier validé',
+  'courrier.validate_daf': 'Courrier validé (DAF)',
+  'courrier.validate': 'Courrier validé (bureau)',
   'courrier.reject': 'Courrier rejeté',
   'courrier.delete': 'Courrier rejeté supprimé',
   'courrier.file.view': 'Fichier du courrier ouvert',
   'committee.create': 'Comité créé',
   'committee.update': 'Comité renommé',
+  'settings.update': 'Réglages modifiés',
+  'chat.send': 'Message envoyé',
 };
-const FILTERS = [['', 'Tout'], ['letter', 'Courriers'], ['courrier', 'Numérisation'], ['piece', 'Fichiers'], ['committee', 'Comités'], ['user', 'Comptes'], ['login', 'Connexions']];
+const FILTERS = [['', 'Tout'], ['letter', 'Courriers'], ['courrier', 'Numérisation'], ['piece', 'Fichiers'], ['committee', 'Comités'], ['user', 'Comptes'], ['login', 'Connexions'], ['chat', 'Chat']];
 const EVENT_LABELS = { vu_comite: 'ouvert par le comité', recu_comite: 'reçu par le comité', traite_comite: 'terminé et archivé', note: 'note ajoutée' };
 
 export default function Activity() {
   const [items, setItems] = useState([]);
   const [committees, setCommittees] = useState([]);
   const [filter, setFilter] = useState('');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -37,10 +43,10 @@ export default function Activity() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true); setError('');
-    api.activity(filter).then((d) => { if (!cancelled) { setItems(d.items || []); setLoading(false); } })
+    api.activity(filter, { from, to }).then((d) => { if (!cancelled) { setItems(d.items || []); setLoading(false); } })
       .catch((e) => { if (!cancelled) { setError(e.message); setLoading(false); } });
     return () => { cancelled = true; };
-  }, [filter]);
+  }, [filter, from, to]);
 
   const nameOf = (id) => committees.find((c) => c.id === id)?.nom || id;
   const detail = (a) => {
@@ -58,14 +64,46 @@ export default function Activity() {
     return '';
   };
 
+  const exportHeaders = [
+    { key: 'date', label: 'Date' },
+    { key: 'qui', label: 'Qui' },
+    { key: 'action', label: 'Action' },
+    { key: 'element', label: 'Élément' },
+    { key: 'detail', label: 'Détail' },
+  ];
+  const exportRows = items.map((a) => ({
+    date: fmtDateTime(a.date),
+    qui: a.userName + (a.commission ? ` (${nameOf(a.commission)})` : ''),
+    action: LABELS[a.action] || a.action,
+    element: a.target || '',
+    detail: detail(a),
+  }));
+  const doExport = async (format) => {
+    try {
+      if (format === 'csv') downloadCsv('journal-activite', exportHeaders, exportRows);
+      else if (format === 'xlsx') await downloadXlsx('journal-activite', exportHeaders, exportRows);
+      else printPdf({ title: 'Journal d’activité', subtitle: [filter ? 'Filtre : ' + (FILTERS.find(([v]) => v === filter)?.[1] || filter) : 'Toutes les actions', from && `du ${from}`, to && `au ${to}`].filter(Boolean).join(' · '), headers: exportHeaders, rows: exportRows });
+    } catch { /* export failures are non-critical */ }
+  };
+
   return (
     <div className="page activity-page">
       <header className="page-header page-title-header">
         <div className="page-title-copy"><span className="page-title-kicker">Administration</span><h1>Journal d’activité</h1></div>
+        <div className="export-group" role="group" aria-label="Exporter le journal">
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => doExport('csv')}>CSV</button>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => doExport('xlsx')}>Excel</button>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => doExport('pdf')}>PDF</button>
+        </div>
       </header>
       <section className="card">
         <div className="activity-filters" role="group" aria-label="Filtrer le journal">
           {FILTERS.map(([value, label]) => <button key={value || 'all'} type="button" className={'btn ' + (filter === value ? 'btn-primary' : 'btn-secondary')} onClick={() => setFilter(value)}>{label}</button>)}
+          <div className="activity-dates">
+            <label className="filter-field"><span>Du</span><input type="date" value={from} max={to || undefined} onChange={(event) => setFrom(event.target.value)} /></label>
+            <label className="filter-field"><span>Au</span><input type="date" value={to} min={from || undefined} onChange={(event) => setTo(event.target.value)} /></label>
+            {(from || to) && <button type="button" className="btn btn-ghost" onClick={() => { setFrom(''); setTo(''); }}>Réinitialiser</button>}
+          </div>
         </div>
         {error && <div className="form-error" role="alert">{error}</div>}
         {loading ? <div className="card-pad">Chargement…</div> : (

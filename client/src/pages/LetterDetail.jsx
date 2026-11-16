@@ -15,10 +15,10 @@ export default function LetterDetail() {
   const isAdmin = user?.role === 'admin';
   // The tracking history (entry, transfers, committee events) is private to the bureau d'ordre,
   // unless the admin granted the "tracking" permission to this account.
-  const canSeeHistory = isAdmin || user?.role === 'supervisor' || Boolean(user?.permissions?.tracking);
+  const canSeeHistory = isAdmin || user?.role === 'supervisor' || user?.role === 'daf' || Boolean(user?.permissions?.tracking);
   const perms = user?.permissions || {};
   const isReadOnly = !!user?.readOnly && !isAdmin && user?.role !== 'supervisor';
-  const isBureau = isAdmin || user?.role === 'supervisor';
+  const isBureau = isAdmin || user?.role === 'supervisor' || user?.role === 'daf';
   const isComite = user?.role === 'agent' || user?.role === 'chef';
   const [letter, setLetter] = useState(null);
   // A comité account holds the letters currently in its comité.
@@ -97,7 +97,7 @@ export default function LetterDetail() {
     try {
       const { files = [], commission, ...changes } = data;
       const commissionChanged = (commission || null) !== (letter.commission || null);
-      const bureau = isAdmin || user?.role === 'supervisor';
+      const bureau = isAdmin || user?.role === 'supervisor' || user?.role === 'daf';
       if (commissionChanged && bureau) {
         changes.commission = commission;
         changes.statut = commission ? 'en_cours' : 'recu';

@@ -4,14 +4,15 @@ import { api } from '../api';
 import { useAuth } from '../auth';
 import { useLanguage } from '../i18n';
 import { fmtDate } from '../utils';
+import { downloadCsv, downloadXlsx, printPdf } from '../utils/exportFile';
 import Select from '../components/Select';
 
 export default function Archive() {
   const { t } = useLanguage();
   const { user } = useAuth();
-  // Only the bureau d'ordre (admin + supervisor) may see the tracking history
+  // Only the bureau d'ordre (admin + supervisor + daf) may see the tracking history
   // and the "seen by comité" tick — unless the admin granted the permission.
-  const canSeeTracking = user?.role === 'admin' || user?.role === 'supervisor' || Boolean(user?.permissions?.tracking);
+  const canSeeTracking = user?.role === 'admin' || user?.role === 'supervisor' || user?.role === 'daf' || Boolean(user?.permissions?.tracking);
   const navigate = useNavigate();
   const location = useLocation();
   const { committeeId } = useParams();
@@ -86,6 +87,37 @@ export default function Archive() {
         : filters.priorite === 'urgente' ? 'Courriers urgents'
           : filters.statut ? `Courriers — ${t('status.' + filters.statut)}` : 'Tous les courriers';
 
+  const exportHeaders = [
+    { key: 'numeroLettre', label: 'N° courrier' },
+    { key: 'objet', label: 'Objet' },
+    ...(committeeId ? [] : [{ key: 'commission', label: 'Comité' }]),
+    { key: 'direction', label: 'Direction' },
+    { key: 'statut', label: 'Statut' },
+    { key: 'priorite', label: 'Priorité' },
+    { key: 'expediteur', label: 'Expéditeur' },
+    { key: 'date', label: 'Date' },
+  ];
+  const exportRows = items.map((l) => ({
+    numeroLettre: l.numeroLettre || l.ref || '',
+    objet: l.objet || '',
+    commission: committeeId ? '' : (committees.find((c) => c.id === l.commission)?.nom || 'Sans comité'),
+    direction: l.direction === 'sortant' ? 'Sortant' : 'Entrant',
+    statut: t('status.' + (l.statut || 'recu')),
+    priorite: l.priorite === 'urgente' ? 'Urgente' : l.priorite === 'confidentielle' ? 'Confidentielle' : 'Normale',
+    expediteur: l.expediteur?.nom || '',
+    date: fmtDate(l.dateReception || l.dateEmission),
+  }));
+  const exportName = selectedCommittee ? `archive-${selectedCommittee.nom.replace(/[^\w-]+/g, '_')}` : 'archive-courriers';
+  const exportSubtitle = [listTitle, filters.from && `du ${filters.from}`, filters.to && `au ${filters.to}`].filter(Boolean).join(' ');
+
+  const doExport = async (format) => {
+    try {
+      if (format === 'csv') downloadCsv(exportName, exportHeaders, exportRows);
+      else if (format === 'xlsx') await downloadXlsx(exportName, exportHeaders, exportRows);
+      else printPdf({ title: selectedCommittee ? `Archive — ${selectedCommittee.nom}` : 'Archive des courriers', subtitle: exportSubtitle, headers: exportHeaders, rows: exportRows });
+    } catch { /* export failures are non-critical */ }
+  };
+
   return (
     <div className="page">
       <div className="page-header">
@@ -133,17 +165,22 @@ export default function Archive() {
       {!committeeId && !hasFilters && (
         <section className="committee-grid" aria-label="Comités">
           {committees.map((committee) => (
-            <button type="button" className="card committee-card" key={committee.id} onClick={() => navigate(`/archive/comites/${encodeURIComponent(committee.id)}`)}>
-              <span className="committee-card-name">{committee.nom}</span>
-              <span className="committee-card-count">{committeeCounts[committee.id] || 0} courrier{committeeCounts[committee.id] === 1 ? '' : 's'}</span>
+            <div className="committee-card-wrap" key={committee.id}>
+              <button type="button" className="card committee-card" onClick={() => navigate(`/archive/comites/${encodeURIComponent(committee.id)}`)}>
+                <span className="committee-card-name">{committee.nom}</span>
+                <span className="committee-card-count">{committeeCounts[committee.id] || 0} courrier{committeeCounts[committee.id] === 1 ? '' : 's'}</span>
+                <span className="committee-card-open">Ouvrir l’archive →</span>
+              </button>
+              {canSeeTracking && <button type="button" className="committee-registre-link" onClick={() => navigate(`/registres/${encodeURIComponent(committee.id)}`)} title="Registre arrivée / départ du comité">▤ Registre du comité</button>}
+            </div>
+          ))}
+          <div className="committee-card-wrap">
+            <button type="button" className="card committee-card" onClick={() => navigate('/archive/comites/non-assigne')}>
+              <span className="committee-card-name">Sans comité</span>
+              <span className="committee-card-count">{committeeCounts.non_assigne || 0} courrier{committeeCounts.non_assigne === 1 ? '' : 's'}</span>
               <span className="committee-card-open">Ouvrir l’archive →</span>
             </button>
-          ))}
-          <button type="button" className="card committee-card" onClick={() => navigate('/archive/comites/non-assigne')}>
-            <span className="committee-card-name">Sans comité</span>
-            <span className="committee-card-count">{committeeCounts.non_assigne || 0} courrier{committeeCounts.non_assigne === 1 ? '' : 's'}</span>
-            <span className="committee-card-open">Ouvrir l’archive →</span>
-          </button>
+          </div>
         </section>
       )}
 
@@ -151,7 +188,14 @@ export default function Archive() {
         <div className="card archive-list-card">
           <div className="archive-list-heading">
             <h2 className="card-title">{selectedCommittee ? `Courriers — ${selectedCommittee.nom}` : listTitle}</h2>
-            <span className="muted">{total} au total</span>
+            <div className="archive-heading-right">
+              <span className="muted">{total} au total</span>
+              <div className="export-group" role="group" aria-label="Exporter">
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => doExport('csv')} title="Exporter en CSV (Excel)">CSV</button>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => doExport('xlsx')} title="Exporter en Excel (.xlsx)">Excel</button>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => doExport('pdf')} title="Imprimer / PDF">PDF</button>
+              </div>
+            </div>
           </div>
           <div className="filters">
             <input aria-label="Rechercher dans l’archive" placeholder={t('letters.searchPlaceholder')} value={filters.q} onChange={(event) => set('q', event.target.value)} />

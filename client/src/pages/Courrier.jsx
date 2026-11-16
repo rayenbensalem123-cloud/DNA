@@ -17,16 +17,22 @@ export default function Courrier() {
   const [rejecting, setRejecting] = useState(null);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
-  // Validation is a bureau decision; a comité granted the "courriers"
-  // permission can deposit scans but not validate or reject them.
-  const isBureau = user?.role === 'admin' || user?.role === 'supervisor';
+  // Two-step validation: step 1 by the DAF (or admin), step 2 by the
+  // supervisor/admin. A comité granted the "courriers" permission can deposit
+  // scans but not validate or reject them.
+  const role = user?.role || 'agent';
+  const isBureau = role === 'admin' || role === 'supervisor' || role === 'daf';
+  const canDafStep = role === 'daf' || role === 'admin';
+  const canFinalStep = role === 'supervisor' || role === 'admin';
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const d = await api.listCourriers('a_valider');
-      setItems(d.items || []);
+      const [pending, dafValidated] = await Promise.all([api.listCourriers('a_valider'), api.listCourriers('daf_valide')]);
+      const merged = [...(pending.items || []), ...(dafValidated.items || [])]
+        .sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
+      setItems(merged);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -76,6 +82,21 @@ export default function Courrier() {
     }
   };
 
+  const validateDaf = async (c) => {
+    setBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      await api.validateCourrierDaf(c.id, '');
+      setNotice('Courrier ' + c.nom + ' validé (étape DAF) — en attente de la validation finale.');
+      await load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const validate = async (c) => {
     setBusy(true);
     setError('');
@@ -112,11 +133,11 @@ export default function Courrier() {
   return (
     <div className="page">
       <div className="page-header">
-        <div className="page-title-copy">
-          <span className="page-title-kicker">Validation</span>
-          <h1>Courriers à valider</h1>
-          <div className="muted">{items.length} courrier{items.length === 1 ? '' : 's'} en attente</div>
-        </div>
+          <div className="page-title-copy">
+            <span className="page-title-kicker">Validation</span>
+            <h1>Courriers à valider</h1>
+            <div className="muted">{items.length} courrier{items.length === 1 ? '' : 's'} en attente — validation en deux étapes : DAF puis superviseur</div>
+          </div>
         <div className="page-actions">
           <label className="btn btn-primary" style={{ cursor: busy ? 'default' : 'pointer' }}>
             {busy ? 'Téléversement...' : 'Téléverser des courriers'}
@@ -132,7 +153,7 @@ export default function Courrier() {
       {loading ? <div className="card-pad">{t('common.loading')}</div> : (
         <div className="card">
           <div className="table-wrap"><table className="table">
-            <thead><tr><th>Fichier</th><th>Taille</th><th>Téléversé par</th><th>Date</th><th>Actions</th></tr></thead>
+            <thead><tr><th>Fichier</th><th>Taille</th><th>Téléversé par</th><th>Date</th><th>Étape</th><th>Actions</th></tr></thead>
             <tbody>
               {items.map((c) => (
                 <tr key={c.id}>
@@ -140,18 +161,22 @@ export default function Courrier() {
                   <td>{fmtSize(c.taille)}</td>
                   <td>{c.uploadedByName || '—'}</td>
                   <td className="date-cell">{fmtDate(c.uploadedAt)}</td>
+                  <td>{c.status === 'daf_valide'
+                    ? <span className="badge statut-en_cours" title={c.dafValidatedByName ? `Validé par ${c.dafValidatedByName}` : ''}>DAF ✓ · superviseur requis</span>
+                    : <span className="badge statut-recu" title={c.dafValidatedByName ? `Validé par ${c.dafValidatedByName}` : ''}>DAF requis</span>}</td>
                   <td>
                     <div style={{ display: 'flex', gap: 8 }}>
                       <button className="btn btn-ghost" onClick={() => api.openCourrierFile(c.id, c.nom)} onMouseEnter={() => api.warmFile('courrier', c.id)} onTouchStart={() => api.warmFile('courrier', c.id)}>Voir</button>
-                      {isBureau && <>
-                        <button className="btn btn-primary" onClick={() => validate(c)} disabled={busy}>Valider</button>
-                        <button className="btn btn-danger" onClick={() => { setRejecting(c); setReason(''); }} disabled={busy}>Rejeter</button>
-                      </>}
+                      {isBureau && c.status === 'a_valider' && canDafStep && <button className="btn btn-secondary" onClick={() => validateDaf(c)} disabled={busy} title="Validation DAF (étape 1)">Valider (DAF)</button>}
+                      {isBureau && canFinalStep && <button className="btn btn-primary" onClick={() => validate(c)} disabled={busy} title={c.status === 'a_valider' ? 'Validation directe (les deux étapes)' : 'Validation finale (étape 2)'}>{c.status === 'a_valider' ? (role === 'admin' ? 'Valider (2 étapes)' : 'Valider') : 'Valider (final)'}</button>}
+                      {isBureau && !canFinalStep && c.status === 'daf_valide' && <span className="muted small">En attente du superviseur</span>}
+                      {isBureau && !canFinalStep && c.status === 'a_valider' && !canDafStep && <span className="muted small">En attente du DAF</span>}
+                      {isBureau && <button className="btn btn-danger" onClick={() => { setRejecting(c); setReason(''); }} disabled={busy}>Rejeter</button>}
                     </div>
                   </td>
                 </tr>
               ))}
-              {items.length === 0 && <tr><td colSpan={5} className="empty-cell">Aucun courrier à valider</td></tr>}
+              {items.length === 0 && <tr><td colSpan={6} className="empty-cell">Aucun courrier à valider</td></tr>}
             </tbody>
           </table></div>
         </div>

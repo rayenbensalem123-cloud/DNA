@@ -2,12 +2,16 @@ import http from 'node:http';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import fs from 'node:fs';
-import { getDB, saveDB, verifyPassword, hashPassword, initializeDB, getSessionSecret } from './store.js';
+import { getDB, saveDB, updateDB, verifyPassword, hashPassword, initializeDB, getSessionSecret } from './store.js';
 
 const PORT = process.env.PORT || 3001;
 const CLIENT_DIST = path.join(process.cwd(), 'client', 'dist');
 const UPLOAD_DIR = path.join(process.cwd(), 'server', 'data', 'uploads');
 const TOKEN_TTL = 1000 * 60 * 60 * 8; // 8h
+// In-memory rate-limit buckets for chat posts (per server instance).
+const CHAT_BUCKETS = new Map();
+// Gmail INBOX cache (~45s) so polling the unread badge does not hit IMAP every time.
+const GMAIL_CACHE = { at: 0, data: null };
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -74,25 +78,25 @@ function publicUser(u) { return { id: u.id, username: u.username, name: u.name, 
 // (role "agent", older "lecture" accounts behave the same). A comité account can send a letter to any
 // comité, but only reads the letters its own comité received, and only changes a letter while it is in
 // its comité. It cannot see what other comités receive or handle.
-const effectiveRole = (role) => (['admin', 'supervisor', 'chef', 'agent'].includes(role) ? role : 'agent');
+const effectiveRole = (role) => (['admin', 'supervisor', 'daf', 'chef', 'agent'].includes(role) ? role : 'agent');
 function receivedBy(letter, committee) {
   return letter.commission === committee || (Array.isArray(letter.commissionHisto) && letter.commissionHisto.some((h) => h.committee === committee));
 }
 function canSeeLetter(user, letter) {
-  if (isAdminLike(user)) return true;
+  if (isBureauLike(user)) return true;
   // The admin can grant a comité account the right to see every comité's mail.
   if (can(user, 'view_all')) return true;
   return user.commission ? receivedBy(letter, user.commission) : letter.createdBy === user.id;
 }
 function holdsLetter(user, letter) {
-  if (isAdminLike(user)) return true;
+  if (isBureauLike(user)) return true;
   return user.commission ? letter.commission === user.commission : letter.createdBy === user.id;
 }
 // Right after sending, the sender may still attach the scanned files to the letter it just created.
 function justSent(user, letter) {
   return letter.createdBy === user.id && Date.now() - Date.parse(letter.createdAt || 0) < 15 * 60 * 1000;
 }
-const canAttach = (user, letter) => !isReadOnly(user) && (holdsLetter(user, letter) || justSent(user, letter)) && (isAdminLike(user) || can(user, 'files'));
+const canAttach = (user, letter) => !isReadOnly(user) && (holdsLetter(user, letter) || justSent(user, letter)) && (isBureauLike(user) || can(user, 'files'));
 const NOT_IN_COMMITTEE = 'Cette lettre n’est plus dans votre comité : vous pouvez la consulter mais plus la modifier.';
 
 // ---- Short-lived signed file links ----
@@ -138,6 +142,10 @@ function authUserForFile(req, res, kind, id, db) {
 }
 
 function isAdminLike(u) { return !!u && (u.role === 'admin' || u.role === 'supervisor'); }
+// Bureau-level accounts: admin, supervisor and DAF. The DAF (Directeur
+// Administratif et Financier) participates in the bureau's work — courrier
+// validation, tracking, the registers — without account-management powers.
+function isBureauLike(u) { return !!u && (u.role === 'admin' || u.role === 'supervisor' || u.role === 'daf'); }
 
 // ---- Login protection ---------------------------------------------------------------
 // Too many wrong passwords from one address (or for one account from one address) → temporary block.
@@ -208,7 +216,7 @@ function requireAuth(req, res, next) {
   return user;
 }
 
-const ROLES = ['admin', 'supervisor', 'chef', 'agent'];
+const ROLES = ['admin', 'supervisor', 'daf', 'chef', 'agent'];
 const normalizeRole = (r) => (r === 'lecture' ? 'agent' : r);
 // ---- Permissions ----------------------------------------------------------------------
 // The admin can delegate (and revoke at any time) individual powers to any
@@ -218,12 +226,15 @@ const PERMISSIONS = ['view_all', 'tracking', 'journal', 'create', 'edit', 'trans
 // A newly created chef starts with the full powers of its comité; a new agent
 // starts read-only. The admin can change both afterwards.
 const CHEF_DEFAULT_PERMS = { create: true, edit: true, files: true, transfer: true };
+// The DAF is bureau staff: full visibility and tracking, courrier validation,
+// but no account management or hard-delete powers.
+const DAF_DEFAULT_PERMS = { view_all: true, tracking: true, journal: true, create: true, edit: true, transfer: true, files: true, courriers: true };
 // Accounts created before the permissions system existed keep today's powers.
 const LEGACY_COMITE_PERMS = { create: true, edit: true, files: true, transfer: true };
 const isComiteRole = (u) => !!u && (u.role === 'agent' || u.role === 'chef');
 function userPerms(user) {
   if (!user) return {};
-  if (user.role === 'admin' || user.role === 'supervisor') return Object.fromEntries(PERMISSIONS.map((p) => [p, true]));
+  if (isBureauLike(user)) return Object.fromEntries(PERMISSIONS.map((p) => [p, user.role === 'daf' ? DAF_DEFAULT_PERMS[p] : true]));
   if (user.permissions && typeof user.permissions === 'object' && !Array.isArray(user.permissions)) return user.permissions;
   return { ...LEGACY_COMITE_PERMS };
 }
@@ -341,7 +352,7 @@ function publicLetter(l) {
 // — only a simple "transferred" flag so the badge still works.
 function letterView(user, l) {
   const base = publicLetter(l);
-  if (isAdminLike(user)) {
+  if (isBureauLike(user)) {
     return { ...base, comiteVu: l.commission ? !isUnread(l) : null };
   }
   // The admin can grant a comité account the right to see the tracking history
@@ -471,7 +482,7 @@ async function route(req, res) {
     const target = db.users.find((u) => u.id === decodeURIComponent(userMatch[1]));
     if (!target) return send(res, 404, { error: 'Compte introuvable' });
     // A delegated account manager cannot touch bureau accounts.
-    if (!isAdminLike(user) && ['admin', 'supervisor'].includes(effectiveRole(target.role))) return send(res, 403, { error: 'Droits insuffisants' });
+    if (!isAdminLike(user) && ['admin', 'supervisor', 'daf'].includes(effectiveRole(target.role))) return send(res, 403, { error: 'Droits insuffisants' });
     if (denyReadOnly(user, res)) return;
     const body = await readBody(req);
     const name = clip(body.name ?? target.name, 100).trim();
@@ -513,7 +524,7 @@ async function route(req, res) {
     const id = decodeURIComponent(userMatch[1]);
     const target = db.users.find((u) => u.id === id);
     if (!target) return send(res, 404, { error: 'Compte introuvable' });
-    if (!isAdminLike(user) && ['admin', 'supervisor'].includes(effectiveRole(target.role))) return send(res, 403, { error: 'Droits insuffisants' });
+    if (!isAdminLike(user) && ['admin', 'supervisor', 'daf'].includes(effectiveRole(target.role))) return send(res, 403, { error: 'Droits insuffisants' });
     if (denyReadOnly(user, res)) return;
     if (target.id === user.id) return send(res, 400, { error: 'Vous ne pouvez pas supprimer votre propre compte' });
     if (target.role === 'admin' && db.users.filter((u) => u.role === 'admin').length <= 1) return send(res, 400, { error: 'Le dernier compte administrateur ne peut pas être supprimé' });
@@ -526,11 +537,17 @@ async function route(req, res) {
   if (pathname === '/api/activity' && method === 'GET') {
     const user = requireAuth(req, res);
     if (!user) return;
-    if (!isAdminLike(user) && !can(user, 'journal')) return send(res, 403, { error: 'Droits insuffisants' });
+    if (!isBureauLike(user) && !can(user, 'journal')) return send(res, 403, { error: 'Droits insuffisants' });
     const db = getDB();
     const action = url.searchParams.get('action') || '';
+    const from = validDate(url.searchParams.get('from'));
+    const to = validDate(url.searchParams.get('to'), true);
     const limit = Math.min(parseInt(url.searchParams.get('limit') || '200', 10) || 200, 1000);
-    const items = (db.activity || []).filter((a) => !action || a.action.startsWith(action)).slice(-limit).reverse();
+    const items = (db.activity || [])
+      .filter((a) => !action || a.action.startsWith(action))
+      .filter((a) => !from || a.date >= from)
+      .filter((a) => !to || a.date <= to)
+      .slice(-limit).reverse();
     return send(res, 200, { items, total: (db.activity || []).length });
   }
 
@@ -598,12 +615,12 @@ async function route(req, res) {
         body,
         onBeforeGenerateToken: async (pathnameForBlob, clientPayload) => {
           const user = authUser(req);
-          if (!user || !isAdminLike(user) && !isComiteRole(user)) throw new Error('Droits insuffisants pour ajouter un fichier');
+          if (!user || !(isBureauLike(user) || isComiteRole(user))) throw new Error('Droits insuffisants pour ajouter un fichier');
           let details;
           try { details = JSON.parse(clientPayload || '{}'); } catch { throw new Error('Informations du fichier invalides'); }
           if (details.courrier) {
             // Scanned courriers: bureau, or a comité granted the permission.
-            if (!isAdminLike(user) && !(isComiteRole(user) && can(user, 'courriers') && !isReadOnly(user))) throw new Error('Droits insuffisants pour ajouter un fichier');
+            if (!isBureauLike(user) && !(isComiteRole(user) && can(user, 'courriers') && !isReadOnly(user))) throw new Error('Droits insuffisants pour ajouter un fichier');
             const crExt = path.extname(sanitizeFilename(details.filename)).toLowerCase();
             if (!['.pdf', '.jpg', '.jpeg', '.png'].includes(crExt)) throw new Error('Format non pris en charge pour un gros fichier (PDF, JPG ou PNG)');
             if (!pathnameForBlob.startsWith('cr-') || path.extname(pathnameForBlob).toLowerCase() !== crExt) throw new Error('Chemin de fichier invalide');
@@ -639,7 +656,7 @@ async function route(req, res) {
     const user = requireAuth(req, res);
     if (!user) return;
     const db = getDB();
-    const isAdmin = isAdminLike(user);
+    const isAdmin = isBureauLike(user);
     const myCommission = user.commission || null;
     let lettres = db.letters;
     if (!isAdmin) {
@@ -690,10 +707,11 @@ async function route(req, res) {
     const categorie = url.searchParams.get('categorie') || '';
     const priorite = url.searchParams.get('priorite') || '';
     const commission = url.searchParams.get('commission') || '';
+    const departCommission = url.searchParams.get('departCommission') || '';
     const from = validDate(url.searchParams.get('from'), false);
     const to = validDate(url.searchParams.get('to'), true);
 
-    const isAdmin = isAdminLike(user);
+    const isAdmin = isBureauLike(user);
     const myCommission = user.commission || null;
 
     let items = db.letters.filter((l) => {
@@ -704,6 +722,10 @@ async function route(req, res) {
       if (priorite && (l.priorite || 'normale') !== priorite) return false;
       if (commission === 'non_assigne' && l.commission) return false;
       if (commission && commission !== 'non_assigne' && ((l.commission || '') !== commission)) return false;
+      // Comité "départ" register: letters the committee itself emitted.
+      if (departCommission) {
+        if ((l.departCommission || (isComiteRole(user) && (l.direction || 'entrant') === 'sortant' && l.createdBy === user.id ? user.commission : null)) !== departCommission) return false;
+      }
       if (from && (l.dateEmission || l.createdAt) < from) return false;
       if (to && (l.dateEmission || l.createdAt) > to) return false;
       if (expediteurQ) {
@@ -772,14 +794,14 @@ async function route(req, res) {
     if (method === 'PATCH') {
       const user = requireAuth(req, res);
       if (!user) return;
-      if (!isAdminLike(user) && !isComiteRole(user)) return send(res, 403, { error: 'Droits insuffisants' });
+      if (!isBureauLike(user) && !isComiteRole(user)) return send(res, 403, { error: 'Droits insuffisants' });
       const letter = db.letters.find((l) => l.id === id);
       if (!letter) return send(res, 404, { error: 'Lettre introuvable' });
       if (!canSeeLetter(user, letter)) return send(res, 404, { error: 'Lettre introuvable' });
       // Field edits: the bureau, or a comité account holding the letter (or, if
       // the admin granted view_all, any letter it can see) with the "edit"
       // permission. Read-only accounts may edit nothing.
-      const mayEdit = isAdminLike(user) || (can(user, 'edit') && !isReadOnly(user) && (can(user, 'view_all') || holdsLetter(user, letter)));
+      const mayEdit = isBureauLike(user) || (can(user, 'edit') && !isReadOnly(user) && (can(user, 'view_all') || holdsLetter(user, letter)));
       if (!mayEdit) return send(res, 403, { error: isReadOnly(user) ? 'Ce compte est en lecture seule' : (holdsLetter(user, letter) ? 'Permission « modifier les courriers » requise' : NOT_IN_COMMITTEE) });
       const body = await readBody(req);
       const nextStatut = body.statut !== undefined ? body.statut : letter.statut;
@@ -791,7 +813,7 @@ async function route(req, res) {
       // instead of moving the letter. Admin/supervisor transfers stay instant.
       // The "transfer" permission authorizes *requesting* the move.
       const wantsCommission = body.commission !== undefined && nextCommission !== prevCommission;
-      if (!isAdminLike(user) && wantsCommission) {
+      if (!isBureauLike(user) && wantsCommission) {
         if (isReadOnly(user)) return denyReadOnly(user, res);
         if (!can(user, 'transfer')) return send(res, 403, { error: 'Permission « transférer » requise' });
         if (!holdsLetter(user, letter)) return send(res, 403, { error: NOT_IN_COMMITTEE });
@@ -808,7 +830,7 @@ async function route(req, res) {
         return send(res, 200, { item: letterView(user, letter), pendingApproval: true, message: 'Transfert soumis — en attente d’approbation du bureau d’ordre' });
       }
       if (wantsCommission) letter.pendingTransfer = null;
-      if (body.ref && isAdminLike(user)) letter.ref = clip(body.ref, 60);
+      if (body.ref && isBureauLike(user)) letter.ref = clip(body.ref, 60);
       if (body.numeroLettre !== undefined) letter.numeroLettre = clip(body.numeroLettre, 60);
       Object.assign(letter, {
         direction: body.direction !== undefined ? (body.direction === 'sortant' ? 'sortant' : 'entrant') : letter.direction,
@@ -876,7 +898,7 @@ async function route(req, res) {
   if (pathname === '/api/letters' && method === 'POST') {
     const user = requireAuth(req, res);
     if (!user) return;
-    if (!isAdminLike(user) && !(isComiteRole(user) && can(user, 'create'))) return send(res, 403, { error: 'Droits insuffisants' });
+    if (!isBureauLike(user) && !(isComiteRole(user) && can(user, 'create'))) return send(res, 403, { error: 'Droits insuffisants' });
     const body = await readBody(req);
     const db = getDB();
     if (!isValidCommission(db, body.commission || null)) return send(res, 400, { error: 'Comité invalide' });
@@ -890,7 +912,7 @@ async function route(req, res) {
       : [];
     const lettre = {
       id: 'l' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
-      ref: (isAdminLike(user) && body.ref) ? clip(body.ref, 60) : nextRef(db),
+      ref: (isBureauLike(user) && body.ref) ? clip(body.ref, 60) : nextRef(db),
       numeroLettre: clip(body.numeroLettre, 60),
       direction: body.direction === 'sortant' ? 'sortant' : 'entrant',
       type: isValidType(body.type) ? body.type : 'courrier',
@@ -913,6 +935,9 @@ async function route(req, res) {
       createdBy: user.id,
       createdByName: user.name,
       createdByCommission: user.commission || null,
+      // Internal register: a comité that emits an outgoing letter records it in
+      // its own "départ" register (bureau-emitted letters are not a comité départ).
+      departCommission: (isComiteRole(user) && body.direction === 'sortant') ? (user.commission || null) : null,
     };
     db.letters.push(lettre);
     logActivity(db, user, 'letter.create', lettre.ref, { letterId: lettre.id, to: commission });
@@ -964,7 +989,7 @@ async function route(req, res) {
   if (pathname === '/api/transfer-requests' && method === 'GET') {
     const user = requireAuth(req, res);
     if (!user) return;
-    if (!isAdminLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
+    if (!isBureauLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
     const db = getDB();
     const items = db.letters
       .filter((l) => l.pendingTransfer)
@@ -997,10 +1022,10 @@ async function route(req, res) {
 
     if (action === 'cancel') {
       // The requester (while they still hold the letter) or an admin may cancel.
-      if (!isAdminLike(user) && !(user.id === pending.requestedBy && holdsLetter(user, letter))) {
+      if (!isBureauLike(user) && !(user.id === pending.requestedBy && holdsLetter(user, letter))) {
         return send(res, 403, { error: 'Seul l’auteur de la demande ou le bureau d’ordre peut l’annuler' });
       }
-      if (!isAdminLike(user) && isReadOnly(user)) return denyReadOnly(user, res);
+      if (!isBureauLike(user) && isReadOnly(user)) return denyReadOnly(user, res);
       letter.pendingTransfer = null;
       letter.updatedAt = new Date().toISOString();
       logActivity(db, user, 'letter.transfer.cancel', letter.ref, { letterId: letter.id, to: pending.to });
@@ -1009,7 +1034,7 @@ async function route(req, res) {
     }
 
     // approve / reject: bureau d'ordre only
-    if (!isAdminLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
+    if (!isBureauLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
     if (action === 'reject') {
       letter.pendingTransfer = null;
       letter.updatedAt = new Date().toISOString();
@@ -1047,7 +1072,7 @@ async function route(req, res) {
   if (completedUploadMatch && method === 'POST') {
     const user = requireAuth(req, res);
     if (!user) return;
-    if (!isAdminLike(user) && !isComiteRole(user)) return send(res, 403, { error: 'Droits insuffisants' });
+    if (!isBureauLike(user) && !isComiteRole(user)) return send(res, 403, { error: 'Droits insuffisants' });
     const db = getDB();
     const letterId = completedUploadMatch[1];
     const letter = db.letters.find((item) => item.id === letterId);
@@ -1228,8 +1253,8 @@ async function route(req, res) {
     if (method === 'GET') {
       const status = url.searchParams.get('status') || '';
       let items = Array.isArray(db.courriers) ? db.courriers : [];
-      // non-admins see their own uploaded courriers; admin/supervisor see all
-      if (!isAdminLike(user)) {
+      // non-bureau see their own uploaded courriers; the bureau sees all
+      if (!isBureauLike(user)) {
         items = items.filter((c) => c.uploadedBy === user.id);
       }
       if (status) items = items.filter((c) => c.status === status);
@@ -1237,7 +1262,7 @@ async function route(req, res) {
       return send(res, 200, { items });
     }
     // POST: upload a scanned courrier (bureau, or a comité granted the permission)
-    if (!isAdminLike(user) && !(isComiteRole(user) && can(user, 'courriers') && !isReadOnly(user))) return send(res, 403, { error: 'Droits insuffisants' });
+    if (!isBureauLike(user) && !(isComiteRole(user) && can(user, 'courriers') && !isReadOnly(user))) return send(res, 403, { error: 'Droits insuffisants' });
     let body;
     try { body = await readBody(req, 14); } catch (e) { return send(res, 413, { error: 'Fichier trop volumineux (max ~10 Mo)' }); }
     const filename = sanitizeFilename(body.filename);
@@ -1271,7 +1296,7 @@ async function route(req, res) {
   if (pathname === '/api/courriers/complete' && method === 'POST') {
     const user = requireAuth(req, res);
     if (!user) return;
-    if (!isAdminLike(user) && !(isComiteRole(user) && can(user, 'courriers') && !isReadOnly(user))) return send(res, 403, { error: 'Droits insuffisants' });
+    if (!isBureauLike(user) && !(isComiteRole(user) && can(user, 'courriers') && !isReadOnly(user))) return send(res, 403, { error: 'Droits insuffisants' });
     let body;
     try { body = await readBody(req, 1); } catch { return send(res, 400, { error: 'Requête invalide' }); }
     const pathnameForBlob = String(body.pathname || '');
@@ -1301,11 +1326,11 @@ async function route(req, res) {
     }
   }
 
-  // ---- "À envoyer": validated scans waiting for the admin to pick the comité ----
+  // ---- "À envoyer": validated scans waiting for the bureau to pick the comité ----
   if (pathname === '/api/to-send' && method === 'GET') {
     const user = requireAuth(req, res);
     if (!user) return;
-    if (!isAdminLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
+    if (!isBureauLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
     const db = getDB();
     const mine = db.letters.filter((l) => l.fromCourrier);
     const view = (l) => {
@@ -1321,12 +1346,12 @@ async function route(req, res) {
   if (courrierMatch && (method === 'PATCH' || method === 'DELETE')) {
     const user = requireAuth(req, res);
     if (!user) return;
-    if (!isAdminLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
+    if (!isBureauLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
     const db = getDB();
     const courrier = db.courriers.find((c) => c.id === courrierMatch[1]);
     if (!courrier) return send(res, 404, { error: 'Courrier introuvable' });
 
-    // DELETE: remove a courrier (e.g. a rejected scan) — admin/supervisor only
+    // DELETE: remove a courrier (e.g. a rejected scan) — bureau only
     if (method === 'DELETE') {
       const idx = db.courriers.findIndex((c) => c.id === courrier.id);
       if (idx >= 0) db.courriers.splice(idx, 1);
@@ -1337,10 +1362,37 @@ async function route(req, res) {
 
     const body = await readBody(req);
     const action = String(body.action || '');
-    if ((action === 'valide' || action === 'rejete') && courrier.status !== 'a_valider') {
+    // Two-step validation: a courrier is first validated by the DAF
+    // (status daf_valide), then by the supervisor/admin (valide → letter).
+    // An admin may do both steps at once.
+    if (action === 'valide_daf' && courrier.status !== 'a_valider') {
+      return send(res, 409, { error: courrier.status === 'daf_valide' ? 'Ce courrier a déjà été validé par le DAF' : 'Ce courrier a déjà été traité' });
+    }
+    if ((action === 'valide' || action === 'rejete') && !['a_valider', 'daf_valide'].includes(courrier.status)) {
       return send(res, 409, { error: courrier.status === 'valide' ? 'Ce courrier a déjà été validé' : 'Ce courrier a déjà été traité' });
     }
+    if (action === 'valide_daf') {
+      if (!(user.role === 'daf' || isAdminLike(user))) return send(res, 403, { error: 'Seul le DAF ou le bureau d’ordre peut valider à cette étape' });
+      courrier.status = 'daf_valide';
+      courrier.dafValidatedBy = user.id;
+      courrier.dafValidatedByName = user.name;
+      courrier.dafValidatedAt = new Date().toISOString();
+      courrier.dafNote = clip(body.note, 5000);
+      logActivity(db, user, 'courrier.validate_daf', courrier.nom, { courrierId: courrier.id, by: user.name });
+      await saveDB(db);
+      return send(res, 200, { item: courrier });
+    }
     if (action === 'valide') {
+      if (courrier.status === 'a_valider') {
+        // Without the DAF step, only an admin may validate directly.
+        if (user.role !== 'admin') return send(res, 409, { error: 'Ce courrier doit d’abord être validé par le DAF' });
+        courrier.dafValidatedBy = user.id;
+        courrier.dafValidatedByName = user.name;
+        courrier.dafValidatedAt = new Date().toISOString();
+        courrier.dafNote = clip(body.note, 5000);
+      }
+      // Step 2 (final validation → letter) always belongs to the supervisor or admin.
+      if (user.role !== 'admin' && user.role !== 'supervisor') return send(res, 403, { error: 'Seul le superviseur ou l’administrateur peut faire la validation finale' });
       // auto-create a letter (status recu) with the PDF attached; the title is
       // the subject read from the PDF when available, else the file name
       const letter = {
@@ -1409,8 +1461,8 @@ async function route(req, res) {
     if (!user) return;
     const courrier = db.courriers.find((c) => c.id === courrierFileMatch[1]);
     if (!courrier || !courrier.storedAs) return send(res, 404, { error: 'Fichier non disponible' });
-    // access: admin/supervisor or uploader
-    if (!isAdminLike(user) && courrier.uploadedBy !== user.id) return send(res, 404, { error: 'Fichier non disponible' });
+    // access: bureau or uploader
+    if (!isBureauLike(user) && courrier.uploadedBy !== user.id) return send(res, 404, { error: 'Fichier non disponible' });
     // Log the view AFTER the file has streamed: a synchronous save here (a
     // database write) would delay the first byte of the PDF by ~1s.
     const logView = () => { try { logActivity(db, user, 'courrier.file.view', courrier.nom, { courrierId: courrier.id }); Promise.resolve(saveDB(db)).catch(() => {}); } catch { /* logging must never break the file */ } };
@@ -1458,6 +1510,296 @@ async function route(req, res) {
     if (body.read !== undefined) n.read = !!body.read;
     await saveDB(db);
     return send(res, 200, { item: n });
+  }
+
+  // ---- Chat + online presence -----------------------------------------------------------
+  // Channels: "general" (everyone), "comite:<id>" (bureau + that committee's
+  // members), "dm:<idA>:<idB>" (sorted ids; the two participants, bureau can
+  // open a DM with anyone). Poll-based: the client re-fetches every few seconds.
+  const chatMatch = /^\/api\/chat$/.exec(pathname);
+  if (chatMatch && (method === 'GET' || method === 'POST')) {
+    const user = requireAuth(req, res);
+    if (!user) return;
+    const db = getDB();
+    if (!Array.isArray(db.chat)) db.chat = [];
+    if (!db.presence || typeof db.presence !== 'object') db.presence = {};
+
+    const channelAccess = (channel) => {
+      if (channel === 'general') return true;
+      const comite = /^comite:([A-Za-z0-9_-]+)$/.exec(channel);
+      if (comite) {
+        if (!(db.committees || []).some((c) => c.id === comite[1])) return false;
+        return isBureauLike(user) || user.commission === comite[1];
+      }
+      const dm = /^dm:([A-Za-z0-9_-]+):([A-Za-z0-9_-]+)$/.exec(channel);
+      if (dm) {
+        const [a, b] = [dm[1], dm[2]].sort();
+        if (`dm:${a}:${b}` !== channel) return false;
+        return user.id === a || user.id === b;
+      }
+      return false;
+    };
+
+    const touchPresence = (target) => {
+      const d = target || db;
+      const now = Date.now();
+      // Prune stale entries (older than ~2 minutes).
+      for (const [uid, p] of Object.entries(d.presence)) {
+        if (!p || !p.at || now - new Date(p.at).getTime() > 120000) delete d.presence[uid];
+      }
+      const prev = d.presence[user.id];
+      const entry = { name: user.name, role: effectiveRole(user.role), commission: user.commission || null, at: new Date(now).toISOString() };
+      const throttled = prev && now - new Date(prev.at).getTime() < 25000;
+      d.presence[user.id] = entry;
+      return !throttled;
+    };
+
+    // Per-user "last read" markers so unread badges survive reloads.
+    const readMarkers = (target) => {
+      const d = target || db;
+      if (!d.chatRead || typeof d.chatRead !== 'object') d.chatRead = {};
+      let mine = d.chatRead[user.id];
+      if (!mine || typeof mine !== 'object') { mine = {}; d.chatRead[user.id] = mine; }
+      return mine;
+    };
+    const unreadCount = (channel, mine, target) => {
+      const d = target || db;
+      const last = (d.chat || []).reduce((acc, m) => (m.channel === channel ? m : acc), null);
+      if (!last) return 0;
+      const readAt = mine[channel];
+      if (last.userId === user.id) return 0;
+      return !readAt || last.createdAt > readAt ? 1 : 0;
+    };
+
+    if (method === 'GET' && !url.searchParams.get('channel')) {
+      // Channel summary: accessible channels with unread flags + online list.
+      const shouldSave = touchPresence();
+      const latest = shouldSave ? await updateDB((f) => { touchPresence(f); return f; }) : db;
+      const mine = readMarkers(latest);
+      const channels = [{ id: 'general', name: 'Général', type: 'general', unread: unreadCount('general', mine, latest) }];
+      for (const c of latest.committees || []) {
+        if (!isBureauLike(user) && user.commission !== c.id) continue;
+        channels.push({ id: 'comite:' + c.id, name: c.nom, type: 'comite', unread: unreadCount('comite:' + c.id, mine, latest) });
+      }
+      // Direct messages: channels already present in the history.
+      const dmSeen = new Set();
+      for (const m of latest.chat) {
+        const dm = /^dm:([A-Za-z0-9_-]+):([A-Za-z0-9_-]+)$/.exec(m.channel);
+        if (!dm || dmSeen.has(m.channel)) continue;
+        dmSeen.add(m.channel);
+        const ids = [dm[1], dm[2]].sort();
+        if (!ids.includes(user.id)) continue;
+        const otherId = ids[0] === user.id ? ids[1] : ids[0];
+        const other = (latest.users || []).find((u) => u.id === otherId);
+        channels.push({ id: m.channel, name: other ? other.name : otherId, type: 'dm', unread: unreadCount(m.channel, mine, latest) });
+      }
+      const online = Object.entries(latest.presence).map(([uid, p]) => ({ userId: uid, name: p.name, role: p.role, commission: p.commission || null }));
+      return send(res, 200, { channels, online });
+    }
+
+    if (method === 'GET') {
+      const channel = url.searchParams.get('channel') || 'general';
+      if (!channelAccess(channel)) return send(res, 403, { error: 'Canal non autorisé' });
+      const after = url.searchParams.get('after') || '';
+      const shouldSave = touchPresence();
+      const latest = shouldSave ? await updateDB((f) => { touchPresence(f); return f; }) : db;
+      const messages = (latest.chat || [])
+        .filter((m) => m.channel === channel && (!after || m.createdAt > after))
+        .slice(-200);
+      const online = Object.entries(latest.presence).map(([uid, p]) => ({ userId: uid, name: p.name, role: p.role, commission: p.commission || null }));
+      return send(res, 200, { messages, online });
+    }
+
+    // POST a message
+    if (isReadOnly(user)) return denyReadOnly(user, res);
+    const body = await readBody(req);
+    const channel = String(body.channel || 'general');
+    const text = clip(String(body.text || '').trim(), 2000);
+    if (!text) return send(res, 400, { error: 'Message vide' });
+    if (!channelAccess(channel)) return send(res, 403, { error: 'Canal non autorisé' });
+    // Basic rate limit: 30 messages per minute per account (in-memory; enough
+    // against runaway clients, not a hard security boundary).
+    const now = Date.now();
+    const bucket = CHAT_BUCKETS.get(user.id);
+    if (!bucket || now > bucket.reset) CHAT_BUCKETS.set(user.id, { count: 1, reset: now + 60000 });
+    else {
+      bucket.count += 1;
+      if (bucket.count > 30) return send(res, 429, { error: 'Trop de messages — ralentissez' });
+    }
+    const msg = {
+      id: 'm' + now.toString(36) + Math.random().toString(36).slice(2, 7),
+      channel,
+      userId: user.id,
+      userName: user.name,
+      userRole: effectiveRole(user.role),
+      commission: user.commission || null,
+      text,
+      createdAt: new Date(now).toISOString(),
+    };
+    const posted = await updateDB((f) => {
+      if (!Array.isArray(f.chat)) f.chat = [];
+      f.chat.push(msg);
+      if (f.chat.length > 1500) f.chat = f.chat.slice(-1500);
+      touchPresence(f);
+      return msg;
+    });
+    return send(res, 201, { item: posted });
+  }
+
+  // Mark a chat channel as read (unread badges).
+  if (pathname === '/api/chat/read' && method === 'POST') {
+    const user = requireAuth(req, res);
+    if (!user) return;
+    const db = getDB();
+    if (!Array.isArray(db.chat)) db.chat = [];
+    const body = await readBody(req);
+    const channel = String(body.channel || '');
+    const valid = channel === 'general'
+      || /^comite:[A-Za-z0-9_-]+$/.test(channel) || /^dm:[A-Za-z0-9_-]+:[A-Za-z0-9_-]+$/.test(channel);
+    if (!valid) return send(res, 400, { error: 'Canal invalide' });
+    await updateDB((f) => {
+      if (!f.chatRead || typeof f.chatRead !== 'object') f.chatRead = {};
+      let mine = f.chatRead[user.id];
+      if (!mine || typeof mine !== 'object') { mine = {}; f.chatRead[user.id] = mine; }
+      mine[channel] = new Date().toISOString();
+      // Compact the markers once they grow.
+      const keys = Object.keys(mine);
+      if (keys.length > 60) f.chatRead[user.id] = Object.fromEntries(keys.slice(-30).map((k) => [k, mine[k]]));
+      return true;
+    });
+    return send(res, 200, { ok: true });
+  }
+
+  // ---- Settings (admin only) -------------------------------------------------------------
+  if (pathname === '/api/settings' && (method === 'GET' || method === 'PUT')) {
+    const user = requireAuth(req, res);
+    if (!user) return;
+    if (!isAdminLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
+    const db = getDB();
+    if (!db.settings || typeof db.settings !== 'object') db.settings = {};
+    if (method === 'GET') {
+      const g = db.settings.gmail || {};
+      return send(res, 200, { gmail: { email: g.email || '', appPassword: g.appPassword ? '••••••••••••' : '', configured: !!(g.email && g.appPassword) } });
+    }
+    if (denyReadOnly(user, res)) return;
+    const body = await readBody(req);
+    const gmail = body.gmail || {};
+    const email = clip(String(gmail.email || ''), 200).trim().toLowerCase();
+    let pass = typeof gmail.appPassword === 'string' ? gmail.appPassword.replace(/\s+/g, '') : '';
+    if (pass === '••••••••••••') pass = (db.settings.gmail || {}).appPassword || ''; // untouched masked value
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return send(res, 400, { error: 'Adresse Gmail invalide' });
+    if (email && pass && pass.length < 8) return send(res, 400, { error: 'Mot de passe d’application trop court' });
+    if (!email) {
+      delete db.settings.gmail;
+    } else {
+      const prev = db.settings.gmail || {};
+      db.settings.gmail = { email, appPassword: pass || prev.appPassword || '', lastSeenUid: prev.lastSeenUid || 0 };
+    }
+    logActivity(db, user, email ? 'settings.update' : 'settings.clear', 'gmail', { by: user.name });
+    await saveDB(db);
+    GMAIL_CACHE.at = 0; // force a re-fetch with the new credentials
+    return send(res, 200, { gmail: { email, appPassword: '••••••••••••', configured: !!(email && db.settings.gmail?.appPassword) } });
+  }
+
+  // ---- Gmail (IMAP via app password) ------------------------------------------------------
+  const gmailListMatch = /^\/api\/gmail\/messages(?:\/([0-9]+))?$/.exec(pathname);
+  if (gmailListMatch && method === 'GET') {
+    const user = requireAuth(req, res);
+    if (!user) return;
+    if (!isBureauLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
+    const db = getDB();
+    const g = (db.settings || {}).gmail || {};
+    if (!g.email || !g.appPassword) return send(res, 400, { error: 'Gmail non configuré — ajoutez l’adresse et le mot de passe d’application dans les réglages' });
+    const uidOnly = gmailListMatch[1];
+
+    const openGmail = async () => {
+      const { ImapFlow } = await import('imapflow');
+      const client = new ImapFlow({ host: 'imap.gmail.com', port: 993, secure: true, auth: { user: g.email, pass: g.appPassword }, logger: false });
+      await client.connect();
+      return client;
+    };
+
+    try {
+      if (uidOnly) {
+        // Full message body for one uid.
+        const client = await openGmail();
+        try {
+          const lock = await client.getMailboxLock('INBOX');
+          let source = null;
+          try {
+            for await (const msg of client.fetch(String(uidOnly), { uid: true, source: true }, { uid: true })) source = msg.source;
+          } finally { lock.release(); }
+          if (!source) return send(res, 404, { error: 'Message introuvable' });
+          const { simpleParser } = await import('mailparser');
+          const parsed = await simpleParser(source);
+          return send(res, 200, {
+            uid: Number(uidOnly),
+            subject: parsed.subject || '',
+            from: parsed.from?.text || '',
+            date: parsed.date ? parsed.date.toISOString() : null,
+            text: typeof parsed.text === 'string' ? parsed.text.slice(0, 200000) : '',
+            html: typeof parsed.html === 'string' ? parsed.html.slice(0, 500000) : '',
+          });
+        } finally { client.logout().catch(() => {}); }
+      }
+
+      // List the last 20 INBOX messages (cached ~45s).
+      const nowMs = Date.now();
+      if (GMAIL_CACHE.data && nowMs - GMAIL_CACHE.at < 45000) {
+        return send(res, 200, GMAIL_CACHE.data);
+      }
+      const client = await openGmail();
+      try {
+        const lock = await client.getMailboxLock('INBOX');
+        const items = [];
+        try {
+          const total = (client.mailbox && client.mailbox.exists) || 0;
+          const start = Math.max(1, total - 19);
+          for await (const msg of client.fetch(`${start}:*`, { uid: true, envelope: true, flags: true }, { uid: true })) {
+            items.push({
+              uid: msg.uid,
+              subject: msg.envelope?.subject || '(Sans objet)',
+              from: msg.envelope?.from?.map((a) => (a.name ? `${a.name} <${a.address}>` : a.address)).join(', ') || '',
+              date: msg.envelope?.date ? new Date(msg.envelope.date).toISOString() : null,
+              seen: (msg.flags || []).has('\\Seen'),
+            });
+          }
+        } finally { lock.release(); }
+        items.sort((a, b) => b.uid - a.uid);
+        const lastSeenUid = g.lastSeenUid || 0;
+        const data = { items, unread: items.filter((m) => m.uid > lastSeenUid && !m.seen).length, configured: true, email: g.email };
+        GMAIL_CACHE.data = data;
+        GMAIL_CACHE.at = nowMs;
+        return send(res, 200, data);
+      } finally { client.logout().catch(() => {}); }
+    } catch (error) {
+      return send(res, 502, { error: `Connexion Gmail impossible : ${error.message || 'erreur inconnue'}` });
+    }
+  }
+
+  const gmailUnreadMatch = /^\/api\/gmail\/unread$/.exec(pathname);
+  if (gmailUnreadMatch && method === 'GET') {
+    const user = requireAuth(req, res);
+    if (!user) return;
+    if (!isBureauLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
+    const g = (getDB().settings || {}).gmail || {};
+    return send(res, 200, { configured: !!(g.email && g.appPassword), count: GMAIL_CACHE.data && Date.now() - GMAIL_CACHE.at < 45000 ? GMAIL_CACHE.data.unread : null });
+  }
+
+  if (pathname === '/api/gmail/ack' && method === 'POST') {
+    const user = requireAuth(req, res);
+    if (!user) return;
+    if (!isAdminLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
+    const db = getDB();
+    const body = await readBody(req);
+    const uid = parseInt(body.uid, 10) || 0;
+    if (!uid) return send(res, 400, { error: 'UID invalide' });
+    if (!db.settings) db.settings = {};
+    if (!db.settings.gmail) db.settings.gmail = {};
+    if (uid > (db.settings.gmail.lastSeenUid || 0)) db.settings.gmail.lastSeenUid = uid;
+    await saveDB(db);
+    if (GMAIL_CACHE.data) GMAIL_CACHE.data.unread = Math.max(0, GMAIL_CACHE.data.items.filter((m) => m.uid > uid && !m.seen).length);
+    return send(res, 200, { ok: true, lastSeenUid: db.settings.gmail.lastSeenUid });
   }
 
   // Static client

@@ -84,6 +84,10 @@ function migrate(db) {
   if (!Array.isArray(db.letters)) { db.letters = []; changed = true; }
   if (!Array.isArray(db.courriers)) { db.courriers = []; changed = true; }
   if (!Array.isArray(db.notifications)) { db.notifications = []; changed = true; }
+  if (!Array.isArray(db.chat)) { db.chat = []; changed = true; }
+  if (!db.presence || typeof db.presence !== 'object') { db.presence = {}; changed = true; }
+  if (!db.chatRead || typeof db.chatRead !== 'object') { db.chatRead = {}; changed = true; }
+  if (!db.settings || typeof db.settings !== 'object') { db.settings = {}; changed = true; }
   if (!Array.isArray(db.committees)) {
     db.committees = COMMITTEES.map((c) => ({ ...c }));
     changed = true;
@@ -261,6 +265,34 @@ async function saveRemoteDB(db) {
 }
 
 export async function resetDB() { cache = null; dbRevision = null; await saveDB(seed()); }
+
+// Read-modify-write with automatic conflict retry. Re-reads the latest state,
+// re-runs the mutator on it and saves, retrying on revision conflicts (409).
+// Use for the frequently written state (chat, presence, read markers) where
+// concurrent 409s are expected; the mutation must be re-runnable.
+export async function updateDB(mutator, { tries = 6 } = {}) {
+  for (let attempt = 0; attempt < tries; attempt += 1) {
+    let db;
+    if (backend() === 'file') db = getDB();
+    else {
+      cache = null;
+      dbRevision = null;
+      await initializeDB(true);
+      db = cache;
+    }
+    const result = mutator(db);
+    try {
+      await saveDB(db);
+      return result;
+    } catch (e) {
+      if (e && e.status === 409) continue;
+      throw e;
+    }
+  }
+  const error = new Error('Conflit persistant sur la base — réessayez');
+  error.status = 409;
+  throw error;
+}
 
 let sessionSecretCache = null;
 

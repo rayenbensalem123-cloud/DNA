@@ -7,10 +7,11 @@ const emptyAccount = () => ({ name: '', username: '', password: '', commission: 
 const ROLE_HINTS = {
   agent: 'Compte de comité : lecture seule au départ — l’administrateur lui accorde ensuite les permissions voulues.',
   chef: 'Responsable du comité : tous les pouvoirs du comité (modifier, fichiers, demandes de transfert) — l’administrateur peut les retirer un par un.',
+  daf: 'Directeur Administratif et Financier : première validation des courriers numérisés, registres, suivi et journal — sans gestion des comptes.',
   supervisor: 'Équivalent à l’administrateur : voit tout et valide les courriers.',
   admin: 'Voit tout : courrier de tous les comités, comptes et suppressions.',
 };
-const ROLE_LABELS = { admin: 'Administration', supervisor: 'Superviseur', chef: 'Chef de comité', agent: 'Comité', lecture: 'Comité' };
+const ROLE_LABELS = { admin: 'Administration', supervisor: 'Superviseur', daf: 'DAF', chef: 'Chef de comité', agent: 'Comité', lecture: 'Comité' };
 // Everything the admin can delegate, checkbox by checkbox.
 const PERMISSION_DEFS = [
   ['view_all', 'Voir tous les comités', 'Consulter le courrier de tous les comités, pas seulement le sien.'],
@@ -139,8 +140,8 @@ export default function Accounts() {
             <label className="field">Nom complet<input autoComplete="name" value={form.name} onChange={(e) => update('name', e.target.value)} required /></label>
             <label className="field">Identifiant<input autoComplete="username" value={form.username} onChange={(e) => update('username', e.target.value)} required minLength={3} disabled={Boolean(form.id)} /></label>
             <label className="field">{form.id ? 'Nouveau mot de passe (facultatif)' : 'Mot de passe'}<input type="password" autoComplete="new-password" value={form.password} onChange={(e) => update('password', e.target.value)} minLength={form.password ? 8 : undefined} required={!form.id} placeholder={form.id ? 'Laisser vide pour conserver' : '8 caractères minimum'} /></label>
-            <label className="field">Type de compte<Select ariaLabel="Type de compte" value={form.role} onChange={changeRole} disabled={form.id === me?.id} options={[{ value: 'agent', label: 'Comité' }, { value: 'chef', label: 'Chef de comité' }, { value: 'supervisor', label: 'Superviseur' }, { value: 'admin', label: 'Administration' }]} /><span className="muted">{ROLE_HINTS[form.role]}</span></label>
-            <label className="field">{form.role === 'admin' ? 'Comité (facultatif)' : 'Comité'}<Select ariaLabel="Comité" value={form.commission} onChange={(v) => update('commission', v)} placeholder={form.role === 'admin' ? 'Aucun comité' : '— Choisir un comité —'} options={[{ value: '', label: form.role === 'admin' ? 'Aucun comité' : '— Choisir un comité —' }, ...committees.map((committee) => ({ value: committee.id, label: committee.nom }))]} /></label>
+            <label className="field">Type de compte<Select ariaLabel="Type de compte" value={form.role} onChange={changeRole} disabled={form.id === me?.id} options={[{ value: 'agent', label: 'Comité' }, { value: 'chef', label: 'Chef de comité' }, { value: 'daf', label: 'DAF' }, { value: 'supervisor', label: 'Superviseur' }, { value: 'admin', label: 'Administration' }]} /><span className="muted">{ROLE_HINTS[form.role]}</span></label>
+            <label className="field">{['admin', 'daf', 'supervisor'].includes(form.role) ? 'Comité (facultatif)' : 'Comité'}<Select ariaLabel="Comité" value={form.commission} onChange={(v) => update('commission', v)} placeholder={['admin', 'daf', 'supervisor'].includes(form.role) ? 'Aucun comité' : '— Choisir un comité —'} options={[{ value: '', label: ['admin', 'daf', 'supervisor'].includes(form.role) ? 'Aucun comité' : '— Choisir un comité —' }, ...committees.map((committee) => ({ value: committee.id, label: committee.nom }))]} /></label>
           </div>
           {['chef', 'agent'].includes(form.role) && (
             <div className="perm-editor">
