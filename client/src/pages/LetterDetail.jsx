@@ -224,7 +224,19 @@ export default function LetterDetail() {
         {info('detail.direction', t('direction.' + (letter.direction || 'entrant')))}
         {info('detail.type', t('type.' + (letter.type || 'autre')))}
         {info('detail.categorie', t('categorie.' + (letter.categorie || 'autre')))}
-        {info('detail.statut', <>{t('status.' + (letter.statut || 'recu'))}{(letter.transferred || (letter.commissionHisto || []).some((h) => h.type === 'transfert')) && <span className="badge badge-transfert" style={{ marginLeft: 8 }}>{t('badge.transferred')}</span>}</>)}
+        {info('detail.statut', (
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span className={'badge statut-' + letter.statut}>
+              {letter.statut === 'archive' ? '✓ Clôturé (Archivé)' : letter.statut === 'en_cours' ? 'En traitement' : !letter.commission ? 'À affecter' : t('status.' + (letter.statut || 'recu'))}
+            </span>
+            {!letter.commission && letter.statut !== 'archive' && (
+              <span className="badge" style={{ background: '#e0f2fe', color: '#0369a1' }}>Sans comité assigné</span>
+            )}
+            {(letter.transferred || (letter.commissionHisto || []).some((h) => h.type === 'transfert')) && (
+              <span className="badge badge-transfert">{t('badge.transferred')}</span>
+            )}
+          </div>
+        ))}
         {info('detail.priorite', t('priorite.' + (letter.priorite || 'normale')))}
         {info('detail.commission', letter.commission ? committeeName(letter.commission) : '—')}
         {info('detail.expediteur', [letter.expediteur?.nom, letter.expediteur?.fonction, letter.expediteur?.service].filter(Boolean).join(' — ') || '—')}
@@ -266,19 +278,30 @@ export default function LetterDetail() {
       {canHandleCommittee && (
         <>
           {(canManage || letter.commission) && <div className="card">
-            <h2 className="card-title">{t('detail.committeeActions')}</h2>
+            <h2 className="card-title">{letter.commission ? 'Traitement et suivi du courrier' : 'Affectation à un comité'}</h2>
+            {!letter.commission && (
+              <p className="muted" style={{ marginBottom: 12 }}>
+                Ce courrier est actuellement <strong>À affecter</strong>. Sélectionnez un comité destinataire pour le mettre <strong>En traitement</strong>.
+              </p>
+            )}
             {canTransfer && <div className="status-actions">
                 <Select ariaLabel="Comité" value={committee} onChange={(v) => setCommittee(v)} options={[...(isBureau ? [{ value: '', label: t('commission.none') }] : []), ...committees.map((c) => ({ value: c.id, label: c.nom }))]} />
-                <button className="btn btn-primary" onClick={assignCommittee} disabled={busy}>{t('detail.transmit')}</button>
+                <button className="btn btn-primary" onClick={assignCommittee} disabled={busy}>{letter.commission ? 'Transférer à ce comité' : 'Affecter et transmettre'}</button>
               </div>}
             {letter.commission && !isReadOnly && (
-              <div className="status-actions">
-                {letter.statut !== 'archive' && <button className="btn btn-primary" onClick={() => addEvent('traite_comite')} disabled={busy}>{t('detail.markTreated')}</button>}
+              <div className="status-actions" style={{ marginTop: 12 }}>
+                {letter.statut !== 'archive' ? (
+                  <button className="btn btn-primary" onClick={() => addEvent('traite_comite')} disabled={busy}>
+                    ✓ Clôturer le courrier (Marquer comme traité)
+                  </button>
+                ) : (
+                  <span className="badge statut-traite" style={{ fontSize: 13, padding: '6px 12px' }}>✓ Courrier clôturé et archivé</span>
+                )}
               </div>
             )}
-            {canManage && !isReadOnly && <label className="field">
-              <span>{t('detail.note')}</span>
-              <textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder={t('detail.notePlaceholder')} />
+            {canManage && !isReadOnly && <label className="field" style={{ marginTop: 12 }}>
+              <span>Ajouter une note de suivi</span>
+              <textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note interne sur l'état d'avancement du dossier…" />
             </label>}
           </div>}
 

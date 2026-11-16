@@ -81,8 +81,8 @@ export default function Layout() {
           {isBureauLike && <NavLink to="/courriers-rejetes" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}>
             <NavIcon type="reject" /><span className="nav-text">Rejetés</span>
           </NavLink>}
-          {isBureauLike && <NavLink to="/registres" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}>
-            <NavIcon type="registre" /><span className="nav-text">Registres</span>
+          {(isBureauLike || Boolean(user?.commission)) && <NavLink to={user?.commission && !isBureauLike ? `/registres/${encodeURIComponent(user.commission)}` : '/registres'} className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}>
+            <NavIcon type="registre" /><span className="nav-text">{isBureauLike ? 'Registres' : 'Registre'}</span>
           </NavLink>}
           {allowed('users') && <NavLink to="/comptes" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}>
             <NavIcon type="users" /><span className="nav-text">Comptes</span>

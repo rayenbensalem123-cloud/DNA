@@ -6,6 +6,7 @@ import { useLanguage } from '../i18n';
 import { fmtDate } from '../utils';
 import { downloadCsv, downloadXlsx, printPdf } from '../utils/exportFile';
 import Select from '../components/Select';
+import DatePicker from '../components/DatePicker';
 
 export default function Archive() {
   const { t } = useLanguage();
@@ -57,9 +58,12 @@ export default function Archive() {
     api.listLetters(params)
       .then((d) => {
         if (cancelled) return;
-        const matched = bucket === 'pending'
-          ? (d.items || []).filter((letter) => (letter.statut || 'recu') !== 'archive')
-          : (d.items || []);
+        const fifteenDaysAgo = Date.now() - 15 * 24 * 3600 * 1000;
+        const matched = bucket === 'overdue'
+          ? (d.items || []).filter((letter) => (letter.statut || 'recu') !== 'archive' && new Date(letter.dateReception || letter.dateEmission || letter.createdAt).getTime() < fifteenDaysAgo)
+          : bucket === 'pending'
+            ? (d.items || []).filter((letter) => (letter.statut || 'recu') !== 'archive')
+            : (d.items || []);
         setItems(matched);
         setTotal(bucket ? matched.length : d.total || 0);
       })
@@ -81,11 +85,12 @@ export default function Archive() {
   const [showMore, setShowMore] = useState(false);
   const advancedCount = [filters.from, filters.to, filters.expediteur, filters.commission].filter(Boolean).length;
   const resetFilters = () => setFilters({ q: '', direction: '', statut: '', priorite: '', bucket: '', from: '', to: '', expediteur: '', commission: '' });
-  const listTitle = filters.bucket === 'pending' ? 'Courriers à traiter'
-    : filters.direction === 'entrant' ? 'Courriers entrants'
-      : filters.direction === 'sortant' ? 'Courriers sortants'
-        : filters.priorite === 'urgente' ? 'Courriers urgents'
-          : filters.statut ? `Courriers — ${t('status.' + filters.statut)}` : 'Tous les courriers';
+  const listTitle = filters.bucket === 'overdue' ? 'Courriers en retard (> 15 j)'
+    : filters.bucket === 'pending' ? 'Courriers à traiter'
+      : filters.direction === 'entrant' ? 'Courriers entrants'
+        : filters.direction === 'sortant' ? 'Courriers sortants'
+          : filters.priorite === 'urgente' ? 'Courriers urgents'
+            : filters.statut ? `Courriers — ${t('status.' + filters.statut)}` : 'Tous les courriers';
 
   const exportHeaders = [
     { key: 'numeroLettre', label: 'N° courrier' },
@@ -206,8 +211,8 @@ export default function Archive() {
             {hasFilters && <button type="button" className="btn btn-ghost" onClick={resetFilters}>Réinitialiser</button>}
           </div>
           {(showMore || advancedCount > 0) && <div className="filters filters-more">
-            <label className="filter-field"><span>Du</span><input type="date" value={filters.from} max={filters.to || undefined} onChange={(event) => set('from', event.target.value)} /></label>
-            <label className="filter-field"><span>Au</span><input type="date" value={filters.to} min={filters.from || undefined} onChange={(event) => set('to', event.target.value)} /></label>
+            <label className="filter-field"><span>Du</span><DatePicker value={filters.from} max={filters.to || undefined} onChange={(v) => set('from', v)} placeholder="jj/mm/aaaa" /></label>
+            <label className="filter-field"><span>Au</span><DatePicker value={filters.to} min={filters.from || undefined} onChange={(v) => set('to', v)} placeholder="jj/mm/aaaa" /></label>
             <label className="filter-field"><span>Expéditeur</span><input placeholder="Nom, fonction, service…" value={filters.expediteur} onChange={(event) => set('expediteur', event.target.value)} /></label>
             {!committeeId && <label className="filter-field"><span>Comité</span><Select ariaLabel="Comité" value={filters.commission} onChange={(v) => set('commission', v)} options={[{ value: '', label: 'Tous les comités' }, ...committees.map((committee) => ({ value: committee.id, label: committee.nom })), { value: 'non_assigne', label: 'Sans comité' }]} /></label>}
           </div>}

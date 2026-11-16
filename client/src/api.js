@@ -125,6 +125,7 @@ export const api = {
   // Chat + presence (poll-based)
   chat: (channel = 'general', after = '') => req('/api/chat?channel=' + encodeURIComponent(channel) + (after ? '&after=' + encodeURIComponent(after) : '')),
   chatChannels: () => req('/api/chat'),
+  chatDirectory: () => req('/api/chat/directory'),
   markChatRead: (channel) => req('/api/chat/read', { method: 'POST', body: { channel } }),
   sendChat: (channel, text) => req('/api/chat', { method: 'POST', body: { channel, text } }),
   // Settings (admin) — Gmail IMAP credentials

@@ -77,6 +77,12 @@ function AdminOnly({ children }) {
   return user?.role === 'admin' || user?.role === 'supervisor' || user?.role === 'daf' ? children : <Navigate to="/" replace />;
 }
 
+function RegistreRoute({ children }) {
+  const { user } = useAuth();
+  const ok = Boolean(user) && (user.role === 'admin' || user.role === 'supervisor' || user.role === 'daf' || Boolean(user?.commission));
+  return ok ? children : <Navigate to="/" replace />;
+}
+
 // Routes the admin can delegate: the page opens for the bureau or for any
 // account granted the matching permission.
 function PermRoute({ perm, children }) {
@@ -104,8 +110,8 @@ export default function App() {
                 <Route path="courrier" element={<ErrorBoundary label="courrier"><Courrier /></ErrorBoundary>} />
                 <Route path="a-envoyer" element={<AdminOnly><ErrorBoundary label="tosend"><ToSend /></ErrorBoundary></AdminOnly>} />
                 <Route path="courriers-rejetes" element={<ErrorBoundary label="rejetes"><CourriersRejetes /></ErrorBoundary>} />
-                <Route path="registres" element={<AdminOnly><ErrorBoundary label="registre"><Registre /></ErrorBoundary></AdminOnly>} />
-                <Route path="registres/:committeeId" element={<AdminOnly><ErrorBoundary label="registre"><Registre /></ErrorBoundary></AdminOnly>} />
+                <Route path="registres" element={<RegistreRoute><ErrorBoundary label="registre"><Registre /></ErrorBoundary></RegistreRoute>} />
+                <Route path="registres/:committeeId" element={<RegistreRoute><ErrorBoundary label="registre"><Registre /></ErrorBoundary></RegistreRoute>} />
                 <Route path="gmail" element={<AdminOnly><ErrorBoundary label="gmail"><Gmail /></ErrorBoundary></AdminOnly>} />
                 <Route path="lettres" element={<Navigate to="/archive" replace />} />
                 <Route path="lettres/nouveau" element={<Navigate to="/?newLetter=1" replace />} />

@@ -86,7 +86,9 @@ function canSeeLetter(user, letter) {
   if (isBureauLike(user)) return true;
   // The admin can grant a comité account the right to see every comité's mail.
   if (can(user, 'view_all')) return true;
-  return user.commission ? receivedBy(letter, user.commission) : letter.createdBy === user.id;
+  return user.commission
+    ? (receivedBy(letter, user.commission) || letter.departCommission === user.commission || letter.createdByCommission === user.commission || letter.createdBy === user.id)
+    : letter.createdBy === user.id;
 }
 function holdsLetter(user, letter) {
   if (isBureauLike(user)) return true;
@@ -555,7 +557,51 @@ async function route(req, res) {
     const user = requireAuth(req, res);
     if (!user) return;
     const db = getDB();
-    if (isAdminLike(user) || !user.commission) return send(res, 200, { unread: 0, items: [] });
+    if (isBureauLike(user)) {
+      const items = [];
+      const courriers = (db.courriers || []).filter((c) => {
+        if (user.role === 'daf') return c.status === 'a_valider';
+        if (user.role === 'supervisor') return c.status === 'daf_valide';
+        return c.status === 'a_valider' || c.status === 'daf_valide';
+      });
+      for (const c of courriers) {
+        items.push({
+          id: 'cr-' + c.id,
+          type: 'courrier',
+          ref: c.nom,
+          objet: c.status === 'daf_valide' ? `Courrier validé DAF (superviseur requis) : ${c.nom}` : `Nouveau courrier à valider : ${c.nom}`,
+          date: c.uploadedAt,
+          byName: c.uploadedByName || '',
+          link: '/courrier',
+        });
+      }
+      const transfers = (db.letters || []).filter((l) => l.transferRequest && l.transferRequest.status === 'pending');
+      for (const l of transfers) {
+        items.push({
+          id: 'tr-' + l.id,
+          type: 'transfer',
+          ref: l.ref,
+          objet: `Demande de transfert : ${l.ref}`,
+          date: l.transferRequest.requestedAt,
+          byName: l.transferRequest.requestedByName || '',
+          link: '/archive',
+        });
+      }
+      if (GMAIL_CACHE.data && GMAIL_CACHE.data.unread > 0) {
+        items.push({
+          id: 'gmail-unread',
+          type: 'gmail',
+          ref: 'Gmail',
+          objet: `${GMAIL_CACHE.data.unread} nouveau(x) e-mail(s) Gmail`,
+          date: GMAIL_CACHE.data.items?.[0]?.date || new Date().toISOString(),
+          byName: 'Gmail DNA',
+          link: '/gmail',
+        });
+      }
+      items.sort((a, b) => (a.date < b.date ? 1 : -1));
+      return send(res, 200, { unread: items.length, items: items.slice(0, 50) });
+    }
+    if (!user.commission) return send(res, 200, { unread: 0, items: [] });
     const items = db.letters.filter((l) => l.commission === user.commission && isUnread(l))
       .map((l) => { const h = [...(l.commissionHisto || [])].reverse().find((e) => e.type === 'assigne' || e.type === 'transfert'); return { id: l.id, ref: l.ref, numeroLettre: l.numeroLettre || '', objet: l.objet || '', priorite: l.priorite || 'normale', date: h?.date || l.createdAt, fromCommittee: h?.fromCommittee || null, byName: h?.byName || '' }; })
       .sort((a, b) => (a.date < b.date ? 1 : -1));
@@ -1668,6 +1714,20 @@ async function route(req, res) {
       return true;
     });
     return send(res, 200, { ok: true });
+  }
+
+  // Directory of platform members for chat / DMs (any authenticated user).
+  if (pathname === '/api/chat/directory' && method === 'GET') {
+    const user = requireAuth(req, res);
+    if (!user) return;
+    const db = getDB();
+    const items = (db.users || []).map((u) => ({
+      id: u.id,
+      name: u.name,
+      role: effectiveRole(u.role),
+      commission: u.commission || null,
+    }));
+    return send(res, 200, { items });
   }
 
   // ---- Settings (admin only) -------------------------------------------------------------

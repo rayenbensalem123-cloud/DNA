@@ -5,6 +5,7 @@ import { useAuth } from '../auth';
 import { fmtSize, todayInputValue } from '../utils';
 import { extractPdfSubject } from '../utils/pdfSubject';
 import Select from './Select';
+import DatePicker from './DatePicker';
 
 const SUBJECTS = [
   "Plainte d'un club",
@@ -213,8 +214,8 @@ export default function LetterForm({ onSubmit, onCancel, busy = false, error = '
 
         <div className="form-grid">
           <label className="field"><span>{form.direction === 'entrant' ? 'Expéditeur' : 'Destinataire'}</span><input value={form.expediteurNom} onChange={(event) => set('expediteurNom', event.target.value)} /></label>
-          <label className="field"><span>Date d'émission</span><input type="date" value={form.dateEmission} onChange={(event) => set('dateEmission', event.target.value)} /></label>
-          <label className="field"><span>Date de réception</span><input type="date" value={form.dateReception} onChange={(event) => set('dateReception', event.target.value)} /></label>
+          <label className="field"><span>Date d'émission</span><DatePicker value={form.dateEmission} onChange={(v) => set('dateEmission', v)} /></label>
+          <label className="field"><span>Date de réception</span><DatePicker value={form.dateReception} onChange={(v) => set('dateReception', v)} /></label>
         </div>
         <label className="field full"><span>Résumé</span><textarea rows={3} value={form.resume} onChange={(event) => set('resume', event.target.value)} /></label>
         {formError && <div className="form-error" role="alert">{formError}</div>}

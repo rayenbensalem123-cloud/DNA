@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { fmtDateTime } from '../utils';
 import { downloadCsv, downloadXlsx, printPdf } from '../utils/exportFile';
+import DatePicker from '../components/DatePicker';
 
 const LABELS = {
   login: 'Connexion à la plateforme',
@@ -100,8 +101,8 @@ export default function Activity() {
         <div className="activity-filters" role="group" aria-label="Filtrer le journal">
           {FILTERS.map(([value, label]) => <button key={value || 'all'} type="button" className={'btn ' + (filter === value ? 'btn-primary' : 'btn-secondary')} onClick={() => setFilter(value)}>{label}</button>)}
           <div className="activity-dates">
-            <label className="filter-field"><span>Du</span><input type="date" value={from} max={to || undefined} onChange={(event) => setFrom(event.target.value)} /></label>
-            <label className="filter-field"><span>Au</span><input type="date" value={to} min={from || undefined} onChange={(event) => setTo(event.target.value)} /></label>
+            <label className="filter-field"><span>Du</span><DatePicker value={from} max={to || undefined} onChange={setFrom} placeholder="jj/mm/aaaa" /></label>
+            <label className="filter-field"><span>Au</span><DatePicker value={to} min={from || undefined} onChange={setTo} placeholder="jj/mm/aaaa" /></label>
             {(from || to) && <button type="button" className="btn btn-ghost" onClick={() => { setFrom(''); setTo(''); }}>Réinitialiser</button>}
           </div>
         </div>

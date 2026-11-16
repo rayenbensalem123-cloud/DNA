@@ -168,9 +168,10 @@ export default function Courrier() {
                     <div style={{ display: 'flex', gap: 8 }}>
                       <button className="btn btn-ghost" onClick={() => api.openCourrierFile(c.id, c.nom)} onMouseEnter={() => api.warmFile('courrier', c.id)} onTouchStart={() => api.warmFile('courrier', c.id)}>Voir</button>
                       {isBureau && c.status === 'a_valider' && canDafStep && <button className="btn btn-secondary" onClick={() => validateDaf(c)} disabled={busy} title="Validation DAF (étape 1)">Valider (DAF)</button>}
-                      {isBureau && canFinalStep && <button className="btn btn-primary" onClick={() => validate(c)} disabled={busy} title={c.status === 'a_valider' ? 'Validation directe (les deux étapes)' : 'Validation finale (étape 2)'}>{c.status === 'a_valider' ? (role === 'admin' ? 'Valider (2 étapes)' : 'Valider') : 'Valider (final)'}</button>}
-                      {isBureau && !canFinalStep && c.status === 'daf_valide' && <span className="muted small">En attente du superviseur</span>}
-                      {isBureau && !canFinalStep && c.status === 'a_valider' && !canDafStep && <span className="muted small">En attente du DAF</span>}
+                      {isBureau && c.status === 'a_valider' && role === 'admin' && <button className="btn btn-primary" onClick={() => validate(c)} disabled={busy} title="Validation directe (les deux étapes)">Valider (2 étapes)</button>}
+                      {isBureau && c.status === 'a_valider' && role === 'supervisor' && <span className="muted small">En attente du DAF</span>}
+                      {isBureau && c.status === 'daf_valide' && canFinalStep && <button className="btn btn-primary" onClick={() => validate(c)} disabled={busy} title="Validation finale (étape 2)">Valider (final)</button>}
+                      {isBureau && c.status === 'daf_valide' && !canFinalStep && <span className="muted small">En attente du superviseur</span>}
                       {isBureau && <button className="btn btn-danger" onClick={() => { setRejecting(c); setReason(''); }} disabled={busy}>Rejeter</button>}
                     </div>
                   </td>

@@ -40,11 +40,11 @@ export default function ChatDock() {
     return () => clearInterval(id);
   }, [user, open, loadSummary]);
 
-  // DM suggestions (who I can talk to).
+  // DM suggestions (who I can talk to) — loaded for any authenticated member.
   useEffect(() => {
-    if (!isBureau && view !== 'online') return;
-    api.users().then((d) => setUsers((d.items || []).filter((u) => u.id !== user?.id))).catch(() => {});
-  }, [view, isBureau, user?.id]);
+    if (!user) return;
+    api.chatDirectory().then((d) => setUsers((d.items || []).filter((u) => u.id !== user?.id))).catch(() => {});
+  }, [user?.id]);
 
   // Open conversation polling.
   useEffect(() => {
@@ -128,7 +128,7 @@ export default function ChatDock() {
             <div className="chat-body">
               <div className="chat-online-strip" role="list" aria-label="En ligne">
                 {online.slice(0, 12).map((p) => (
-                  <button type="button" key={p.userId} className="chat-avatar-btn" title={p.name} onClick={() => { const u = users.find((x) => x.id === p.userId); if (u) openDm(u); }}>
+                  <button type="button" key={p.userId} className="chat-avatar-btn" title={p.name} onClick={() => openDm({ id: p.userId, name: p.name })}>
                     <span className="chat-avatar" style={{ background: ROLE_COLORS[p.role] || '#64748b' }}>{(p.name || '?').slice(0, 1).toUpperCase()}<i className="chat-presence-dot" /></span>
                   </button>
                 ))}
@@ -143,7 +143,7 @@ export default function ChatDock() {
                   </button>
                 ))}
               </div>
-              {isBureau && (
+              {users.length > 0 && (
                 <div className="chat-dm-section">
                   <div className="chat-section-label">Nouvelle discussion</div>
                   <div className="chat-dm-list">
@@ -193,7 +193,7 @@ export default function ChatDock() {
                   <div key={p.userId} className="chat-online-row">
                     <span className="chat-avatar" style={{ background: ROLE_COLORS[p.role] || '#64748b' }}>{(p.name || '?').slice(0, 1).toUpperCase()}<i className="chat-presence-dot" /></span>
                     <div className="chat-online-meta"><strong>{p.name}</strong><span className="muted">{p.role === 'admin' ? 'Administration' : p.role === 'supervisor' ? 'Superviseur' : p.role === 'daf' ? 'DAF' : p.commission ? committee('comite:' + p.commission) : ''}</span></div>
-                    {p.userId !== user.id && <button type="button" className="btn btn-secondary btn-sm" onClick={() => { const u = users.find((x) => x.id === p.userId); if (u) openDm(u); }}>Message</button>}
+                    {p.userId !== user.id && <button type="button" className="btn btn-secondary btn-sm" onClick={() => openDm({ id: p.userId, name: p.name })}>Message</button>}
                   </div>
                 ))}
                 {online.length === 0 && <div className="chat-empty">Personne en ligne pour l’instant.</div>}

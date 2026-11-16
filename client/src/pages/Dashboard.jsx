@@ -89,7 +89,7 @@ export default function Dashboard() {
     { label: 'En traitement', value: enCours, href: '/archive?statut=en_cours', tone: 'amber' },
     { label: 'À affecter', value: aAffecter, href: '/archive?commission=non_assigne', tone: 'cyan' },
     { label: 'Urgents non clôturés', value: urgentsNonClotures, href: '/archive?priorite=urgente', tone: 'red' },
-    { label: 'En retard > 15 j', value: enRetard, href: '/archive?bucket=pending', tone: 'orange' },
+    { label: 'En retard > 15 j', value: enRetard, href: '/archive?bucket=overdue', tone: 'orange' },
     { label: 'Taux de clôture', value: `${loading ? '—' : tauxCloture}%`, href: '/archive?statut=archive', tone: 'teal', raw: true },
     { label: 'Jours de traitement moy.', value: traitementDays === null ? '—' : traitementDays, href: '/archive?statut=archive', tone: 'gray', raw: true },
   ];

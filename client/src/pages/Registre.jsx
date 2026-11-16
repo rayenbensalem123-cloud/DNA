@@ -6,6 +6,7 @@ import { useLanguage } from '../i18n';
 import { fmtDate } from '../utils';
 import { downloadCsv, downloadXlsx, printPdf } from '../utils/exportFile';
 import Select from '../components/Select';
+import DatePicker from '../components/DatePicker';
 
 // Per-committee internal registers: "Arrivée" = letters the committee received,
 // "Départ" = letters the committee itself emitted (stamped departCommission).
@@ -20,13 +21,21 @@ export default function Registre() {
   const [to, setTo] = useState('');
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
-  const isAdminLike = user?.role === 'admin' || user?.role === 'supervisor';
+  const isBureau = user?.role === 'admin' || user?.role === 'supervisor' || user?.role === 'daf';
 
   useEffect(() => { api.committees().then((d) => setCommittees(d.items || [])).catch(() => {}); }, []);
 
   useEffect(() => {
-    if (!committeeId && committees.length) navigate(`/registres/${encodeURIComponent(committees[0].id)}`, { replace: true });
-  }, [committeeId, committees, navigate]);
+    if (!isBureau && user?.commission) {
+      if (committeeId !== user.commission) {
+        navigate(`/registres/${encodeURIComponent(user.commission)}`, { replace: true });
+      }
+      return;
+    }
+    if (!committeeId && committees.length) {
+      navigate(`/registres/${encodeURIComponent(committees[0].id)}`, { replace: true });
+    }
+  }, [committeeId, committees, isBureau, user?.commission, navigate]);
 
   useEffect(() => {
     if (!committeeId) return;
@@ -90,7 +99,7 @@ export default function Registre() {
       </header>
 
       <div className="registre-toolbar">
-        {isAdminLike && <label className="filter-field"><span>Comité</span>
+        {isBureau && <label className="filter-field"><span>Comité</span>
           <Select ariaLabel="Comité" value={committeeId || ''} onChange={(v) => navigate(`/registres/${encodeURIComponent(v)}`)} options={committees.map((c) => ({ value: c.id, label: c.nom }))} />
         </label>}
         <div className="registre-tabs" role="tablist" aria-label="Type de registre">
@@ -98,8 +107,8 @@ export default function Registre() {
           <button type="button" role="tab" aria-selected={tab === 'depart'} className={'btn ' + (tab === 'depart' ? 'btn-primary' : 'btn-secondary')} onClick={() => setTab('depart')}>Courriers partis{tab === 'depart' ? ` (${items.length})` : ''}</button>
         </div>
         <div className="activity-dates">
-          <label className="filter-field"><span>Du</span><input type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} /></label>
-          <label className="filter-field"><span>Au</span><input type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} /></label>
+          <label className="filter-field"><span>Du</span><DatePicker value={from} max={to || undefined} onChange={setFrom} placeholder="jj/mm/aaaa" /></label>
+          <label className="filter-field"><span>Au</span><DatePicker value={to} min={from || undefined} onChange={setTo} placeholder="jj/mm/aaaa" /></label>
           {(from || to) && <button type="button" className="btn btn-ghost" onClick={() => { setFrom(''); setTo(''); }}>Réinitialiser</button>}
         </div>
       </div>
