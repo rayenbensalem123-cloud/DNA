@@ -116,12 +116,14 @@ export function printPdf({ title, subtitle = '', headers, rows, footer = '', met
     .chip.count { background: #fdeef0; border-color: #f5c9ce; color: #a30014; }
 
     /* Table */
-    table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    table { width: 100%; max-width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 11px; }
     thead { display: table-header-group; }
     tr { page-break-inside: avoid; }
-    th { background: linear-gradient(180deg, #9a0015, #7c0010); color: #fff; text-align: left; padding: 9px 10px; font-size: 10px; font-weight: 750; text-transform: uppercase; letter-spacing: .08em; border: 1px solid #7c0010; }
-    td { padding: 7.5px 10px; border: 1px solid #e7e7ee; vertical-align: top; line-height: 1.45; }
+    th { background: linear-gradient(180deg, #9a0015, #7c0010); color: #fff; text-align: left; padding: 9px 10px; font-size: 10px; font-weight: 750; text-transform: uppercase; letter-spacing: .08em; border: 1px solid #7c0010; overflow-wrap: anywhere; }
+    td { padding: 7.5px 10px; border: 1px solid #e7e7ee; vertical-align: top; line-height: 1.45; overflow-wrap: anywhere; word-break: break-word; }
     td.num, th.num { text-align: center; width: 30px; color: #9a9aa5; font-variant-numeric: tabular-nums; font-weight: 650; }
+    /* The reference number column stays narrow; the rest share the width evenly */
+    td:first-of-type + td { width: 12%; }
     tbody tr:nth-child(even) td { background: #f7f7fa; }
     tbody tr:hover td { background: #fdeef0; }
     .empty { text-align: center; padding: 34px 10px; color: #9a9aa5; font-size: 12.5px; font-style: italic; }
@@ -139,7 +141,7 @@ export function printPdf({ title, subtitle = '', headers, rows, footer = '', met
     .toolbar .primary { background: #e6001b; color: #fff; box-shadow: 0 6px 16px rgba(230,0,27,.35); }
     .toolbar .primary:hover { background: #c50018; }
     .toolbar .ghost { background: #fff; color: #33333d; border: 1px solid #d9d9e0; }
-    @media print { .toolbar { display: none; } .letterhead, .titleblock, table, .signatures { position: static; } }
+    @media print { .toolbar { display: none; } .letterhead, .titleblock, table, .signatures { position: static; } body { padding-bottom: 30px; } .sheet { padding: 0; max-width: none; } }
     @media screen { body { background: #e9e9ef; padding: 26px; } .sheet { background: #fff; max-width: 1100px; margin: 0 auto; padding: 18mm 14mm; box-shadow: 0 10px 40px rgba(0,0,0,.16); border-radius: 4px; } }
   </style></head><body>
   <div class="watermark" aria-hidden="true"><span>DNA</span></div>
