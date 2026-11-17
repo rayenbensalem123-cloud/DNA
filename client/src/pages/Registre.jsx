@@ -83,7 +83,7 @@ export default function Registre() {
       const name = `registre-${tab}-${(selected?.nom || 'comite').replace(/[^\w-]+/g, '_')}`;
       if (format === 'csv') downloadCsv(name, exportHeaders, exportRows);
       else if (format === 'xlsx') await downloadXlsx(name, exportHeaders, exportRows);
-      else printPdf({ title: `Registre ${tab === 'arrivee' ? 'd’arrivée' : 'de départ'} — ${selected?.nom || ''}`, subtitle: [from && `du ${from}`, to && `au ${to}`].filter(Boolean).join(' '), headers: exportHeaders, rows: exportRows });
+      else printPdf({ title: `Registre ${tab === 'arrivee' ? 'd’arrivée' : 'de départ'} — ${selected?.nom || ''}`, subtitle: [from && `du ${from}`, to && `au ${to}`].filter(Boolean).join(' '), headers: exportHeaders, rows: exportRows, meta: { by: user?.name } });
     } catch { /* non-critical */ }
   };
 

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
+import { useAuth } from '../auth';
 import { fmtDateTime } from '../utils';
 import { downloadCsv, downloadXlsx, printPdf } from '../utils/exportFile';
 import DatePicker from '../components/DatePicker';
@@ -32,6 +33,7 @@ const FILTERS = [['', 'Tout'], ['letter', 'Courriers'], ['courrier', 'Numérisat
 const EVENT_LABELS = { vu_comite: 'ouvert par le comité', recu_comite: 'reçu par le comité', traite_comite: 'terminé et archivé', note: 'note ajoutée' };
 
 export default function Activity() {
+  const { user } = useAuth();
   const [items, setItems] = useState([]);
   const [committees, setCommittees] = useState([]);
   const [filter, setFilter] = useState('');
@@ -83,7 +85,7 @@ export default function Activity() {
     try {
       if (format === 'csv') downloadCsv('journal-activite', exportHeaders, exportRows);
       else if (format === 'xlsx') await downloadXlsx('journal-activite', exportHeaders, exportRows);
-      else printPdf({ title: 'Journal d’activité', subtitle: [filter ? 'Filtre : ' + (FILTERS.find(([v]) => v === filter)?.[1] || filter) : 'Toutes les actions', from && `du ${from}`, to && `au ${to}`].filter(Boolean).join(' · '), headers: exportHeaders, rows: exportRows });
+      else printPdf({ title: 'Journal d’activité', subtitle: [filter ? 'Filtre : ' + (FILTERS.find(([v]) => v === filter)?.[1] || filter) : 'Toutes les actions', from && `du ${from}`, to && `au ${to}`].filter(Boolean).join(' · '), headers: exportHeaders, rows: exportRows, meta: { by: user?.name } });
     } catch { /* export failures are non-critical */ }
   };
 

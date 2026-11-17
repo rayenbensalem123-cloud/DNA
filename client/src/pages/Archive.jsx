@@ -119,7 +119,7 @@ export default function Archive() {
     try {
       if (format === 'csv') downloadCsv(exportName, exportHeaders, exportRows);
       else if (format === 'xlsx') await downloadXlsx(exportName, exportHeaders, exportRows);
-      else printPdf({ title: selectedCommittee ? `Archive — ${selectedCommittee.nom}` : 'Archive des courriers', subtitle: exportSubtitle, headers: exportHeaders, rows: exportRows });
+      else printPdf({ title: selectedCommittee ? `Archive — ${selectedCommittee.nom}` : 'Archive des courriers', subtitle: exportSubtitle, headers: exportHeaders, rows: exportRows, meta: { by: user?.name } });
     } catch { /* export failures are non-critical */ }
   };
 
