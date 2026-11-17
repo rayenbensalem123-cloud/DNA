@@ -141,13 +141,24 @@ export function printPdf({ title, subtitle = '', headers, rows, footer = '', met
     .toolbar .primary { background: #e6001b; color: #fff; box-shadow: 0 6px 16px rgba(230,0,27,.35); }
     .toolbar .primary:hover { background: #c50018; }
     .toolbar .ghost { background: #fff; color: #33333d; border: 1px solid #d9d9e0; }
+    .toolbar .ghost:hover { border-color: #e6001b; color: #e6001b; }
+    .toolbar .ghost.oactive { background: #fdeef0; border-color: #e6001b; color: #a30014; }
+    /* Portrait mode: narrower sheet, denser table */
+    body.portrait table { font-size: 10px; }
+    body.portrait td { padding: 6px 8px; }
+    body.portrait th { padding: 8px; }
+    body.portrait .sigbox { width: 70mm; }
+    body.portrait .watermark span { font-size: 250px; }
     @media print { .toolbar { display: none; } .letterhead, .titleblock, table, .signatures { position: static; } body { padding-bottom: 30px; } .sheet { padding: 0; max-width: none; } }
-    @media screen { body { background: #e9e9ef; padding: 26px; } .sheet { background: #fff; max-width: 1100px; margin: 0 auto; padding: 18mm 14mm; box-shadow: 0 10px 40px rgba(0,0,0,.16); border-radius: 4px; } }
-  </style></head><body>
+    @media screen { body { background: #e9e9ef; padding: 26px; } .sheet { background: #fff; max-width: 1100px; margin: 0 auto; padding: 18mm 14mm; box-shadow: 0 10px 40px rgba(0,0,0,.16); border-radius: 4px; } body.portrait .sheet { max-width: 830px; } }
+  </style>
+  <style id="orient-style">@page { size: A4 landscape; }</style></head><body>
   <div class="watermark" aria-hidden="true"><span>DNA</span></div>
   <div class="toolbar">
-    <button type="button" class="ghost" id="btn-close">Fermer</button>
+    <button type="button" class="ghost" id="btn-portrait" aria-pressed="false">Portrait</button>
+    <button type="button" class="ghost oactive" id="btn-landscape" aria-pressed="true">Paysage</button>
     <button type="button" class="primary" id="btn-print">Imprimer / Enregistrer en PDF</button>
+    <button type="button" class="ghost" id="btn-close">Fermer</button>
   </div>
   <div class="sheet">
     <div class="letterhead">
@@ -184,6 +195,20 @@ export function printPdf({ title, subtitle = '', headers, rows, footer = '', met
   if (btn) btn.addEventListener('click', () => w.print());
   const close = w.document.getElementById('btn-close');
   if (close) close.addEventListener('click', () => w.close());
+  // Portrait / landscape toggle: rewrites the @page rule and adapts the layout.
+  const orientStyle = w.document.getElementById('orient-style');
+  const setOrientation = (o) => {
+    if (orientStyle) orientStyle.textContent = `@page { size: A4 ${o}; }`;
+    if (w.document.body) w.document.body.classList.toggle('portrait', o === 'portrait');
+    const p = w.document.getElementById('btn-portrait');
+    const l = w.document.getElementById('btn-landscape');
+    if (p) { p.classList.toggle('oactive', o === 'portrait'); p.setAttribute('aria-pressed', String(o === 'portrait')); }
+    if (l) { l.classList.toggle('oactive', o === 'landscape'); l.setAttribute('aria-pressed', String(o === 'landscape')); }
+  };
+  const pBtn = w.document.getElementById('btn-portrait');
+  const lBtn = w.document.getElementById('btn-landscape');
+  if (pBtn) pBtn.addEventListener('click', () => setOrientation('portrait'));
+  if (lBtn) lBtn.addEventListener('click', () => setOrientation('landscape'));
   const img = w.document.getElementById('emblem-img');
   if (img) img.addEventListener('error', () => {
     const fb = w.document.createElement('div');
