@@ -1,25 +1,16 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect } from 'react';
 
-const ThemeContext = createContext(null);
-const THEME_KEY = 'bo_theme';
+// The platform is light-mode only. The context stays so existing imports keep working.
+const ThemeContext = createContext({ theme: 'light', toggleTheme: () => {} });
 
 export function ThemeProvider({ children }) {
-  const [theme, setTheme] = useState(() => {
-    try { return localStorage.getItem(THEME_KEY) === 'dark' ? 'dark' : 'light'; }
-    catch { return 'light'; }
-  });
-
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    try { localStorage.setItem(THEME_KEY, theme); } catch { /* storage may be unavailable */ }
-  }, [theme]);
-
-  const toggleTheme = () => setTheme((current) => current === 'dark' ? 'light' : 'dark');
-  return <ThemeContext.Provider value={{ theme, toggleTheme }}>{children}</ThemeContext.Provider>;
+    document.documentElement.dataset.theme = 'light';
+    try { localStorage.removeItem('bo_theme'); } catch { /* storage may be unavailable */ }
+  }, []);
+  return <ThemeContext.Provider value={{ theme: 'light', toggleTheme: () => {} }}>{children}</ThemeContext.Provider>;
 }
 
 export function useTheme() {
-  const context = useContext(ThemeContext);
-  if (!context) throw new Error('useTheme must be used within ThemeProvider');
-  return context;
+  return useContext(ThemeContext);
 }

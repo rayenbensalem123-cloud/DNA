@@ -3,7 +3,6 @@ import { useAuth } from '../auth';
 import { useLanguage } from '../i18n';
 import LetterCreateModal from './LetterCreateModal';
 import PdfViewer from './PdfViewer';
-import ThemeToggle from './ThemeToggle';
 import NotificationBell from './NotificationBell';
 import InstallButton from './InstallButton';
 import ChatDock from './ChatDock';
@@ -109,7 +108,6 @@ export default function Layout() {
           <div className="topbar-right">
             <NotificationBell />
             <InstallButton />
-            <ThemeToggle />
             {user && <div className="user-info">
               <span className="user-avatar" aria-hidden="true">{(user.name || '?').trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase() || '?'}</span>
               <div className="user-meta">

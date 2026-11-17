@@ -1347,3 +1347,48 @@ input:focus, select:focus, textarea:focus { outline: 2px solid #ffd3d8; outline-
   .chat-dock { right: 16px; bottom: calc(156px + env(safe-area-inset-bottom)); }
   .chat-dock .chat-panel { width: min(92vw, 380px); max-height: calc(100vh - 260px); }
 }
+
+/* ── Light only: bright sidebar and phone menu bar ── */
+:root[data-theme='light'] .sidebar { background: #fff; background-image: none; color: #281f22; border-right: 1px solid #e6e8f0; backdrop-filter: none; box-shadow: 4px 0 24px rgba(35,41,54,.05); }
+:root[data-theme='light'] .brand { border-bottom-color: #eceef5; }
+:root[data-theme='light'] .brand-emblem { box-shadow: 0 0 0 2px #fff, 0 0 0 4px rgba(217,177,59,.75), 0 4px 14px rgba(35,41,54,.18); }
+:root[data-theme='light'] .brand-title { color: #1f2433; }
+:root[data-theme='light'] .brand-sub { color: #6b7185; }
+:root[data-theme='light'] .nav-link { color: #4a5068; }
+:root[data-theme='light'] .nav-link:hover { background: #f3f4fa; color: #1f2433; }
+:root[data-theme='light'] .nav-link.active { background: linear-gradient(90deg, rgba(230,0,27,.12), rgba(230,0,27,.04)); color: #bd0017; box-shadow: inset 3px 0 var(--primary); }
+:root[data-theme='light'] .nav-link.active svg { color: var(--primary); }
+:root[data-theme='light'] .sidebar-footer { color: #6b7185; }
+:root[data-theme='light'] body { background-color: #f4f5fa; background-image: none; }
+@media (max-width: 600px) {
+  :root[data-theme='light'] .sidebar { background: rgba(255,255,255,.97); border-top: 1px solid #e6e8f0; box-shadow: 0 -6px 24px rgba(35,41,54,.08); backdrop-filter: blur(14px); }
+  :root[data-theme='light'] .nav-link.active { box-shadow: inset 0 3px var(--primary); background: rgba(230,0,27,.08); }
+}
+
+/* ── Light only: splash screen + login ── */
+.splash { background: #f4f5fa; color: #1f2433; }
+.splash-bg { background: linear-gradient(rgba(244,245,250,.86), rgba(244,245,250,.93)), url('/loading-whistle.jpeg') center / cover no-repeat; }
+.splash-card { box-shadow: 0 12px 26px rgba(35,41,54,.2), inset 0 1px 0 rgba(255,255,255,.5); }
+.splash-emblem { box-shadow: 0 8px 24px rgba(35,41,54,.22); }
+.splash-stage h1 { color: #1f2433; }
+.splash-stage p { color: #4a5068; }
+.splash-label { color: #6b7185; }
+.splash-bar { background: rgba(35,41,54,.12); }
+.sign { --ink: #f4f5fa; --panel: #fff; --line: #d6d9e6; }
+.sign-stage { background: #e9ebf3; }
+.sign-photo { opacity: .6; filter: saturate(.9); }
+.sign-shade { background: linear-gradient(to top, rgba(244,245,250,.97) 0%, rgba(244,245,250,.72) 40%, rgba(244,245,250,0) 72%), linear-gradient(to right, rgba(244,245,250,0) 70%, var(--ink) 100%); }
+.sign-identity h1 { color: #1f2433; }
+.sign-identity p { color: #4a5068; }
+.sign-emblem { box-shadow: 0 4px 14px rgba(35,41,54,.2); }
+.sign-panel { background: #fff; }
+.sign-form header h2 { color: #1f2433; }
+.sign-field { color: #3a3f55; }
+.sign-field input { background: #fff; color: #1f2433; border-color: #d6d9e6; }
+.sign-field input:hover { border-color: #aeb3c7; }
+.sign-field input:focus-visible { background: #fff; outline: 3px solid rgba(230,0,27,.25); border-color: var(--primary); }
+.sign-reveal { color: #4a5068; }
+.sign-reveal:hover { background: #eef0f7; color: #1f2433; }
+.sign-error { background: #fff0f2; color: #b91c1c; }
+.sign-submit { background: var(--primary); color: #fff; }
+.sign-submit:hover:not(:disabled) { background: var(--primary-dark); }
