@@ -3,9 +3,13 @@
 // window (the browser's "Save as PDF") which also renders Arabic glyphs
 // without any heavy PDF font-embedding dependency.
 
+// Spreadsheet formula injection: a value typed by a user such as
+// "=HYPERLINK(...)" would run as a formula when the export is opened in Excel.
+// Prefix risky leading characters with an apostrophe so it stays plain text.
 const cell = (v) => {
   if (v === null || v === undefined) return '';
-  return String(v);
+  const s = String(v);
+  return /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
 };
 
 export function toCsv(headers, rows) {
@@ -69,7 +73,7 @@ export function printPdf({ title, subtitle = '', headers, rows, footer = '' }) {
     .print-btn { position: fixed; top: 12px; right: 12px; padding: 9px 18px; background: #e6001b; color: #fff; border: 0; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
     @media print { .print-btn { display: none; } }
   </style></head><body>
-  <button class="print-btn" onclick="window.print()">Imprimer / PDF</button>
+  <button class="print-btn" type="button">Imprimer / PDF</button>
   <div class="head">
     <div class="mark">FTF</div>
     <div><h1>${esc(title)}</h1><div class="sub">${esc(subtitle)}</div></div>
@@ -79,4 +83,6 @@ export function printPdf({ title, subtitle = '', headers, rows, footer = '' }) {
   <div class="foot"><span>${esc(footer || 'Direction Nationale de l’Arbitrage — Fédération Tunisienne de Football')}</span><span>Document généré par le bureau d’ordre</span></div>
   </body></html>`);
   w.document.close();
+  const btn = w.document.querySelector('.print-btn');
+  if (btn) btn.addEventListener('click', () => w.print());
 }

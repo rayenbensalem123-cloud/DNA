@@ -1418,7 +1418,7 @@ async function route(req, res) {
       return send(res, 409, { error: courrier.status === 'valide' ? 'Ce courrier a déjà été validé' : 'Ce courrier a déjà été traité' });
     }
     if (action === 'valide_daf') {
-      if (!(user.role === 'daf' || isAdminLike(user))) return send(res, 403, { error: 'Seul le DAF ou le bureau d’ordre peut valider à cette étape' });
+      if (!(user.role === 'daf' || user.role === 'admin')) return send(res, 403, { error: 'Seul le DAF (ou l’administrateur) peut faire la première validation' });
       courrier.status = 'daf_valide';
       courrier.dafValidatedBy = user.id;
       courrier.dafValidatedByName = user.name;

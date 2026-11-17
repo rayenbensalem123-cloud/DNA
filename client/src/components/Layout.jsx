@@ -45,7 +45,7 @@ export default function Layout() {
     const load = () => api.courrierNotifications().then((d) => setRejectionUnread((d.items || []).filter((n) => !n.read).length)).catch(() => {});
     const loadToSend = () => { if (isBureauLike) api.toSend().then((d) => setToSendCount((d.waiting || []).length)).catch(() => {}); };
     const loadTransfers = () => { if (isBureauLike) api.transferRequests().then((d) => setTransferCount((d.items || []).length)).catch(() => {}); };
-    const loadGmail = () => { if (isBureauLike) api.gmailMessages().then((d) => setGmailUnread(d.unread || 0)).catch(() => {}); };
+    const loadGmail = () => { if (isBureauLike) api.gmailUnread().then((s) => (s.configured ? api.gmailMessages().then((d) => setGmailUnread(d.unread || 0)) : setGmailUnread(0))).catch(() => {}); };
     load(); loadToSend(); loadTransfers(); loadGmail();
     const timer = setInterval(() => { load(); loadToSend(); loadTransfers(); loadGmail(); }, 30000);
     return () => clearInterval(timer);
