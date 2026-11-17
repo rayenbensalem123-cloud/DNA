@@ -50,8 +50,8 @@ export default function Gmail() {
   }, []);
 
   useEffect(() => {
-    // Only poll the inbox once settings are known (avoids useless 400s).
-    if (settings === null) return;
+    // Only poll the inbox once settings are known AND configured (avoids useless 400s).
+    if (settings === null || !settings.configured) return;
     loadInbox();
     const id = setInterval(loadInbox, 60000);
     return () => clearInterval(id);
