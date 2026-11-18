@@ -13,6 +13,7 @@ export default function Gmail() {
   const [email, setEmail] = useState('');
   const [appPassword, setAppPassword] = useState('');
   const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
   const [settingsMsg, setSettingsMsg] = useState('');
 
   const [messages, setMessages] = useState([]);
@@ -33,6 +34,19 @@ export default function Gmail() {
   }, []);
 
   useEffect(() => { loadSettings(); }, [loadSettings]);
+
+  const testConnection = async () => {
+    setTesting(true);
+    setSettingsMsg('');
+    try {
+      await api.gmailTest(email, appPassword);
+      setSettingsMsg('Connexion Gmail réussie — vous pouvez enregistrer.');
+    } catch (e) {
+      setSettingsMsg('Échec : ' + (e.message || 'erreur inconnue'));
+    } finally {
+      setTesting(false);
+    }
+  };
 
   const loadInbox = useCallback(async () => {
     try {
@@ -124,6 +138,7 @@ export default function Gmail() {
             <label className="field">Adresse Gmail<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="dna.***@gmail.com" autoComplete="off" /></label>
             <label className="field">Mot de passe d’application<input type="password" value={appPassword} onChange={(e) => setAppPassword(e.target.value)} placeholder={settings.appPassword ? '•••••••••••• (inchangé)' : '16 caractères (xxxx xxxx xxxx xxxx)'} autoComplete="new-password" /></label>
             <div className="page-actions">
+              <button type="button" className="btn btn-secondary" onClick={testConnection} disabled={testing || !email || !appPassword}>{testing ? 'Test…' : 'Tester la connexion'}</button>
               <button className="btn btn-primary" disabled={saving}>{saving ? 'Enregistrement…' : 'Enregistrer'}</button>
               {configured && <button type="button" className="btn btn-secondary" onClick={clearCredentials} disabled={saving}>Déconnecter</button>}
             </div>

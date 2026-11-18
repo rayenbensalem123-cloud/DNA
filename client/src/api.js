@@ -143,5 +143,6 @@ export const api = {
   gmailMessage: (uid) => req(`/api/gmail/messages/${uid}`),
   gmailUnread: () => req('/api/gmail/unread'),
   gmailAck: (uid) => req('/api/gmail/ack', { method: 'POST', body: { uid } }),
+  gmailTest: (email, appPassword) => req('/api/gmail/test', { method: 'POST', body: { email, appPassword } }),
 };
 

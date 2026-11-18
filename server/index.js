@@ -1972,6 +1972,27 @@ async function route(req, res) {
     }
   }
 
+  // Test de connexion Gmail (sans sauvegarder) : POST /api/gmail/test  { email, appPassword }
+  if (pathname === '/api/gmail/test' && method === 'POST') {
+    const user = requireAuth(req, res);
+    if (!user) return;
+    if (!isAdminLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
+    const body = await readBody(req);
+    const email = String(body.email || '').trim().toLowerCase();
+    const pass = String(body.appPassword || '').trim().replace(/\s+/g, '');
+    if (!email || !pass) return send(res, 400, { error: 'Adresse et mot de passe requis' });
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return send(res, 400, { error: 'Adresse Gmail invalide' });
+    try {
+      const { ImapFlow } = await import('imapflow');
+      const client = new ImapFlow({ host: 'imap.gmail.com', port: 993, secure: true, auth: { user: email, pass }, logger: false });
+      await client.connect();
+      await client.logout();
+      return send(res, 200, { ok: true, message: 'Connexion Gmail réussie.' });
+    } catch (error) {
+      return send(res, 502, { error: `Connexion échouée : ${error.message || 'erreur inconnue'}` });
+    }
+  }
+
   const gmailUnreadMatch = /^\/api\/gmail\/unread$/.exec(pathname);
   if (gmailUnreadMatch && method === 'GET') {
     const user = requireAuth(req, res);
