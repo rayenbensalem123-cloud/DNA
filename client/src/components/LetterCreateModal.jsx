@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../auth';
 import LetterForm from './LetterForm';
+import Select from './Select';
 
 export default function LetterCreateModal({ onClose }) {
   const navigate = useNavigate();
@@ -11,6 +12,8 @@ export default function LetterCreateModal({ onClose }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [sent, setSent] = useState(null);
+  const [templates, setTemplates] = useState([]);
+  const [selectedTemplate, setSelectedTemplate] = useState('');
   const { user } = useAuth();
 
   useEffect(() => {
@@ -24,6 +27,18 @@ export default function LetterCreateModal({ onClose }) {
     };
   }, [busy, onClose]);
 
+  useEffect(() => {
+    api.templates().then((d) => setTemplates(d.items || [])).catch(() => {});
+  }, []);
+
+  const applyTemplate = (templateId) => {
+    const t = templates.find((tmpl) => tmpl.id === templateId);
+    if (!t) return;
+    setSelectedTemplate(templateId);
+    const evt = new CustomEvent('apply-template', { detail: t });
+    document.dispatchEvent(evt);
+  };
+
   const close = () => {
     if (!busy) onClose();
   };
@@ -34,7 +49,6 @@ export default function LetterCreateModal({ onClose }) {
     try {
       const result = await api.createLetterWithFiles(data, data.files || []);
       if (user?.role === 'admin') { navigate('/lettres/' + result.item.id, { replace: true }); return; }
-      // A comité account cannot open a letter it sent to another comité: confirm instead.
       let name = result.item.commission;
       try { name = ((await api.committees()).items || []).find((c) => c.id === result.item.commission)?.nom || name; } catch { /* keep id */ }
       setSent(name);
@@ -52,6 +66,17 @@ export default function LetterCreateModal({ onClose }) {
           <h2 id="letter-modal-title">Nouveau courrier</h2>
           <button type="button" className="modal-close" onClick={close} aria-label="Fermer" disabled={busy}>×</button>
         </header>
+        {templates.length > 0 && (
+          <div style={{ padding: '0 18px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <label style={{ fontSize: 13, color: '#b2a4a8', margin: 0 }}>Modèle :</label>
+            <Select
+              ariaLabel="Modèle de courrier"
+              value={selectedTemplate}
+              onChange={(v) => (v ? applyTemplate(v) : setSelectedTemplate(''))}
+              options={[{ value: '', label: '— Aucun —' }, ...templates.map((t) => ({ value: t.id, label: t.nom }))]}
+            />
+          </div>
+        )}
         {sent ? (
           <div className="sent-panel" role="status">
             <h3>Lettre envoyée</h3>

@@ -73,6 +73,24 @@ export default function LetterForm({ onSubmit, onCancel, busy = false, error = '
     return () => { cancelled = true; };
   }, []);
 
+  useEffect(() => {
+    const onApply = (e) => {
+      const t = e.detail;
+      setForm((current) => ({
+        ...current,
+        objet: 'autre',
+        objetAutre: t.objet || '',
+        type: t.type || current.type,
+        categorie: t.categorie || current.categorie,
+        priorite: t.priorite || current.priorite,
+        expediteurNom: t.expediteurNom || current.expediteurNom,
+        resume: t.resume || current.resume,
+      }));
+    };
+    document.addEventListener('apply-template', onApply);
+    return () => { document.removeEventListener('apply-template', onApply); };
+  }, []);
+
   const addFiles = (fileList) => {
     setFileError('');
     const accepted = [];

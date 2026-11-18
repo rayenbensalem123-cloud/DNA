@@ -131,6 +131,11 @@ export const api = {
   // Settings (admin) — Gmail IMAP credentials
   getSettings: () => req('/api/settings'),
   saveSettings: (body) => req('/api/settings', { method: 'PUT', body }),
+  // Templates de courrier
+  templates: () => req('/api/templates'),
+  createTemplate: (data) => req('/api/templates', { method: 'POST', body: data }),
+  updateTemplate: (id, data) => req(`/api/templates/${id}`, { method: 'PUT', body: data }),
+  deleteTemplate: (id) => req(`/api/templates/${id}`, { method: 'DELETE' }),
   // Gmail inbox (bureau)
   gmailMessages: () => req('/api/gmail/messages'),
   gmailMessage: (uid) => req(`/api/gmail/messages/${uid}`),

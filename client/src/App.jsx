@@ -11,6 +11,7 @@ import Dashboard from './pages/Dashboard';
 import Archive from './pages/Archive';
 import LetterDetail from './pages/LetterDetail';
 import Accounts from './pages/Accounts';
+import Templates from './pages/Templates';
 import Activity from './pages/Activity';
 import Courrier from './pages/Courrier';
 import CourriersRejetes from './pages/CourriersRejetes';
@@ -106,6 +107,7 @@ export default function App() {
                 <Route path="archive/comites/:committeeId" element={<ErrorBoundary label="archive"><Archive /></ErrorBoundary>} />
                 <Route path="archive" element={<ErrorBoundary label="archive"><Archive /></ErrorBoundary>} />
                 <Route path="comptes" element={<PermRoute perm="users"><ErrorBoundary label="accounts"><Accounts /></ErrorBoundary></PermRoute>} />
+                <Route path="modeles" element={<PermRoute perm="users"><ErrorBoundary label="templates"><Templates /></ErrorBoundary></PermRoute>} />
                 <Route path="activite" element={<PermRoute perm="journal"><ErrorBoundary label="activity"><Activity /></ErrorBoundary></PermRoute>} />
                 <Route path="courrier" element={<ErrorBoundary label="courrier"><Courrier /></ErrorBoundary>} />
                 <Route path="a-envoyer" element={<AdminOnly><ErrorBoundary label="tosend"><ToSend /></ErrorBoundary></AdminOnly>} />

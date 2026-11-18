@@ -1813,6 +1813,64 @@ async function route(req, res) {
     return send(res, 200, { gmail: { email, appPassword: '••••••••••••', configured: !!(email && db.settings.gmail?.appPassword) } });
   }
 
+  // ---- Templates de courrier (modèles pré-remplis) ----
+  const templatesMatch = /^\/api\/templates(?:\/([A-Za-z0-9_-]+))?$/.exec(pathname);
+  if (templatesMatch && (method === 'GET' || method === 'POST' || method === 'PUT' || method === 'DELETE')) {
+    const user = requireAuth(req, res);
+    if (!user) return;
+    if (!isAdminLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
+    const db = getDB();
+    if (!Array.isArray(db.templates)) db.templates = [];
+    const templateId = templatesMatch[1];
+
+    if (method === 'GET') {
+      return send(res, 200, { items: db.templates.map((t) => ({ id: t.id, nom: t.nom, objet: t.objet, type: t.type, categorie: t.categorie, priorite: t.priorite, expediteurNom: t.expediteurNom, destinataireNom: t.destinataireNom, resume: t.resume, createdByName: t.createdByName })) });
+    }
+
+    const body = await readBody(req);
+    const nom = clip(String(body.nom || '').trim(), 100);
+    const objet = clip(String(body.objet || '').trim(), 200);
+    const type = ['courrier', 'officielle', 'note', 'arrete', 'decret', 'mandat', 'autre'].includes(body.type) ? body.type : 'courrier';
+    const categorie = ['administration', 'juridique', 'finances', 'rh', 'communication', 'securite', 'autre'].includes(body.categorie) ? body.categorie : 'administration';
+    const priorite = ['normale', 'urgente', 'confidentielle'].includes(body.priorite) ? body.priorite : 'normale';
+    const expediteurNom = clip(String(body.expediteurNom || '').trim(), 120);
+    const destinataireNom = clip(String(body.destinataireNom || '').trim(), 120);
+    const resume = clip(String(body.resume || '').trim(), 5000);
+
+    if (method === 'POST') {
+      if (!nom || !objet) return send(res, 400, { error: 'Nom et objet requis' });
+      const t = { id: 'tmpl' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), nom, objet, type, categorie, priorite, expediteurNom, destinataireNom, resume, createdBy: user.id, createdByName: user.name, createdAt: new Date().toISOString() };
+      db.templates.push(t);
+      logActivity(db, user, 'template.create', nom, { templateId: t.id });
+      await saveDB(db);
+      return send(res, 201, { item: t });
+    }
+
+    if (method === 'PUT' || method === 'DELETE') {
+      const idx = db.templates.findIndex((t) => t.id === templateId);
+      if (idx < 0) return send(res, 404, { error: 'Modèle introuvable' });
+      if (method === 'DELETE') {
+        db.templates.splice(idx, 1);
+        logActivity(db, user, 'template.delete', nom, { templateId });
+        await saveDB(db);
+        return send(res, 200, { ok: true });
+      }
+      // PUT
+      const t = db.templates[idx];
+      t.nom = nom || t.nom;
+      t.objet = objet || t.objet;
+      t.type = type;
+      t.categorie = categorie;
+      t.priorite = priorite;
+      t.expediteurNom = expediteurNom;
+      t.destinataireNom = destinataireNom;
+      t.resume = resume;
+      logActivity(db, user, 'template.update', nom, { templateId });
+      await saveDB(db);
+      return send(res, 200, { item: t });
+    }
+  }
+
   // ---- Gmail (IMAP via app password) ------------------------------------------------------
   const gmailListMatch = /^\/api\/gmail\/messages(?:\/([0-9]+))?$/.exec(pathname);
   if (gmailListMatch && method === 'GET') {

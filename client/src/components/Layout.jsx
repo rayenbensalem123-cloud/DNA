@@ -92,6 +92,9 @@ export default function Layout() {
           {isBureauLike && <NavLink to="/gmail" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}>
             <NavIcon type="mail" /><span className="nav-text">Gmail{gmailUnread > 0 && <span className="nav-badge">{gmailUnread}</span>}</span>
           </NavLink>}
+          {isBureauLike && <NavLink to="/modeles" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}>
+            <NavIcon type="template" /><span className="nav-text">Modèles</span>
+          </NavLink>}
         </nav>
       </aside>
       <div className="main">
