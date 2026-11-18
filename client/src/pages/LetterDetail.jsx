@@ -179,8 +179,11 @@ export default function LetterDetail() {
     setBusy(false);
   };
 
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
   const remove = async () => {
     if (!letter) return;
+    if (!confirmDelete) { setConfirmDelete(true); return; }
     try {
       await api.deleteLetter(letter.id);
       navigate('/archive');
@@ -211,7 +214,7 @@ export default function LetterDetail() {
         <div className="page-actions">
           <button className="btn btn-secondary" onClick={() => navigate('/archive')}>{t('detail.back')}</button>
           {canEdit && <button className="btn btn-primary" onClick={() => { setError(''); setEditing(true); }}>Modifier</button>}
-          {(isBureau || perms.delete) && <button className="btn btn-danger" onClick={remove}>{t('detail.delete')}</button>}
+          {(isBureau || perms.delete) && <button className="btn btn-danger" onClick={remove}>{confirmDelete ? t('detail.confirmDelete') || 'Confirmer ?' : t('detail.delete')}</button>}
         </div>
       </div>
       {readOnlyComite && <div className="account-notice" role="status">Cette lettre est maintenant dans le comité « {committeeName(letter.commission)} ». Vous pouvez la consulter, mais plus la modifier.</div>}

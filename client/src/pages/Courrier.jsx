@@ -4,7 +4,7 @@ import { api } from '../api';
 import { useAuth } from '../auth';
 import { useLanguage } from '../i18n';
 import { fmtDate, fmtSize } from '../utils';
-import { extractPdfSubject } from '../utils/pdfSubject';
+import { extractPdfDetails, DETAIL_LABELS } from '../utils/pdfExtract';
 
 export default function Courrier() {
   const { user } = useAuth();
@@ -24,6 +24,9 @@ export default function Courrier() {
   const isBureau = role === 'admin' || role === 'supervisor' || role === 'daf';
   const canDafStep = role === 'daf' || role === 'admin';
   const canFinalStep = role === 'supervisor' || role === 'admin';
+  // OCR review: files awaiting confirmation before upload.
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState([]); // { file, details, edited }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -42,8 +45,6 @@ export default function Courrier() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Opening the validation page clears the red badge on the "Courrier" button:
-  // its count is the number of unread rejection notifications for this user.
   useEffect(() => {
     let cancelled = false;
     api.courrierNotifications().then(async (d) => {
@@ -56,29 +57,62 @@ export default function Courrier() {
     return () => { cancelled = true; };
   }, []);
 
+  const readFileAsBuffer = (file) => new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = reject;
+    r.readAsArrayBuffer(file);
+  });
 
   const handleFiles = async (files) => {
     setBusy(true);
     setError('');
     setNotice('');
+    const extracted = [];
     try {
-      // Read each PDF: the extracted subject becomes the letter's title when
-      // the bureau validates the scan (instead of the file name). Scans go
-      // through OCR — a few seconds each, so show what is happening.
       let readCount = 0;
       for (const file of files) {
-        const sujet = await extractPdfSubject(file, (phase) => {
-          if (phase === 'ocr') setNotice('Lecture du PDF « ' + file.name + ' » (OCR du scan)… ça peut prendre quelques secondes.');
+        const details = await extractPdfDetails(file, (phase) => {
+          if (phase === 'ocr') setNotice('Lecture de « ' + file.name + ' » (OCR du scan)…');
         });
-        if (sujet) readCount++;
-        await api.uploadCourrierFile(file, sujet);
+        if (details.sujet) readCount++;
+        extracted.push({ file, details, edited: { ...details } });
       }
-      setNotice(files.length + ' courrier(s) téléversé(s)' + (readCount ? ` — sujet lu automatiquement pour ${readCount}.` : '.'));
+      setPendingFiles(extracted);
+      setReviewOpen(true);
+      setNotice(files.length + ' fichier(s) prêt(s) à importer' + (readCount ? ` — champs lus automatiquement pour ${readCount}.` : '.'));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const updateField = (fileIdx, field, value) => {
+    setPendingFiles((prev) => prev.map((p, i) => i === fileIdx ? { ...p, edited: { ...p.edited, [field]: value } } : p));
+  };
+
+  const confirmImport = async () => {
+    setBusy(true);
+    setError('');
+    setReviewOpen(false);
+    try {
+      for (const p of pendingFiles) {
+        await api.uploadCourrierFile(p.file, p.edited.sujet, {
+          expediteur: p.edited.expediteur,
+          dateEmission: p.edited.dateEmission,
+          priorite: p.edited.priorite,
+          reference: p.edited.reference,
+          categorie: p.edited.categorie,
+        });
+      }
+      setNotice(pendingFiles.length + ' courrier(s) importé(s).');
       await load();
     } catch (e) {
       setError(e.message);
     } finally {
       setBusy(false);
+      setPendingFiles([]);
     }
   };
 
@@ -129,6 +163,9 @@ export default function Courrier() {
       setBusy(false);
     }
   };
+
+  const PRIORITY_LABELS = { normale: 'Normale', urgente: 'Urgente', confidentielle: 'Confidentielle' };
+  const CATEGORY_LABELS = { administration: 'Administration', juridique: 'Juridique', finances: 'Finances', rh: 'Ressources humaines', communication: 'Communication', securite: 'Sécurité' };
 
   return (
     <div className="page">
@@ -196,6 +233,53 @@ export default function Courrier() {
             <div className="modal-foot">
               <button className="btn btn-secondary" onClick={() => { setRejecting(null); setReason(''); }}>Annuler</button>
               <button className="btn btn-danger" onClick={reject} disabled={busy || !reason.trim()}>{busy ? 'Rejet...' : 'Rejeter'}</button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {reviewOpen && (
+        <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) { setReviewOpen(false); setPendingFiles([]); } }}>
+          <section className="modal" style={{ width: 'min(960px, 92vw)' }} role="dialog" aria-modal="true">
+            <header className="modal-head"><h2>Confirmer l'import — champs lus par l'OCR</h2><button type="button" className="modal-close" onClick={() => { setReviewOpen(false); setPendingFiles([]); }}>x</button></header>
+            <div className="modal-body">
+              <p className="muted">Vérifiez et corrigez les champs lus automatiquement sur chaque scan avant l'import.</p>
+              <div className="table-wrap" style={{ maxHeight: '64vh', overflow: 'auto', marginTop: 10 }}>
+                <table className="table" style={{ fontSize: 13 }}>
+                  <thead><tr>
+                    <th style={{ width: '26%' }}>Fichier</th>
+                    <th>Sujet (objet)</th>
+                    <th>Expéditeur</th>
+                    <th>Date</th>
+                    <th>Priorité</th>
+                    <th>Référence</th>
+                    <th>Catégorie</th>
+                  </tr></thead>
+                  <tbody>
+                    {pendingFiles.map((p, i) => (
+                      <tr key={i}>
+                        <td className="mono nowrap" style={{ fontSize: 12 }}>{p.file.name}</td>
+                        <td><input className="form-input" value={p.edited.sujet} onChange={(e) => updateField(i, 'sujet', e.target.value)} /></td>
+                        <td><input className="form-input" value={p.edited.expediteur} onChange={(e) => updateField(i, 'expediteur', e.target.value)} /></td>
+                        <td><input className="form-input" value={p.edited.dateEmission} onChange={(e) => updateField(i, 'dateEmission', e.target.value)} placeholder="jj/mm/aaaa" /></td>
+                        <td><select className="form-input" value={p.edited.priorite} onChange={(e) => updateField(i, 'priorite', e.target.value)}>
+                          {Object.entries(PRIORITY_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                        </select></td>
+                        <td><input className="form-input" value={p.edited.reference} onChange={(e) => updateField(i, 'reference', e.target.value)} /></td>
+                        <td><select className="form-input" value={p.edited.categorie} onChange={(e) => updateField(i, 'categorie', e.target.value)}>
+                          {Object.entries(CATEGORY_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                        </select></td>
+                      </tr>
+                    ))}
+                    {pendingFiles.length === 0 && <tr><td colSpan={7} className="empty-cell">Aucun fichier.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+              {pendingFiles.some((p) => p.usedOcr) && <p className="muted small" style={{ marginTop: 8 }}>Certains fichiers ont été lus par OCR (scan sans couche texte) — vérifiez particulièrement les noms et dates.</p>}
+            </div>
+            <div className="modal-foot">
+              <button className="btn btn-secondary" onClick={() => { setReviewOpen(false); setPendingFiles([]); }}>Annuler</button>
+              <button className="btn btn-primary" onClick={confirmImport} disabled={busy}>{busy ? 'Import…' : 'Importer tout'}</button>
             </div>
           </section>
         </div>

@@ -83,7 +83,7 @@ export const api = {
   // Files go straight from the browser to storage (signed upload URL), then a
   // small "complete" call records them. Falls back to the in-request upload
   // when direct storage is unavailable (local development).
-  uploadCourrierFile: async (file, sujet = '') => {
+  uploadCourrierFile: async (file, sujet = '', details = {}) => {
     const toBase64 = () => new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(String(r.result).split(',')[1] || ''); r.onerror = reject; r.readAsDataURL(file); });
     try {
       const safeName = file.name.replace(/[^\w.\-\u00C0-\u017F]/g, '_');
@@ -93,7 +93,7 @@ export const api = {
         headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {},
         multipart: file.size > 5 * 1024 * 1024,
       });
-      return await req('/api/courriers/complete', { method: 'POST', body: { filename: file.name, pathname: blob.pathname, sujet } });
+      return await req('/api/courriers/complete', { method: 'POST', body: { filename: file.name, pathname: blob.pathname, sujet, ...details } });
     } catch (error) {
       if (file.size <= 9 * 1024 * 1024) return api.uploadCourrier(file.name, await toBase64(), sujet);
       throw error;

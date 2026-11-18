@@ -1313,8 +1313,14 @@ async function route(req, res) {
     try { body = await readBody(req, 14); } catch (e) { return send(res, 413, { error: 'Fichier trop volumineux (max ~10 Mo)' }); }
     const filename = sanitizeFilename(body.filename);
     // Subject read from the PDF in the browser; becomes the letter's title
-    // when this scan is validated.
+    // when this scan is validated. OCR may also read expediteur, date,
+    // priorite, reference, categorie — all stored on the courrier.
     const sujet = clip(String(body.sujet || '').trim(), 160);
+    const expediteur = clip(String(body.expediteur || '').trim(), 120);
+    const dateEmission = clip(String(body.dateEmission || '').trim(), 40);
+    const priorite = ['normale', 'urgente', 'confidentielle'].includes(body.priorite) ? body.priorite : 'normale';
+    const reference = clip(String(body.reference || '').trim(), 40);
+    const categorie = ['administration', 'juridique', 'finances', 'rh', 'communication', 'securite'].includes(body.categorie) ? body.categorie : 'administration';
     if (!/^[A-Za-z0-9+/=\s]+$/.test(String(body.dataBase64 || ''))) return send(res, 400, { error: 'Données base64 invalides' });
     const buf = Buffer.from(String(body.dataBase64), 'base64');
     if (!buf.length) return send(res, 400, { error: 'Fichier vide' });
@@ -1324,7 +1330,7 @@ async function route(req, res) {
     if (process.env.VERCEL) {
       const { put } = await import('@vercel/blob');
       const blob = await put(storedAs, buf, { access: 'private', contentType: filename.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream', addRandomSuffix: true });
-      const courrier = { id: 'cr' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), nom: filename, sujet, taille: buf.length, storedAs: blob.pathname, uploadedBy: user.id, uploadedByName: user.name, uploadedAt, status: 'a_valider', note: '', rejectionReason: '', validatedBy: null, validatedAt: null, letterId: null };
+      const courrier = { id: 'cr' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), nom: filename, sujet, expediteur, dateEmission, priorite, reference, categorie, taille: buf.length, storedAs: blob.pathname, uploadedBy: user.id, uploadedByName: user.name, uploadedAt, status: 'a_valider', note: '', rejectionReason: '', validatedBy: null, validatedAt: null, letterId: null };
       db.courriers.push(courrier);
       logActivity(db, user, 'courrier.upload', filename, { courrierId: courrier.id });
       await saveDB(db);
@@ -1332,7 +1338,7 @@ async function route(req, res) {
     }
     fs.mkdirSync(UPLOAD_DIR, { recursive: true });
     fs.writeFileSync(path.join(UPLOAD_DIR, storedAs), buf);
-    const courrier = { id: 'cr' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), nom: filename, sujet, taille: buf.length, storedAs, uploadedBy: user.id, uploadedByName: user.name, uploadedAt, status: 'a_valider', note: '', rejectionReason: '', validatedBy: null, validatedAt: null, letterId: null };
+    const courrier = { id: 'cr' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), nom: filename, sujet, expediteur, dateEmission, priorite, reference, categorie, taille: buf.length, storedAs, uploadedBy: user.id, uploadedByName: user.name, uploadedAt, status: 'a_valider', note: '', rejectionReason: '', validatedBy: null, validatedAt: null, letterId: null };
     db.courriers.push(courrier);
     logActivity(db, user, 'courrier.upload', filename, { courrierId: courrier.id });
     await saveDB(db);
@@ -1356,14 +1362,24 @@ async function route(req, res) {
       const db = getDB();
       // Subject read from the PDF in the browser.
       const sujet = clip(String(body.sujet || '').trim(), 160);
+      const expediteur = clip(String(body.expediteur || '').trim(), 120);
+      const dateEmission = clip(String(body.dateEmission || '').trim(), 40);
+      const priorite = ['normale', 'urgente', 'confidentielle'].includes(body.priorite) ? body.priorite : 'normale';
+      const reference = clip(String(body.reference || '').trim(), 40);
+      const categorie = ['administration', 'juridique', 'finances', 'rh', 'communication', 'securite'].includes(body.categorie) ? body.categorie : 'administration';
       let courrier = db.courriers.find((c) => c.storedAs === pathnameForBlob);
       if (!courrier) {
-        courrier = { id: 'cr' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), nom: filename, sujet, taille: blob.size, storedAs: pathnameForBlob, uploadedBy: user.id, uploadedByName: user.name, uploadedAt: new Date().toISOString(), status: 'a_valider', note: '', rejectionReason: '', validatedBy: null, validatedAt: null, letterId: null };
+        courrier = { id: 'cr' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), nom: filename, sujet, expediteur, dateEmission, priorite, reference, categorie, taille: blob.size, storedAs: pathnameForBlob, uploadedBy: user.id, uploadedByName: user.name, uploadedAt: new Date().toISOString(), status: 'a_valider', note: '', rejectionReason: '', validatedBy: null, validatedAt: null, letterId: null };
         db.courriers.push(courrier);
         logActivity(db, user, 'courrier.upload', filename, { courrierId: courrier.id });
         await saveDB(db);
       } else if (sujet && !courrier.sujet) {
         courrier.sujet = sujet;
+        if (expediteur && !courrier.expediteur) courrier.expediteur = expediteur;
+        if (dateEmission && !courrier.dateEmission) courrier.dateEmission = dateEmission;
+        if (body.priorite && !courrier.priorite) courrier.priorite = priorite;
+        if (reference && !courrier.reference) courrier.reference = reference;
+        if (body.categorie && !courrier.categorie) courrier.categorie = categorie;
         await saveDB(db);
       }
       return send(res, 201, { item: courrier });
@@ -1440,24 +1456,26 @@ async function route(req, res) {
       // Step 2 (final validation → letter) always belongs to the supervisor or admin.
       if (user.role !== 'admin' && user.role !== 'supervisor') return send(res, 403, { error: 'Seul le superviseur ou l’administrateur peut faire la validation finale' });
       // auto-create a letter (status recu) with the PDF attached; the title is
-      // the subject read from the PDF when available, else the file name
+      // the subject read from the PDF when available, else the file name.
+      // OCR-extracted fields (expediteur, date, priorite, categorie, reference)
+      // pre-fill the letter so the bureau only has to correct, not retype.
       const letter = {
         id: 'l' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
         ref: nextRef(db),
-        numeroLettre: courrier.nom,
+        numeroLettre: courrier.reference || courrier.nom,
         direction: 'entrant',
         type: 'courrier',
-        categorie: 'administration',
+        categorie: courrier.categorie || 'administration',
         objet: clip(courrier.sujet || courrier.nom.replace(/\.pdf$/i, ''), 200),
         personneConcernee: '',
-        resume: clip(body.note, 5000),
-        priorite: 'normale',
+        resume: clip((courrier.reference ? 'Réf. ' + courrier.reference + '. ' : '') + (body.note || ''), 5000),
+        priorite: courrier.priorite || 'normale',
         statut: 'recu',
         commission: null,
         commissionHisto: [],
-        expediteur: { nom: courrier.uploadedByName || '', fonction: '', service: '' },
+        expediteur: { nom: courrier.expediteur || courrier.uploadedByName || '', fonction: '', service: '' },
         destinataire: { nom: 'Bureau ordre', fonction: '', service: '' },
-        dateEmission: courrier.uploadedAt,
+        dateEmission: courrier.dateEmission || courrier.uploadedAt,
         dateReception: new Date().toISOString(),
         pieces: [{ id: 'p' + Date.now().toString(36), nom: courrier.nom, taille: courrier.taille, storedAs: courrier.storedAs, uploadedAt: courrier.uploadedAt }],
         createdAt: new Date().toISOString(),
