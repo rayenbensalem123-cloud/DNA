@@ -949,6 +949,31 @@ async function route(req, res) {
       return send(res, 200, { item: letterView(user, updated) });
     }
 
+    // Renommer une pièce jointe : PATCH /api/letters/:id/pieces/:pieceId  { action: 'rename', name: 'nouveau nom' }
+    const pieceMatch = /^\/api\/letters\/([A-Za-z0-9_-]+)\/pieces\/([A-Za-z0-9_-]+)$/.exec(pathname);
+    if (pieceMatch && method === 'PATCH') {
+      const user = requireAuth(req, res);
+      if (!user) return;
+      const db = getDB();
+      const letter = db.letters.find((l) => l.id === pieceMatch[1]);
+      if (!letter) return send(res, 404, { error: 'Lettre introuvable' });
+      if (!canSeeLetter(user, letter)) return send(res, 404, { error: 'Lettre introuvable' });
+      const mayEdit = isBureauLike(user) || (can(user, 'edit') && !isReadOnly(user) && (can(user, 'view_all') || holdsLetter(user, letter)));
+      if (!mayEdit) return send(res, 403, { error: 'Droits insuffisants' });
+      const body = await readBody(req);
+      const action = String(body.action || '');
+      if (action !== 'rename') return send(res, 400, { error: 'Action invalide' });
+      const newName = clip(String(body.name || '').trim(), 120);
+      if (!newName) return send(res, 400, { error: 'Nom requis' });
+      const piece = (letter.pieces || []).find((p) => p.id === pieceMatch[2]);
+      if (!piece) return send(res, 404, { error: 'Pièce introuvable' });
+      piece.nom = newName;
+      letter.updatedAt = new Date().toISOString();
+      logActivity(db, user, 'piece.rename', letter.ref, { letterId: letter.id, pieceId: piece.id, newName });
+      await saveDB(db);
+      return send(res, 200, { item: letterView(user, letter) });
+    }
+
     if (method === 'DELETE') {
       const user = requireAuth(req, res);
       if (!user) return;

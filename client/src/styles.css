@@ -827,6 +827,8 @@ input[type='date']:hover, input[type='datetime-local']:hover, input[type='time']
 :root[data-theme='light'] .badge.priorite-urgente { background: #ffe1e5; color: #a90018; }
 :root[data-theme='light'] .badge.priorite-confidentielle { background: #fff1d8; color: #93600d; }
 .badge-overdue { background: #7f1d1d; color: #fecaca; animation: pulse 2s ease-in-out infinite; }
+.piece-thumb { width: 64px; height: 64px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border); cursor: pointer; background: #fff; }
+.piece-thumb:hover { border-color: var(--primary); }
 :root[data-theme='light'] input,
 :root[data-theme='light'] select,
 :root[data-theme='light'] textarea { border-color: #d9cdd0; background: #fff; color: #281f22; }

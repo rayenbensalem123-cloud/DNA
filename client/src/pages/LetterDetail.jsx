@@ -38,6 +38,9 @@ export default function LetterDetail() {
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
   const [notice, setNotice] = useState('');
+  const [previewPiece, setPreviewPiece] = useState(null);
+  const [renamePieceId, setRenamePieceId] = useState(null);
+  const [renameValue, setRenameValue] = useState('');
   const pendingTransfer = letter?.pendingTransfer || null;
 
   const timeline = (() => {
@@ -192,8 +195,29 @@ export default function LetterDetail() {
 
   const openPiece = async (pieceId, nom = '') => {
     setError('');
+    const piece = (letter.pieces || []).find((p) => p.id === pieceId);
+    if (piece && /\.(jpe?g|png)$/i.test(piece.nom)) {
+      try {
+        const d = await api.fileLink('piece', letter.id + '/' + pieceId);
+        setPreviewPiece({ id: pieceId, nom: piece.nom, url: d.url, type: piece.nom.split('.').pop() });
+      } catch (e) { setError(e.message || 'Erreur'); }
+      return;
+    }
     try { await api.openPiece(letter.id, pieceId, nom); }
     catch (e) { setError(e.message || 'Erreur'); }
+  };
+
+  const doRenamePiece = async () => {
+    if (!renamePieceId || !renameValue.trim()) return;
+    setBusy(true);
+    setError('');
+    try {
+      await api.renamePiece(letter.id, renamePieceId, renameValue.trim());
+      setRenamePieceId(null);
+      setRenameValue('');
+      setNotice('Pièce renommée.');
+    } catch (e) { setError(e.message); }
+    finally { setBusy(false); }
   };
 
   if (loading) return <div className="page"><div className="card">{t('common.loading')}</div></div>;
@@ -268,14 +292,31 @@ export default function LetterDetail() {
         {info('detail.pieces',
           (letter.pieces || []).length === 0 ? '—' : (
             <div className="file-list">
-              {letter.pieces.map((p) => (
-                <div key={p.id} className="file-row">
-                  {p.hasFile
-                    ? <button type="button" className="btn-link" onClick={() => openPiece(p.id, p.nom)} onMouseEnter={() => api.warmFile('piece', `${letter.id}/${p.id}`)} onTouchStart={() => api.warmFile('piece', `${letter.id}/${p.id}`)}>{p.nom}</button>
-                    : <span>{p.nom}</span>}
-                  <span className="muted">{p.taille ? fmtSize(p.taille) : ''}{p.hasFile ? '' : ' (' + t('detail.demoFile') + ')'}</span>
-                </div>
-              ))}
+              {letter.pieces.map((p) => {
+                const isImage = /\.(jpe?g|png)$/i.test(p.nom);
+                const isRenaming = renamePieceId === p.id;
+                return (
+                  <div key={p.id} className="file-row">
+                    {isImage && p.hasFile ? (
+                      <img src={api.fileLink('piece', letter.id + '/' + p.id)} alt={p.nom} className="piece-thumb" onClick={() => openPiece(p.id, p.nom)} />
+                    ) : p.hasFile ? (
+                      <button type="button" className="btn-link" onClick={() => openPiece(p.id, p.nom)} onMouseEnter={() => api.warmFile('piece', `${letter.id}/${p.id}`)} onTouchStart={() => api.warmFile('piece', `${letter.id}/${p.id}`)}>{p.nom}</button>
+                    ) : (
+                      <span>{p.nom}</span>
+                    )}
+                    {isRenaming ? (
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginLeft: 8 }}>
+                        <input className="form-input" value={renameValue} onChange={(e) => setRenameValue(e.target.value)} autoFocus />
+                        <button type="button" className="btn btn-primary btn-sm" onClick={doRenamePiece} disabled={busy}>OK</button>
+                        <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setRenamePieceId(null); setRenameValue(''); }}>Annuler</button>
+                      </div>
+                    ) : (
+                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setRenamePieceId(p.id); setRenameValue(p.nom || ''); }} title="Renommer">✎</button>
+                    )}
+                    <span className="muted">{p.taille ? fmtSize(p.taille) : ''}{p.hasFile ? '' : ' (' + t('detail.demoFile') + ')'}</span>
+                  </div>
+                );
+              })}
             </div>
           )
         )}
@@ -348,6 +389,22 @@ export default function LetterDetail() {
           <LetterForm initialLetter={letter} onSubmit={saveEdits} onCancel={() => setEditing(false)} busy={busy} error={error} />
         </section>
       </div>}
+      {previewPiece && (
+        <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setPreviewPiece(null); }}>
+          <section className="modal" style={{ width: 'min(700px, 90vw)', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }} role="dialog" aria-modal="true">
+            <header className="modal-head">
+              <h2 id="preview-title">Aperçu — {previewPiece.nom}</h2>
+              <button type="button" className="modal-close" onClick={() => setPreviewPiece(null)} aria-label="Fermer">×</button>
+            </header>
+            <div style={{ padding: 18, overflow: 'auto', display: 'flex', justifyContent: 'center', alignItems: 'center', flex: 1 }}>
+              <img src={previewPiece.url} alt={previewPiece.nom} style={{ maxWidth: '100%', maxHeight: '70vh', borderRadius: 8, border: '1px solid var(--border)' }} />
+            </div>
+            <div className="modal-foot" style={{ padding: '10px 18px' }}>
+              <button type="button" className="btn btn-secondary" onClick={() => setPreviewPiece(null)}>Fermer</button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }

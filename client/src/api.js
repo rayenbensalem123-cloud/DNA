@@ -62,6 +62,8 @@ export const api = {
     return blob;
   },
   deletePiece: (letterId, pieceId) => req(`/api/letters/${letterId}/pieces/${pieceId}`, { method: 'DELETE' }),
+  renamePiece: (letterId, pieceId, name) => req(`/api/letters/${letterId}/pieces/${pieceId}`, { method: 'PATCH', body: { action: 'rename', name } }),
+  fileLink: (kind, id) => req(`/api/file-link?kind=${encodeURIComponent(kind)}&id=${encodeURIComponent(id)}`),
   createLetterWithFiles: async (data, files = []) => {
     const d = await req('/api/letters', { method: 'POST', body: data });
     for (const f of files) await api.uploadPieceDirect(d.item.id, f);
