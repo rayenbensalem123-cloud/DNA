@@ -24,6 +24,8 @@ export default function Archive() {
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({ q: '', direction: '', statut: '', priorite: '', bucket: '', from: '', to: '', expediteur: '', commission: '' });
   const [transferQueue, setTransferQueue] = useState([]);
+  const [notice, setNotice] = useState('');
+  const [error, setError] = useState('');
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -36,6 +38,83 @@ export default function Archive() {
   // Transfer requests waiting for bureau approval (admin/supervisor only).
   const loadTransferQueue = () => { if (canSeeTracking) api.transferRequests().then((d) => setTransferQueue(d.items || [])).catch(() => {}); };
   useEffect(loadTransferQueue, []);
+
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [batchOpen, setBatchOpen] = useState(false);
+  const [batchAction, setBatchAction] = useState('');
+  const [batchCommittee, setBatchCommittee] = useState('');
+
+  const toggleSelect = (id, checked) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id); else next.delete(id);
+      return next;
+    });
+  };
+  const toggleSelectAll = (checked) => {
+    setSelectedIds(checked ? new Set(items.map((l) => l.id)) : new Set());
+  };
+  const isSelected = (id) => selectedIds.has(id);
+  const hasSelection = selectedIds.size > 0;
+  const selectedItems = items.filter((l) => selectedIds.has(l.id));
+
+  const executeBatchAction = async (action) => {
+    try {
+      if (action === 'archive') {
+        for (const l of selectedItems) {
+          if (l.statut === 'archive') continue;
+          await api.updateLetter(l.id, { statut: 'archive' });
+        }
+        setNotice(selectedItems.length + ' courrier' + (selectedItems.length > 1 ? 's' : '') + ' archivé' + (selectedItems.length > 1 ? 's' : ''));
+      } else if (action === 'committee') {
+        if (!batchCommittee) { setError('Sélectionnez un comité de destination'); return; }
+        for (const l of selectedItems) {
+          await api.updateLetter(l.id, { commission: batchCommittee });
+        }
+        setNotice(selectedItems.length + ' courrier' + (selectedItems.length > 1 ? 's' : '') + ' transféré' + (selectedItems.length > 1 ? 's' : '') + ' vers ' + committees.find((c) => c.id === batchCommittee)?.nom);
+      } else if (action === 'delete') {
+        for (const l of selectedItems) {
+          await api.deleteLetter(l.id);
+        }
+        setNotice(selectedItems.length + ' courrier' + (selectedItems.length > 1 ? 's' : '') + ' supprimé' + (selectedItems.length > 1 ? 's' : ''));
+      } else if (action === 'export-csv' || action === 'export-xlsx' || action === 'export-pdf') {
+        const rows = selectedItems.map((l) => {
+          const row = {
+            numeroLettre: l.numeroLettre || l.ref || '',
+            objet: l.objet || '',
+            direction: l.direction === 'sortant' ? 'Sortant' : 'Entrant',
+            statut: t('status.' + (l.statut || 'recu')),
+            priorite: l.priorite === 'urgente' ? 'Urgente' : l.priorite === 'confidentielle' ? 'Confidentielle' : 'Normale',
+            expediteur: l.expediteur?.nom || '',
+            date: fmtDate(l.dateReception || l.dateEmission),
+          };
+          if (!committeeId) row.commission = committees.find((c) => c.id === l.commission)?.nom || 'Sans comité';
+          return row;
+        });
+        const headers = [
+          { key: 'numeroLettre', label: 'N° courrier' },
+          { key: 'objet', label: 'Objet' },
+          { key: 'direction', label: 'Direction' },
+          { key: 'statut', label: 'Statut' },
+          { key: 'priorite', label: 'Priorité' },
+          { key: 'expediteur', label: 'Expéditeur' },
+          { key: 'date', label: 'Date' },
+        ];
+        if (!committeeId) headers.splice(2, 0, { key: 'commission', label: 'Comit\u00e9' });
+        const name = 'archive-selection';
+        if (action === 'export-csv') downloadCsv(name, headers, rows);
+        else if (action === 'export-xlsx') await downloadXlsx(name, headers, rows);
+        else printPdf({ title: 'Archive — Sélection', subtitle: selectedItems.length + ' courrier' + (selectedItems.length > 1 ? 's' : ''), headers, rows, meta: { by: user?.name } });
+      }
+      setSelectedIds(new Set());
+      setBatchOpen(false);
+      setBatchAction('');
+      setBatchCommittee('');
+      await load();
+    } catch (e) {
+      setError(e.message);
+    }
+  };
 
   const decideTransfer = async (letterId, action) => {
     try {
@@ -125,6 +204,8 @@ export default function Archive() {
 
   return (
     <div className="page">
+      {notice && <div className="account-notice" role="status">{notice}</div>}
+      {error && <div className="form-error" role="alert">{error}</div>}
       <div className="page-header">
         <div className="page-title-copy">
           <span className="page-title-kicker">{selectedCommittee ? 'Archive · Comité' : hasFilters ? 'Archive · Résultats' : 'Registre officiel'}</span>
@@ -193,14 +274,28 @@ export default function Archive() {
         <div className="card archive-list-card">
           <div className="archive-list-heading">
             <h2 className="card-title">{selectedCommittee ? `Courriers — ${selectedCommittee.nom}` : listTitle}</h2>
-            <div className="archive-heading-right">
-              <span className="muted">{total} au total</span>
-              <div className="export-group" role="group" aria-label="Exporter">
-                <button type="button" className="btn btn-secondary btn-sm" onClick={() => doExport('csv')} title="Exporter en CSV (Excel)">CSV</button>
-                <button type="button" className="btn btn-secondary btn-sm" onClick={() => doExport('xlsx')} title="Exporter en Excel (.xlsx)">Excel</button>
-                <button type="button" className="btn btn-secondary btn-sm" onClick={() => doExport('pdf')} title="Imprimer / PDF">PDF</button>
+            {hasSelection && (
+              <div className="batch-bar">
+                <span className="muted">{selectedIds.size} courrier{selectedIds.size > 1 ? 's' : ''} sélectionné{selectedIds.size > 1 ? 's' : ''}</span>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => toggleSelectAll(false)}>Tout désélectionner</button>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setBatchAction('archive'); setBatchOpen(true); }}>Archiver la sélection</button>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setBatchAction('committee'); setBatchOpen(true); }}>Changer de comité</button>
+                <button type="button" className="btn btn-danger btn-sm" onClick={() => { setBatchAction('delete'); setBatchOpen(true); }}>Supprimer la sélection</button>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setBatchAction('export-csv'); setBatchOpen(true); }}>Exporter CSV</button>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setBatchAction('export-xlsx'); setBatchOpen(true); }}>Exporter Excel</button>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setBatchAction('export-pdf'); setBatchOpen(true); }}>Exporter PDF</button>
               </div>
-            </div>
+            )}
+            {!hasSelection && (
+              <div className="archive-heading-right">
+                <span className="muted">{total} au total</span>
+                <div className="export-group" role="group" aria-label="Exporter">
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => doExport('csv')} title="Exporter en CSV (Excel)">CSV</button>
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => doExport('xlsx')} title="Exporter en Excel (.xlsx)">Excel</button>
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => doExport('pdf')} title="Imprimer / PDF">PDF</button>
+                </div>
+              </div>
+            )}
           </div>
           <div className="filters">
             <input aria-label="Rechercher dans l’archive" placeholder={t('letters.searchPlaceholder')} value={filters.q} onChange={(event) => set('q', event.target.value)} />
@@ -218,9 +313,10 @@ export default function Archive() {
           </div>}
           {loading ? <div className="card-pad">{t('common.loading')}</div> : (
             <div className="table-wrap"><table className="table archive-table">
-              <thead><tr><th>{t('letters.numero')}</th><th>{t('letters.objet')}</th>{!committeeId && <th>Comité</th>}{canSeeTracking && <th>Vu</th>}<th>{t('letters.direction')}</th><th>{t('letters.statut')}</th><th>{t('letters.priorite')}</th><th>{t('letters.date')}</th></tr></thead>
+              <thead><tr><th style={{ width: '44px' }}><input type="checkbox" checked={items.length > 0 && selectedIds.size === items.length} onChange={(e) => toggleSelectAll(e.target.checked)} /></th><th>{t('letters.numero')}</th><th>{t('letters.objet')}</th>{!committeeId && <th>Comité</th>}{canSeeTracking && <th>Vu</th>}<th>{t('letters.direction')}</th><th>{t('letters.statut')}</th><th>{t('letters.priorite')}</th><th>{t('letters.date')}</th></tr></thead>
               <tbody>{items.map((letter) => (
-                <tr key={letter.id} className={'row-link' + (letter.unread ? ' row-unread' : '')} onClick={() => navigate('/lettres/' + letter.id)}>
+                <tr key={letter.id} className={'row-link' + (letter.unread ? ' row-unread' : '') + (isSelected(letter.id) ? ' row-selected' : '')} onClick={() => { if (isSelected(letter.id)) toggleSelect(letter.id, false); else navigate('/lettres/' + letter.id); }}>
+                  <td style={{ width: '44px' }}><input type="checkbox" checked={isSelected(letter.id)} onChange={(e) => toggleSelect(letter.id, e.target.checked)} /></td>
                   <td className="mono">{letter.numeroLettre || '—'}</td>
                   <td><div className="letter-subject">{letter.unread && <span className="badge-new">Nouveau</span>}{letter.objet}</div>{letter.personneConcernee && <div className="letter-subline">{letter.personneConcernee}</div>}</td>
                   {!committeeId && <td><span className="committee-pill">{committees.find((committee) => committee.id === letter.commission)?.nom || 'Sans comité'}</span></td>}
@@ -230,9 +326,31 @@ export default function Archive() {
                   <td><span className={'priority-pill priority-' + (letter.priorite || 'normale')}>{t('priorite.' + (letter.priorite || 'normale'))}</span></td>
                   <td className="date-cell">{fmtDate(letter.dateReception || letter.dateEmission)}</td>
                 </tr>
-              ))}{items.length === 0 && <tr><td colSpan={7 + (canSeeTracking ? 1 : 0)} className="empty-cell">{t('letters.empty')}</td></tr>}</tbody>
+              ))}{items.length === 0 && <tr><td colSpan={8 + (canSeeTracking ? 1 : 0)} className="empty-cell">{t('letters.empty')}</td></tr>}</tbody>
             </table></div>
           )}
+        </div>
+      )}
+      {batchOpen && (
+        <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) { setBatchOpen(false); setBatchCommittee(''); } }}>
+          <section className="modal" role="dialog" aria-modal="true">
+            <header className="modal-head"><h2>Confirmer l'action en lot</h2><button type="button" className="modal-close" onClick={() => { setBatchOpen(false); setBatchCommittee(''); }}>x</button></header>
+            <div className="modal-body">
+              <p className="muted">{selectedIds.size} courrier{selectedIds.size > 1 ? 's' : ''} sélectionné{selectedIds.size > 1 ? 's' : ''}. Choisissez l'action :</p>
+              {batchAction === 'committee' && (
+                <label className="field">Comité de destination
+                  <Select ariaLabel="Comité" value={batchCommittee} onChange={(v) => setBatchCommittee(v)} options={[{ value: '', label: '— choisir un comité —' }, ...committees.map((c) => ({ value: c.id, label: c.nom }))]} />
+                </label>
+              )}
+              {batchAction === 'archive' && <p className="muted">Les courriers sélectionnés passeront en statut archivé.</p>}
+              {batchAction === 'delete' && <p className="muted" style={{ color: '#ff7886' }}>Les courriers sélectionnés seront définitivement supprimés.</p>}
+              {['export-csv', 'export-xlsx', 'export-pdf'].includes(batchAction) && <p className="muted">Seuls les courriers sélectionnés seront exportés.</p>}
+            </div>
+            <div className="modal-foot">
+              <button className="btn btn-secondary" onClick={() => { setBatchOpen(false); setBatchCommittee(''); }}>Annuler</button>
+              <button className="btn btn-primary" onClick={() => executeBatchAction(batchAction)} disabled={batchAction === 'committee' && !batchCommittee}>{batchAction === 'delete' ? 'Supprimer' : batchAction === 'archive' ? 'Archiver' : batchAction === 'committee' ? 'Transférer' : 'Exporter'}</button>
+            </div>
+          </section>
         </div>
       )}
     </div>
