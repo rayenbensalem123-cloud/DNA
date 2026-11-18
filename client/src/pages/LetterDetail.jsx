@@ -41,21 +41,40 @@ export default function LetterDetail() {
   const pendingTransfer = letter?.pendingTransfer || null;
 
   const timeline = (() => {
-    if (!letter) return [];
+    if (!letter) return { rows: [], chain: [], transfers: 0 };
     const nm = (cid) => committees.find((c) => c.id === cid)?.nom || cid || '—';
     const rows = [{ key: 'created', kind: 'assigne', date: letter.createdAt, label: <>Courrier enregistré</>, by: letter.createdByName || '' }];
     (letter.commissionHisto || []).forEach((h) => {
       let label;
       if (h.type === 'assigne') label = <>Envoyé au comité <strong>{nm(h.committee)}</strong></>;
-      else if (h.type === 'transfert') label = <>Transféré <strong>{nm(h.fromCommittee)} → {nm(h.committee)}</strong></>;
+      else if (h.type === 'transfert') label = <>Transféré <strong>{nm(h.fromCommittee)} → {nm(h.committee)}</strong>{h.byName ? <> · demandé par {h.byName}</> : null}{h.approvedByName ? <> · approuvé par {h.approvedByName}</> : null}</>;
       else if (h.type === 'retire') label = <>Retiré du comité <strong>{nm(h.fromCommittee)}</strong></>;
       else if (h.type === 'vu_comite' || h.type === 'recu_comite') label = <>Ouvert par le comité <strong>{nm(h.committee)}</strong></>;
       else if (h.type === 'traite_comite') label = <>Terminé et archivé par <strong>{nm(h.committee)}</strong></>;
       else label = <>Note ({nm(h.committee)})</>;
       rows.push({ key: h.id, kind: h.type, date: h.date, label, note: h.note, by: h.byName });
     });
+    // A transfer requested by a comité and not yet approved shows live.
+    if (letter.pendingTransfer) {
+      rows.push({
+        key: 'pending', kind: 'pending', date: letter.pendingTransfer.requestedAt,
+        label: <>Transfert vers <strong>{nm(letter.pendingTransfer.to)}</strong> demandé par <strong>{letter.pendingTransfer.requestedByName}</strong> — <em>en attente d’approbation du bureau d’ordre</em></>,
+        note: letter.pendingTransfer.note, by: '',
+      });
+    }
     (letter.pieces || []).forEach((p) => { if (p.uploadedAt) rows.push({ key: 'p' + p.id, kind: 'note', date: p.uploadedAt, label: <>Fichier ajouté : <strong>{p.nom}</strong></> }); });
-    return rows.sort((x, y) => (x.date || '') < (y.date || '') ? -1 : 1);
+    // The route: every committee the letter passed through, in order.
+    const chain = (() => {
+      const steps = [];
+      for (const h of letter.commissionHisto || []) {
+        if (h.type === 'retire') steps.pop();
+        else if ((h.type === 'assigne' || h.type === 'transfert') && h.committee) steps.push(h.committee);
+      }
+      if (letter.commission && steps[steps.length - 1] !== letter.commission) steps.push(letter.commission);
+      return steps.filter((s, i) => i === 0 || s !== steps[i - 1]).map(nm);
+    })();
+    const transfers = (letter.commissionHisto || []).filter((h) => h.type === 'transfert').length;
+    return { rows: rows.sort((x, y) => (x.date || '') < (y.date || '') ? -1 : 1), chain, transfers };
   })();
 
   const committeeName = (cid) => (committees.find((c) => c.id === cid)?.nom) || cid || '—';
@@ -260,14 +279,25 @@ export default function LetterDetail() {
       </div>
 
       {canSeeHistory && <div className="card">
-        <h2 className="card-title">Suivi du courrier</h2>
+        <h2 className="card-title">Suivi du courrier {timeline.transfers > 0 && <span className="badge badge-transfert" style={{ marginLeft: 8, verticalAlign: 'middle' }}>{timeline.transfers} transfert{timeline.transfers > 1 ? 's' : ''}</span>}</h2>
+        {timeline.chain.length > 1 && (
+          <div className="histo-chain" title="Comités par lesquels ce courrier est passé">
+            <span className="chain-label">Parcours</span>
+            {timeline.chain.map((c, i) => (
+              <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                {i > 0 && <span className="chain-arrow">→</span>}
+                <span className={'chain-chip' + (i === timeline.chain.length - 1 ? ' chain-now' : '')}>{c}</span>
+              </span>
+            ))}
+          </div>
+        )}
         <div className="histo timeline">
-          {timeline.map((h) => (
+          {timeline.rows.map((h) => (
             <div key={h.key} className="histo-item">
               <span className={'histo-dot dot-' + h.kind} />
               <div>
                 <div>{h.label}</div>
-                {h.note && <div className="muted">{h.note}</div>}
+                {h.note && <div className="muted">Note : {h.note}</div>}
                 <div className="muted small">{fmtDateTime(h.date)}{h.by ? ' — ' + h.by : ''}</div>
               </div>
             </div>

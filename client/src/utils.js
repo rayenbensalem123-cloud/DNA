@@ -37,3 +37,17 @@ export function toInputDate(iso) {
   return `${d.getFullYear()}-${mm}-${dd}`;
 }
 
+// The committee route of a letter: the name of every committee it passed
+// through, in order ("Comité A → Comité B"). Needs the tracking data, which
+// only the bureau d'ordre (or "tracking" permission) receives.
+export function transferChain(letter, nameOf = (id) => id) {
+  if (!letter || !Array.isArray(letter.commissionHisto)) return '';
+  const steps = [];
+  for (const h of letter.commissionHisto) {
+    if (h.type === 'retire') steps.pop();
+    else if ((h.type === 'assigne' || h.type === 'transfert') && h.committee) steps.push(h.committee);
+  }
+  if (letter.commission && steps[steps.length - 1] !== letter.commission) steps.push(letter.commission);
+  return steps.filter((s, i) => i === 0 || s !== steps[i - 1]).map(nameOf).join(' → ');
+}
+
