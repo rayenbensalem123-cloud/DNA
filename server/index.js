@@ -370,6 +370,28 @@ function letterView(user, l) {
   };
 }
 
+// ---- Alerte retard automatique ----
+// Crée une notification "en retard" la première fois qu'un courrier
+// non archivé dépasse 15 jours. Une seule notification par courrier.
+function ensureOverdueNotification(db, letter, bureauUser) {
+  const already = (db.notifications || []).some((n) => n.type === 'courrier_retard' && n.courrierId === letter.id);
+  if (already) return;
+  const recipients = (db.users || []).filter((u) => isBureauLike(u));
+  for (const u of recipients) {
+    db.notifications.push({
+      id: 'n' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+      userId: u.id,
+      type: 'courrier_retard',
+      message: `Courrier "${letter.objet || letter.nom || letter.ref}" en retard (>15 j) — ref ${letter.ref}`,
+      courrierId: letter.id,
+      read: false,
+      createdAt: new Date().toISOString(),
+    });
+  }
+  logActivity(db, bureauUser, 'courrier.retard', letter.ref, { courrierId: letter.id });
+  if (db.notifications.length > 500) db.notifications = db.notifications.slice(-500);
+}
+
 process.on('uncaughtException', (e) => { console.error('uncaught', e); });
 process.on('unhandledRejection', (e) => { console.error('unhandledRejection', e); });
 
@@ -819,7 +841,19 @@ async function route(req, res) {
     const start = (page - 1) * limit;
     const pageItems = items.slice(start, start + limit);
 
-    return send(res, 200, { items: pageItems.map((l) => ({ ...letterView(user, l), unread: !isAdmin && l.commission === user.commission && isUnread(l) })), total, page, limit });
+    // Alerte retard: marquer les courriers non archivés de plus de 15 jours
+    // et créer une notification pour ceux qui viennent de basculer en retard.
+    const fifteenDaysAgo = Date.now() - 15 * 24 * 3600 * 1000;
+    const now = new Date().toISOString();
+    const viewed = pageItems.map((l) => {
+      const overdue = (l.statut || 'recu') !== 'archive' && new Date(l.dateEmission || l.createdAt).getTime() < fifteenDaysAgo;
+      const view = { ...letterView(user, l), unread: !isAdmin && l.commission === user.commission && isUnread(l), overdue };
+      if (overdue) ensureOverdueNotification(db, l, user);
+      return view;
+    });
+    // Persister les nouvelles notifications d'alerte retard
+    if (viewed.some((v) => v.overdue)) await saveDB(db);
+    return send(res, 200, { items: viewed, total, page, limit });
   }
 
   const lettersMatch = /^\/api\/letters\/([A-Za-z0-9_-]+)$/.exec(pathname);
