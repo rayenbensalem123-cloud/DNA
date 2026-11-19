@@ -920,7 +920,7 @@ input[type='date']:hover, input[type='datetime-local']:hover, input[type='time']
 .priority-urgente { background: #fff0f1; color: #b22035; }
 .priority-confidentielle { background: #f8f0df; color: #8b621f; }
 .priority-checkboxes { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; width: 100%; }
-.priority-checkbox { display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; white-space: nowrap; min-width: 90px; }
+.priority-checkbox { display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; white-space: nowrap; min-width: 100px; }
 .priority-checkbox input { width: 16px; height: 16px; accent-color: var(--primary); }
 .date-cell { color: #786a6e !important; font-size: 13px !important; white-space: nowrap; }
 .scan-table { min-width: 640px; border-collapse: separate; border-spacing: 0; }

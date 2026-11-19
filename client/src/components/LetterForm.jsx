@@ -232,7 +232,7 @@ export default function LetterForm({ onSubmit, onCancel, busy = false, error = '
           <label className="field"><span>Type</span>
             <Select ariaLabel="Type" value={form.type} onChange={(v) => set('type', v)} options={[{ value: 'courrier', label: 'Courrier' }, { value: 'officielle', label: 'Lettre officielle' }, { value: 'note', label: 'Note' }, { value: 'arrete', label: 'Arrêté' }, { value: 'decret', label: 'Décret' }, { value: 'mandat', label: 'Mandat' }, { value: 'autre', label: 'Autre' }]} />
           </label>
-          <label className="field"><span>Importance</span>
+          <label className="field full"><span>Importance</span>
             <div className="priority-checkboxes">
               <label className="priority-checkbox"><input type="checkbox" checked={Array.isArray(form.priorite) ? form.priorite.includes('normale') : form.priorite === 'normale'} onChange={() => togglePriority('normale')} /> Normale</label>
               <label className="priority-checkbox"><input type="checkbox" checked={Array.isArray(form.priorite) ? form.priorite.includes('urgente') : form.priorite === 'urgente'} onChange={() => togglePriority('urgente')} /> Urgente</label>
