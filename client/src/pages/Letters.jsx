@@ -4,6 +4,7 @@ import { api } from '../api';
 import { useAuth } from '../auth';
 import { useLanguage } from '../i18n';
 import { fmtDate } from '../utils';
+import PriorityPills from '../components/PriorityPills';
 
 export default function Letters() {
   const { t } = useLanguage();
@@ -97,7 +98,7 @@ export default function Letters() {
                     <td>{t('direction.' + (l.direction || 'entrant'))}</td>
                     <td>{committeeName(l.commission)}</td>
                     <td><span className={'badge statut-' + l.statut}>{t('status.' + (l.statut || 'recu'))}</span>{(l.commissionHisto || []).some((h) => h.type === 'transfert') && <span className="badge badge-transfert" style={{ marginLeft: 6 }}>{t('badge.transferred')}</span>}</td>
-                    <td>{t('priorite.' + (l.priorite || 'normale'))}</td>
+                    <td><PriorityPills value={l.priorite} /></td>
                     <td>{fmtDate(l.dateEmission)}</td>
                   </tr>
                 ))}

@@ -65,6 +65,17 @@ export default function LetterForm({ onSubmit, onCancel, busy = false, error = '
   const [form, setForm] = useState(() => initialForm(initialLetter, initialDirection));
   const set = (key, value) => setForm((current) => ({ ...current, [key]: value }));
 
+  const togglePriority = (p) => {
+    setForm((current) => {
+      const prios = Array.isArray(current.priorite) ? [...current.priorite] : current.priorite ? [current.priorite] : [];
+      const i = prios.indexOf(p);
+      if (i >= 0) prios.splice(i, 1);
+      else prios.push(p);
+      if (prios.length === 0) prios.push('normale'); // always keep at least one
+      return { ...current, priorite: prios };
+    });
+  };
+
   useEffect(() => {
     let cancelled = false;
     api.committees().then((data) => {
@@ -207,7 +218,11 @@ export default function LetterForm({ onSubmit, onCancel, busy = false, error = '
             <Select ariaLabel="Type" value={form.type} onChange={(v) => set('type', v)} options={[{ value: 'courrier', label: 'Courrier' }, { value: 'officielle', label: 'Lettre officielle' }, { value: 'note', label: 'Note' }, { value: 'arrete', label: 'Arrêté' }, { value: 'decret', label: 'Décret' }, { value: 'mandat', label: 'Mandat' }, { value: 'autre', label: 'Autre' }]} />
           </label>
           <label className="field"><span>Importance</span>
-            <Select ariaLabel="Importance" value={form.priorite} onChange={(v) => set('priorite', v)} options={[{ value: 'normale', label: 'Normale' }, { value: 'urgente', label: 'Urgente' }, { value: 'confidentielle', label: 'Confidentielle' }]} />
+            <div className="priority-checkboxes">
+              <label className="priority-checkbox"><input type="checkbox" checked={Array.isArray(form.priorite) ? form.priorite.includes('normale') : form.priorite === 'normale'} onChange={() => togglePriority('normale')} /> Normale</label>
+              <label className="priority-checkbox"><input type="checkbox" checked={Array.isArray(form.priorite) ? form.priorite.includes('urgente') : form.priorite === 'urgente'} onChange={() => togglePriority('urgente')} /> Urgente</label>
+              <label className="priority-checkbox"><input type="checkbox" checked={Array.isArray(form.priorite) ? form.priorite.includes('confidentielle') : form.priorite === 'confidentielle'} onChange={() => togglePriority('confidentielle')} /> Confidentielle</label>
+            </div>
           </label>
           <label className="field"><span>{isAdmin ? 'Comité destinataire' : (initialLetter ? 'Comité (changez-le pour transférer)' : 'Comité destinataire')}</span>
             <Select ariaLabel="Comité" value={form.commission} onChange={(v) => set('commission', v)} placeholder={isAdmin ? '— Aucun —' : '— Choisir un comité —'} options={[{ value: '', label: isAdmin ? '— Aucun —' : '— Choisir un comité —' }, ...committees.map((committee) => ({ value: committee.id, label: committee.nom }))]} />

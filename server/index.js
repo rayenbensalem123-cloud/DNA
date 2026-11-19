@@ -257,7 +257,15 @@ function denyReadOnly(user, res) {
 function isValidStatut(s) { return ['recu', 'en_cours', 'archive'].includes(s); }
 function isValidType(t) { return ['officielle', 'arrete', 'decret', 'note', 'courrier', 'mandat', 'autre'].includes(t); }
 function isValidCategorie(c) { return ['administration', 'juridique', 'finances', 'rh', 'communication', 'securite', 'autre'].includes(c); }
-function isValidPriorite(p) { return ['normale', 'urgente', 'confidentielle'].includes(p); }
+function isValidPriorite(p) {
+  const vals = Array.isArray(p) ? p : [p];
+  return vals.length > 0 && vals.every((x) => ['normale', 'urgente', 'confidentielle'].includes(x));
+}
+function prioriteToArray(p) {
+  if (Array.isArray(p)) return p;
+  if (p === undefined || p === null) return ['normale'];
+  return [p];
+}
 function isValidCommission(db, c) { return !c || (Array.isArray(db.committees) && db.committees.some((x) => x.id === c)); }
 
 const COMMISSION_EVENTS = ['recu_comite', 'vu_comite', 'traite_comite', 'note'];
@@ -919,7 +927,7 @@ async function route(req, res) {
         objet: body.objet !== undefined ? clip(body.objet, 300) : letter.objet,
         personneConcernee: body.personneConcernee !== undefined ? clip(body.personneConcernee, 200) : (letter.personneConcernee || ''),
         resume: body.resume !== undefined ? clip(body.resume, 5000) : letter.resume,
-        priorite: body.priorite !== undefined ? (isValidPriorite(body.priorite) ? body.priorite : letter.priorite) : letter.priorite,
+        priorite: body.priorite !== undefined ? prioriteToArray(body.priorite) : letter.priorite,
         statut: nextStatut,
         expediteur: body.expediteur !== undefined ? cleanParty(body.expediteur) : letter.expediteur,
         destinataire: body.destinataire !== undefined ? cleanParty(body.destinataire) : letter.destinataire,
@@ -1025,7 +1033,7 @@ async function route(req, res) {
       objet: clip(body.objet, 300),
       personneConcernee: clip(body.personneConcernee, 200),
       resume: clip(body.resume, 5000),
-      priorite: isValidPriorite(body.priorite) ? body.priorite : 'normale',
+      priorite: isValidPriorite(body.priorite) ? prioriteToArray(body.priorite) : ['normale'],
       statut,
       commission,
       commissionHisto,
@@ -1377,7 +1385,7 @@ async function route(req, res) {
     const sujet = clip(String(body.sujet || '').trim(), 160);
     const expediteur = clip(String(body.expediteur || '').trim(), 120);
     const dateEmission = clip(String(body.dateEmission || '').trim(), 40);
-    const priorite = ['normale', 'urgente', 'confidentielle'].includes(body.priorite) ? body.priorite : 'normale';
+    const priorite = isValidPriorite(body.priorite) ? prioriteToArray(body.priorite) : ['normale'];
     const reference = clip(String(body.reference || '').trim(), 40);
     const categorie = ['administration', 'juridique', 'finances', 'rh', 'communication', 'securite'].includes(body.categorie) ? body.categorie : 'administration';
     if (!/^[A-Za-z0-9+/=\s]+$/.test(String(body.dataBase64 || ''))) return send(res, 400, { error: 'Données base64 invalides' });
@@ -1423,7 +1431,7 @@ async function route(req, res) {
       const sujet = clip(String(body.sujet || '').trim(), 160);
       const expediteur = clip(String(body.expediteur || '').trim(), 120);
       const dateEmission = clip(String(body.dateEmission || '').trim(), 40);
-      const priorite = ['normale', 'urgente', 'confidentielle'].includes(body.priorite) ? body.priorite : 'normale';
+      const priorite = isValidPriorite(body.priorite) ? prioriteToArray(body.priorite) : ['normale'];
       const reference = clip(String(body.reference || '').trim(), 40);
       const categorie = ['administration', 'juridique', 'finances', 'rh', 'communication', 'securite'].includes(body.categorie) ? body.categorie : 'administration';
       let courrier = db.courriers.find((c) => c.storedAs === pathnameForBlob);
@@ -1528,7 +1536,7 @@ async function route(req, res) {
         objet: clip(courrier.sujet || courrier.nom.replace(/\.pdf$/i, ''), 200),
         personneConcernee: '',
         resume: clip((courrier.reference ? 'Réf. ' + courrier.reference + '. ' : '') + (body.note || ''), 5000),
-        priorite: courrier.priorite || 'normale',
+        priorite: Array.isArray(courrier.priorite) ? courrier.priorite : prioriteToArray(courrier.priorite),
         statut: 'recu',
         commission: null,
         commissionHisto: [],
@@ -1857,7 +1865,7 @@ async function route(req, res) {
     const objet = clip(String(body.objet || '').trim(), 200);
     const type = ['courrier', 'officielle', 'note', 'arrete', 'decret', 'mandat', 'autre'].includes(body.type) ? body.type : 'courrier';
     const categorie = ['administration', 'juridique', 'finances', 'rh', 'communication', 'securite', 'autre'].includes(body.categorie) ? body.categorie : 'administration';
-    const priorite = ['normale', 'urgente', 'confidentielle'].includes(body.priorite) ? body.priorite : 'normale';
+    const priorite = isValidPriorite(body.priorite) ? prioriteToArray(body.priorite) : ['normale'];
     const expediteurNom = clip(String(body.expediteurNom || '').trim(), 120);
     const destinataireNom = clip(String(body.destinataireNom || '').trim(), 120);
     const resume = clip(String(body.resume || '').trim(), 5000);

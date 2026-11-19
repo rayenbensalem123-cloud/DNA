@@ -4,6 +4,7 @@ import { api } from '../api';
 import { useAuth } from '../auth';
 import { useLanguage } from '../i18n';
 import Select from '../components/Select';
+import PriorityPills from '../components/PriorityPills';
 
 const CATEGORIES = [
   { value: 'administration', label: 'Administration' },
@@ -135,7 +136,7 @@ export default function Templates() {
                   <td>{t.objet}</td>
                   <td>{t.type}</td>
                   <td>{t.categorie}</td>
-                  <td><span className={'priority-pill priority-' + t.priorite}>{t.priorite}</span></td>
+                  <td><PriorityPills value={t.priorite} /></td>
                   <td>{t.expediteurNom || '—'}</td>
                   <td>{t.destinataireNom || '—'}</td>
                   <td>

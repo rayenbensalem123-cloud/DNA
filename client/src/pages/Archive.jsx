@@ -7,6 +7,7 @@ import { fmtDate, transferChain } from '../utils';
 import { downloadCsv, downloadXlsx, printPdf } from '../utils/exportFile';
 import Select from '../components/Select';
 import DatePicker from '../components/DatePicker';
+import PriorityPills from '../components/PriorityPills';
 
 export default function Archive() {
   const { t } = useLanguage();
@@ -339,7 +340,7 @@ export default function Archive() {
                   {canSeeTracking && <td><span className={'seen-tick' + (letter.commission ? (letter.comiteVu ? ' seen' : ' unseen') : ' none')} title={letter.commission ? (letter.comiteVu ? 'Le comité a ouvert ce courrier' : 'Le comité n’a pas encore ouvert ce courrier') : 'Aucun comité assigné'}>{letter.commission ? (letter.comiteVu ? '✓ Vu' : '✓ Pas vu') : '—'}</span></td>}
                   <td><span className={'direction-pill direction-' + (letter.direction || 'entrant')}><i />{t('direction.' + (letter.direction || 'entrant'))}</span></td>
                   <td><span className={'badge statut-' + letter.statut}>{t('status.' + (letter.statut || 'recu'))}</span>{(letter.transferred || (letter.commissionHisto || []).some((h) => h.type === 'transfert')) && <span className="badge badge-transfert" style={{ marginLeft: 6 }} title={canSeeTracking && transferChain(letter, (cid) => committees.find((c) => c.id === cid)?.nom || cid) ? 'Parcours : ' + transferChain(letter, (cid) => committees.find((c) => c.id === cid)?.nom || cid) : t('badge.transferred')}>{t('badge.transferred')}</span>}{letter.overdue && <span className="badge badge-overdue" style={{ marginLeft: 6 }} title="Non archivé depuis plus de 15 jours">⚠ Retard</span>}</td>
-                  <td><span className={'priority-pill priority-' + (letter.priorite || 'normale')}>{t('priorite.' + (letter.priorite || 'normale'))}</span></td>
+                  <td><PriorityPills value={letter.priorite} /></td>
                   <td className="date-cell">{fmtDate(letter.dateReception || letter.dateEmission)}</td>
                 </tr>
               ))}{items.length === 0 && <tr><td colSpan={8 + (canSeeTracking ? 1 : 0)} className="empty-cell">{t('letters.empty')}</td></tr>}</tbody>

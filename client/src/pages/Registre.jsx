@@ -7,6 +7,7 @@ import { fmtDate } from '../utils';
 import { downloadCsv, downloadXlsx, printPdf } from '../utils/exportFile';
 import Select from '../components/Select';
 import DatePicker from '../components/DatePicker';
+import PriorityPills from '../components/PriorityPills';
 
 // Per-committee internal registers: "Arrivée" = letters the committee received,
 // "Départ" = letters the committee itself emitted (stamped departCommission).
@@ -128,7 +129,7 @@ export default function Registre() {
                 <td>{tab === 'arrivee' ? (l.expediteur?.nom || '—') : (l.destinataire?.nom || '—')}</td>
                 <td><span className="committee-pill">{tab === 'arrivee' ? committeeName(l.commission) : committeeName(l.departCommission || l.createdByCommission)}</span></td>
                 <td><span className={'badge statut-' + (l.statut || 'recu')}>{t('status.' + (l.statut || 'recu'))}</span></td>
-                <td><span className={'priority-pill priority-' + (l.priorite || 'normale')}>{t('priorite.' + (l.priorite || 'normale'))}</span></td>
+                <td><PriorityPills value={l.priorite} /></td>
                 <td className="date-cell">{fmtDate(l.dateReception || l.dateEmission)}</td>
               </tr>
             ))}{items.length === 0 && <tr><td colSpan={7} className="empty-cell">{tab === 'arrivee' ? 'Aucun courrier arrivé sur la période.' : 'Aucun courrier parti sur la période.'}</td></tr>}</tbody>

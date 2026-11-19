@@ -5,6 +5,7 @@ import { useAuth } from '../auth';
 import { useLanguage } from '../i18n';
 import { fmtDate, transferChain } from '../utils';
 import CountUp from '../components/CountUp';
+import PriorityPills from '../components/PriorityPills';
 
 const MONTHS_FR = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'];
 
@@ -256,7 +257,7 @@ export default function Dashboard() {
                 <td><span className={'direction-pill direction-' + (letter.direction || 'entrant')}><i />{t('direction.' + (letter.direction || 'entrant'))}</span></td>
                 <td><span className="committee-pill">{committees.find((c) => c.id === letter.commission)?.nom || 'Sans comité'}</span>{canSeeTracking && letter.commission && <span className={'seen-tick' + (letter.comiteVu ? ' seen' : ' unseen')} title={letter.comiteVu ? 'Le comité a ouvert ce courrier' : 'Le comité n’a pas encore ouvert ce courrier'}>{letter.comiteVu ? '✓' : '○'}</span>}</td>
                 <td><span className={'badge statut-' + (letter.statut || 'recu')}>{t('status.' + (letter.statut || 'recu'))}</span>{(letter.transferred || (letter.commissionHisto || []).some((h) => h.type === 'transfert')) && <span className="badge badge-transfert" style={{ marginLeft: 6 }} title={canSeeTracking && transferChain(letter, (cid) => committees.find((c) => c.id === cid)?.nom || cid) ? 'Parcours : ' + transferChain(letter, (cid) => committees.find((c) => c.id === cid)?.nom || cid) : undefined}>{t('badge.transferred')}</span>}{letter.overdue && <span className="badge badge-overdue" style={{ marginLeft: 6 }} title="Non archivé depuis plus de 15 jours">⚠ Retard</span>}</td>
-                <td><span className={'priority-pill priority-' + (letter.priorite || 'normale')}>{t('priorite.' + (letter.priorite || 'normale'))}</span></td>
+                <td><PriorityPills value={letter.priorite} /></td>
                 <td className="date-cell">{fmtDate(letter.dateReception || letter.dateEmission)}</td>
               </tr>
             ))}{openLetters.length === 0 && <tr><td colSpan={7} className="empty-cell">Aucun courrier en cours</td></tr>}</tbody>
@@ -285,7 +286,7 @@ export default function Dashboard() {
                 <td><div className="letter-subject">{letter.objet}</div></td>
                 <td><span className="committee-pill">{committees.find((c) => c.id === letter.commission)?.nom || 'Sans comité'}</span></td>
                 <td><span className={'badge statut-' + (letter.statut || 'recu')}>{t('status.' + (letter.statut || 'recu'))}</span>{(letter.transferred || (letter.commissionHisto || []).some((h) => h.type === 'transfert')) && <span className="badge badge-transfert" style={{ marginLeft: 6 }} title={canSeeTracking && transferChain(letter, (cid) => committees.find((c) => c.id === cid)?.nom || cid) ? 'Parcours : ' + transferChain(letter, (cid) => committees.find((c) => c.id === cid)?.nom || cid) : undefined}>{t('badge.transferred')}</span>}{letter.overdue && <span className="badge badge-overdue" style={{ marginLeft: 6 }} title="Non archivé depuis plus de 15 jours">⚠ Retard</span>}</td>
-                <td><span className={'priority-pill priority-' + (letter.priorite || 'normale')}>{t('priorite.' + (letter.priorite || 'normale'))}</span></td>
+                <td><PriorityPills value={letter.priorite} /></td>
                 <td className="date-cell">{fmtDate(letter.dateReception || letter.dateEmission)}</td>
               </tr>
             ))}{overdueLetters.length === 0 && <tr><td colSpan={6} className="empty-cell">Aucun courrier en retard</td></tr>}</tbody>

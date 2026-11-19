@@ -6,6 +6,7 @@ import { useLanguage } from '../i18n';
 import { fmtDate, fmtDateTime, fmtSize } from '../utils';
 import LetterForm from '../components/LetterForm';
 import Select from '../components/Select';
+import PriorityPills from '../components/PriorityPills';
 
 export default function LetterDetail() {
   const { id } = useParams();
@@ -283,7 +284,7 @@ export default function LetterDetail() {
             )}
           </div>
         ))}
-        {info('detail.priorite', t('priorite.' + (letter.priorite || 'normale')))}
+        {info('detail.priorite', <PriorityPills value={letter.priorite} />)}
         {info('detail.commission', letter.commission ? committeeName(letter.commission) : '—')}
         {info('detail.expediteur', [letter.expediteur?.nom, letter.expediteur?.fonction, letter.expediteur?.service].filter(Boolean).join(' — ') || '—')}
         {info('detail.destinataire', [letter.destinataire?.nom, letter.destinataire?.fonction, letter.destinataire?.service].filter(Boolean).join(' — ') || '—')}
