@@ -82,10 +82,26 @@ export default function Dashboard() {
     return Math.round((sum / done.length) * 10) / 10;
   })();
 
+  // Transferts entre comités (historique commissionHisto type 'transfert')
+  const transferHisto = letters.flatMap((l) =>
+    (l.commissionHisto || [])
+      .filter((h) => h.type === 'transfert')
+      .map((h) => ({ letterId: l.id, from: h.fromCommittee, to: h.committee, date: h.date }))
+  );
+  const myCommission = user?.commission || null;
+  const transfertsRecus = myCommission
+    ? transferHisto.filter((t) => t.to === myCommission).length
+    : transferHisto.length;
+  const transfertsEnvoyes = myCommission
+    ? transferHisto.filter((t) => t.from === myCommission).length
+    : transferHisto.length;
+
   const cards = [
     { label: 'Courriers enregistrés', value: total, href: '/archive', tone: 'blue' },
     { label: 'Arrivée', value: entrants, href: '/archive?direction=entrant', tone: 'green' },
     { label: 'Départ', value: sortants, href: '/archive?direction=sortant', tone: 'purple' },
+    { label: 'Transferts reçus', value: transfertsRecus, href: '/archive', tone: 'indigo' },
+    { label: 'Transferts envoyés', value: transfertsEnvoyes, href: '/archive', tone: 'violet' },
     { label: 'En traitement', value: enCours, href: '/archive?statut=en_cours', tone: 'amber' },
     { label: 'À affecter', value: aAffecter, href: '/archive?commission=non_assigne', tone: 'cyan' },
     { label: 'Urgents non clôturés', value: urgentsNonClotures, href: '/archive?priorite=urgente', tone: 'red' },
@@ -126,6 +142,34 @@ export default function Dashboard() {
   const monthMax = Math.max(1, ...monthly.map((m) => Math.max(m.arrivee, m.depart)));
   const CHART_W = 720; const CHART_H = 200; const GROUP_W = CHART_W / 12;
   const barW = 11; const barGap = 5;
+
+  // Répartition par comité
+  const byCommittee = (() => {
+    const counts = {};
+    letters.forEach((l) => {
+      const key = l.commission ? (committees.find((c) => c.id === l.commission)?.nom || l.commission) : 'Sans comité';
+      counts[key] = (counts[key] || 0) + 1;
+    });
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  })();
+  const comMax = Math.max(1, ...byCommittee.map(([, c]) => c));
+
+  // Temps moyen de traitement par comité (jours, lettres archivées seulement)
+  const traitementByCommittee = (() => {
+    const sums = {}, counts = {};
+    letters.forEach((l) => {
+      if (l.statut !== 'archive' || !l.commission) return;
+      const start = new Date(l.dateEmission || l.createdAt).getTime();
+      const end = new Date(l.updatedAt || l.createdAt).getTime();
+      if (isNaN(start) || isNaN(end)) return;
+      const days = Math.max(0, (end - start) / 86400000);
+      const key = committees.find((c) => c.id === l.commission)?.nom || l.commission;
+      sums[key] = (sums[key] || 0) + days;
+      counts[key] = (counts[key] || 0) + 1;
+    });
+    return Object.entries(sums).map(([k, s]) => ({ key: k, avg: Math.round((s / counts[k]) * 10) / 10, count: counts[k] })).sort((a, b) => b.avg - a.avg);
+  })();
+  const treatMax = Math.max(1, ...traitementByCommittee.map((t) => t.avg));
 
   return (
     <div className="page dashboard-page">
