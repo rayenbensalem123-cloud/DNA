@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
 import { useLanguage } from '../i18n';
 import { useAuth } from '../auth';
@@ -65,7 +65,22 @@ export default function LetterForm({ onSubmit, onCancel, busy = false, error = '
   const [form, setForm] = useState(() => initialForm(initialLetter, initialDirection));
   const set = (key, value) => setForm((current) => ({ ...current, [key]: value }));
 
-  const togglePriority = (p) => {
+  // Normalize priorite to an array when the edited letter changes
+  useEffect(() => {
+    setForm((current) => {
+      const incoming = initialLetter?.priorite;
+      if (!incoming) return current;
+      const prios = Array.isArray(incoming) ? [...incoming] : incoming ? [incoming] : [];
+      if (prios.length === 0) prios.push('normale');
+      // Only update if different
+      const currentPrios = Array.isArray(current.priorite) ? [...current.priorite] : current.priorite ? [current.priorite] : [];
+      const same = prios.length === currentPrios.length && prios.every((p) => currentPrios.includes(p));
+      if (!same) return { ...current, priorite: prios };
+      return current;
+    });
+  }, [initialLetter]);
+
+  const togglePriority = useCallback((p) => {
     setForm((current) => {
       const prios = Array.isArray(current.priorite) ? [...current.priorite] : current.priorite ? [current.priorite] : [];
       const i = prios.indexOf(p);
@@ -74,7 +89,7 @@ export default function LetterForm({ onSubmit, onCancel, busy = false, error = '
       if (prios.length === 0) prios.push('normale'); // always keep at least one
       return { ...current, priorite: prios };
     });
-  };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;

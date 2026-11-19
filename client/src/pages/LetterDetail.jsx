@@ -387,7 +387,7 @@ export default function LetterDetail() {
       {editing && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setEditing(false); }}>
         <section className="modal" role="dialog" aria-modal="true" aria-labelledby="letter-edit-title">
           <header className="modal-head"><h2 id="letter-edit-title">Modifier le courrier</h2><button type="button" className="modal-close" onClick={() => setEditing(false)} aria-label="Fermer" disabled={busy}>×</button></header>
-          <LetterForm initialLetter={letter} onSubmit={saveEdits} onCancel={() => setEditing(false)} busy={busy} error={error} />
+          <LetterForm key={letter.id} initialLetter={letter} onSubmit={saveEdits} onCancel={() => setEditing(false)} busy={busy} error={error} />
         </section>
       </div>}
       {previewPiece && (
