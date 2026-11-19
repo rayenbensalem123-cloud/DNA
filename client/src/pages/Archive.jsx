@@ -22,14 +22,14 @@ export default function Archive() {
   const [total, setTotal] = useState(0);
   const [committees, setCommittees] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filters, setFilters] = useState({ q: '', direction: '', statut: '', priorite: '', bucket: '', from: '', to: '', expediteur: '', commission: '', comiteVu: '' });
+  const [filters, setFilters] = useState({ q: '', direction: '', statut: '', priorite: '', bucket: '', from: '', to: '', expediteur: '', commission: '', comiteVu: '', transfert: '' });
   const [transferQueue, setTransferQueue] = useState([]);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
-    setFilters({ q: params.get('q') || '', direction: params.get('direction') || '', statut: params.get('statut') || '', priorite: params.get('priorite') || '', bucket: params.get('bucket') || '', from: params.get('from') || '', to: params.get('to') || '', expediteur: params.get('expediteur') || '', commission: params.get('commission') || '', comiteVu: params.get('comiteVu') || '' });
+    setFilters({ q: params.get('q') || '', direction: params.get('direction') || '', statut: params.get('statut') || '', priorite: params.get('priorite') || '', bucket: params.get('bucket') || '', from: params.get('from') || '', to: params.get('to') || '', expediteur: params.get('expediteur') || '', commission: params.get('commission') || '', comiteVu: params.get('comiteVu') || '', transfert: params.get('transfert') || '' });
   }, [location.search]);
 
   useEffect(() => { api.committees().then((d) => setCommittees(d.items || [])).catch(() => {}); }, []);
@@ -141,6 +141,16 @@ export default function Archive() {
         // Filtre "lu / non lu par le comité" côté client (champ comiteVu renvoyé par le serveur)
         if (filters.comiteVu === 'true') matched = matched.filter((l) => l.comiteVu === true);
         if (filters.comiteVu === 'false') matched = matched.filter((l) => l.comiteVu === false);
+        // Filtre "transferts reçus / envoyés" côté client (commissionHisto type 'transfert')
+        if (filters.transfert === 'received') {
+          matched = matched.filter((l) => (l.commissionHisto || []).some((h) => h.type === 'transfert' && h.to === (user?.commission || null)));
+        }
+        if (filters.transfert === 'sent') {
+          matched = matched.filter((l) => (l.commissionHisto || []).some((h) => h.type === 'transfert' && h.from === (user?.commission || null)));
+        }
+        if (filters.transfert === 'all') {
+          matched = matched.filter((l) => (l.commissionHisto || []).some((h) => h.type === 'transfert'));
+        }
         const fifteenDaysAgo = Date.now() - 15 * 24 * 3600 * 1000;
         matched = bucket === 'overdue'
           ? matched.filter((letter) => (letter.statut || 'recu') !== 'archive' && new Date(letter.dateReception || letter.dateEmission || letter.createdAt).getTime() < fifteenDaysAgo)
@@ -164,10 +174,10 @@ export default function Archive() {
     ? { id: 'non-assigne', nom: 'Sans comité' }
     : committees.find((committee) => committee.id === committeeId);
   const set = (key, value) => setFilters((current) => ({ ...current, [key]: value }));
-  const hasFilters = Boolean(filters.q || filters.direction || filters.statut || filters.priorite || filters.bucket || filters.from || filters.to || filters.expediteur || filters.commission || filters.comiteVu);
+  const hasFilters = Boolean(filters.q || filters.direction || filters.statut || filters.priorite || filters.bucket || filters.from || filters.to || filters.expediteur || filters.commission || filters.comiteVu || filters.transfert);
   const [showMore, setShowMore] = useState(false);
   const advancedCount = [filters.from, filters.to, filters.expediteur, filters.commission].filter(Boolean).length;
-  const resetFilters = () => setFilters({ q: '', direction: '', statut: '', priorite: '', bucket: '', from: '', to: '', expediteur: '', commission: '', comiteVu: '' });
+  const resetFilters = () => setFilters({ q: '', direction: '', statut: '', priorite: '', bucket: '', from: '', to: '', expediteur: '', commission: '', comiteVu: '', transfert: '' });
   const listTitle = filters.bucket === 'overdue' ? 'Courriers en retard (> 15 j)'
     : filters.bucket === 'pending' ? 'Courriers à traiter'
       : filters.direction === 'entrant' ? 'Courriers entrants'
@@ -307,6 +317,7 @@ export default function Archive() {
             <Select ariaLabel="Statut" value={filters.statut} onChange={(v) => set('statut', v)} options={[{ value: '', label: 'Tous les statuts' }, ...['recu', 'en_cours', 'archive'].map((status) => ({ value: status, label: t('status.' + status) }))]} />
             <Select ariaLabel="Importance" value={filters.priorite} onChange={(v) => set('priorite', v)} options={[{ value: '', label: 'Toutes les importances' }, { value: 'normale', label: 'Normale' }, { value: 'urgente', label: 'Urgente' }, { value: 'confidentielle', label: 'Confidentielle' }]} />
             {canSeeTracking && <Select ariaLabel="Lu par le comité" value={filters.comiteVu} onChange={(v) => set('comiteVu', v)} options={[{ value: '', label: 'Tous les statuts de lecture' }, { value: 'true', label: 'Déjà ouvert par le comité' }, { value: 'false', label: 'Pas encore ouvert (rappel)' }]} />}
+            {canSeeTracking && <Select ariaLabel="Transferts" value={filters.transfert} onChange={(v) => set('transfert', v)} options={[{ value: '', label: 'Tous les transferts' }, { value: 'received', label: 'Transferts reçus' }, { value: 'sent', label: 'Transferts envoyés' }, { value: 'all', label: 'Tous les transferts (tous comités)' }]} />}
             <button type="button" className="btn btn-secondary" onClick={() => setShowMore((v) => !v)} aria-expanded={showMore}>Plus de filtres{advancedCount ? ` (${advancedCount})` : ''}</button>
             {hasFilters && <button type="button" className="btn btn-ghost" onClick={resetFilters}>Réinitialiser</button>}
           </div>
