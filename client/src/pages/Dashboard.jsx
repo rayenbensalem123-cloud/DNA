@@ -28,6 +28,7 @@ export default function Dashboard() {
   const [overdueLetters, setOverdueLetters] = useState([]);
   const [committees, setCommittees] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [clotureModalOpen, setClotureModalOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -69,7 +70,7 @@ export default function Dashboard() {
   const aAffecter = letters.filter((l) => !l.commission && (l.statut || 'recu') !== 'archive' && l.direction !== 'sortant').length;
   const urgentsNonClotures = letters.filter((l) => l.priorite === 'urgente' && l.statut !== 'archive').length;
   const fifteenDaysAgo = Date.now() - 15 * 24 * 3600 * 1000;
-  const enRetard = letters.filter((l) => l.statut !== 'archive' && new Date(l.dateReception || l.dateEmission || l.createdAt).getTime() < fifteenDaysAgo).length;
+  const enRetard = letters.filter((l) => l.statut !== 'archive' && new Date(letter.dateReception || letter.dateEmission || letter.createdAt).getTime() < fifteenDaysAgo).length;
   const archives = letters.filter((l) => l.statut === 'archive').length;
   const tauxCloture = total ? Math.round((archives / total) * 100) : 0;
   const traitementDays = (() => {
@@ -98,17 +99,18 @@ export default function Dashboard() {
     : transferHisto.length;
 
   const cards = [
-    { label: 'Courriers enregistrés', value: total, href: '/archive', tone: 'blue' },
-    { label: 'Arrivée', value: entrants, href: '/archive?direction=entrant', tone: 'green' },
-    { label: 'Départ', value: sortants, href: '/archive?direction=sortant', tone: 'purple' },
-    { label: 'Transferts reçus', value: transfertsRecus, href: '/archive', tone: 'indigo' },
-    { label: 'Transferts envoyés', value: transfertsEnvoyes, href: '/archive', tone: 'violet' },
-    { label: 'En traitement', value: enCours, href: '/archive?statut=en_cours', tone: 'amber' },
-    { label: 'À affecter', value: aAffecter, href: '/archive?commission=non_assigne', tone: 'cyan' },
-    { label: 'Urgents non clôturés', value: urgentsNonClotures, href: '/archive?priorite=urgente', tone: 'red' },
-    { label: 'En retard > 15 j', value: enRetard, href: '/archive?bucket=overdue', tone: 'orange' },
-    { label: 'Taux de clôture', value: `${loading ? '—' : tauxCloture}%`, href: '/archive?statut=archive', tone: 'teal', raw: true },
-    { label: 'Jours de traitement moy.', value: traitementDays === null ? '—' : traitementDays, href: '/archive?statut=archive', tone: 'gray', raw: true },
+    { label: 'Courriers enregistrés', value: total, href: '/courrier', tone: 'blue' },
+    { label: 'Arrivée', value: entrants, href: '/courrier?direction=entrant', tone: 'green' },
+    { label: 'Départ', value: sortants, href: '/courrier?direction=sortant', tone: 'purple' },
+    { label: 'Clôturés', value: archives, href: '#', tone: 'teal', clickable: false },
+    { label: 'Transferts reçus', value: transfertsRecus, href: '/courrier', tone: 'indigo' },
+    { label: 'Transferts envoyés', value: transfertsEnvoyes, href: '/courrier', tone: 'violet' },
+    { label: 'En traitement', value: enCours, href: '/courrier?statut=en_cours', tone: 'amber' },
+    { label: 'À affecter', value: aAffecter, href: '/courrier', tone: 'cyan' },
+    { label: 'Urgents non clôturés', value: urgentsNonClotures, href: '/courrier?priorite=urgente', tone: 'red' },
+    { label: 'En retard > 15 j', value: enRetard, href: '/courrier?bucket=overdue', tone: 'orange' },
+    { label: 'Taux de clôture', value: `${loading ? '—' : tauxCloture}%`, href: '#', tone: 'teal', raw: true, onClick: () => setClotureModalOpen(true) },
+    { label: 'Jours de traitement moy.', value: traitementDays === null ? '—' : traitementDays, href: '#', tone: 'gray', raw: true },
   ];
 
   // Répartition par état
@@ -172,6 +174,9 @@ export default function Dashboard() {
   })();
   const treatMax = Math.max(1, ...traitementByCommittee.map((t) => t.avg));
 
+  const closedLetters = letters.filter((l) => l.statut === 'archive').sort((a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt));
+  const openLettersList = letters.filter((l) => (l.statut || 'recu') !== 'archive').sort((a, b) => new Date(b.dateReception || b.dateEmission || b.createdAt) - new Date(a.dateReception || a.dateEmission || a.createdAt));
+
   return (
     <div className="page dashboard-page">
       <header className="page-header page-title-header">
@@ -183,12 +188,21 @@ export default function Dashboard() {
       </header>
 
       <div className="dash-cards">
-        {cards.map((card, i) => (
-          <Link key={card.label} to={card.href} className={'dash-card tone-' + card.tone} style={{ '--i': i }}>
-            <div className="dash-card-label">{card.label}</div>
-            <div className="dash-card-value">{loading ? '—' : (card.raw ? card.value : <CountUp value={card.value} />)}</div>
-          </Link>
-        ))}
+        {cards.map((card, i) => {
+          const clickable = card.onClick || card.href === '#';
+          return (
+            <Link
+              key={card.label}
+              to={card.href === '#' ? undefined : card.href}
+              onClick={card.onClick ? (e) => { e.preventDefault(); card.onClick(); } : undefined}
+              className={'dash-card tone-' + card.tone + (clickable ? ' clickable' : '')}
+              style={{ '--i': i }}
+            >
+              <div className="dash-card-label">{card.label}</div>
+              <div className="dash-card-value">{loading ? '—' : (card.raw ? card.value : <CountUp value={card.value} />)}</div>
+            </Link>
+          );
+        })}
       </div>
 
       <div className="dash-panels">
@@ -246,7 +260,7 @@ export default function Dashboard() {
       </div>
 
       <div className="card open-letters-card">
-        <div className="card-head-row"><div><h2 className="card-title">Courriers en cours</h2><div className="muted">{openLetters.length} courrier{openLetters.length === 1 ? '' : 's'} non archivé{openLetters.length === 1 ? '' : 's'}</div></div><Link className="btn btn-secondary" to="/archive?bucket=pending">Voir tout <span aria-hidden="true">→</span></Link></div>
+        <div className="card-head-row"><div><h2 className="card-title">Courriers en cours</h2><div className="muted">{openLetters.length} courrier{openLetters.length === 1 ? '' : 's'} non archivé{openLetters.length === 1 ? '' : 's'}</div></div><Link className="btn btn-secondary" to="/courrier">Voir tout <span aria-hidden="true">→</span></Link></div>
         {loading ? <div className="card-pad">{t('common.loading')}</div> : (
           <div className="table-wrap"><table className="table open-letters-table">
             <thead><tr><th>{t('letters.numero')}</th><th>{t('letters.objet')}</th><th>{t('letters.direction')}</th><th>Comité</th><th>Statut</th><th>{t('letters.priorite')}</th><th>{t('letters.date')}</th></tr></thead>
@@ -265,7 +279,7 @@ export default function Dashboard() {
         )}
       </div>
       <div className="card scan-card">
-          <div className="card-head-row"><div className="scan-heading"><span className="scan-heading-icon" aria-hidden="true">▤</span><div><h2 className="card-title">Courriers numérisés cette semaine</h2><div className="muted">Les fichiers ajoutés depuis lundi</div></div></div><Link className="btn btn-secondary" to="/archive">Voir l’archive <span aria-hidden="true">→</span></Link></div>
+          <div className="card-head-row"><div className="scan-heading"><span className="scan-heading-icon" aria-hidden="true">▤</span><div><h2 className="card-title">Courriers numérisés cette semaine</h2><div className="muted">Les fichiers ajoutés depuis lundi</div></div></div><Link className="btn btn-secondary" to="/courrier">Voir l’archive <span aria-hidden="true">→</span></Link></div>
         {loading ? <div className="card-pad">{t('common.loading')}</div> : (
           <div className="table-wrap"><table className="table scan-table">
             <thead><tr><th>{t('letters.objet')}</th><th>Fichier numérisé</th><th>{t('letters.direction')}</th><th>Ajouté le</th></tr></thead>
@@ -276,14 +290,14 @@ export default function Dashboard() {
         )}
       </div>
       <div className="card overdue-card">
-        <div className="card-head-row"><div><h2 className="card-title">Courriers en retard (non archivés)</h2><div className="muted">{overdueLetters.length} courrier{overdueLetters.length === 1 ? '' : 's'} des semaines précédentes non clôturé{overdueLetters.length === 1 ? '' : 's'}</div></div><Link className="btn btn-secondary" to="/archive?bucket=pending">Voir tout <span aria-hidden="true">→</span></Link></div>
+        <div className="card-head-row"><div><h2 className="card-title">Courriers en retard (non archivés)</h2><div className="muted">{overdueLetters.length} courrier{overdueLetters.length === 1 ? '' : 's'} des semaines précédentes non clôturé{overdueLetters.length === 1 ? '' : 's'}</div></div><Link className="btn btn-secondary" to="/courrier">Voir tout <span aria-hidden="true">→</span></Link></div>
         {loading ? <div className="card-pad">{t('common.loading')}</div> : (
           <div className="table-wrap"><table className="table overdue-table">
             <thead><tr><th>{t('letters.numero')}</th><th>{t('letters.objet')}</th><th>Comité</th><th>Statut</th><th>{t('letters.priorite')}</th><th>Depuis</th></tr></thead>
             <tbody>{overdueLetters.map((letter) => (
               <tr key={letter.id} className="row-link" onClick={() => navigate('/lettres/' + letter.id)}>
                 <td className="mono">{letter.numeroLettre || '—'}</td>
-                <td><div className="letter-subject">{letter.objet}</div></td>
+                <td><div className="letter-subject">{l.objet}</div></td>
                 <td><span className="committee-pill">{committees.find((c) => c.id === letter.commission)?.nom || 'Sans comité'}</span></td>
                 <td><span className={'badge statut-' + (letter.statut || 'recu')}>{t('status.' + (letter.statut || 'recu'))}</span>{(letter.transferred || (letter.commissionHisto || []).some((h) => h.type === 'transfert')) && <span className="badge badge-transfert" style={{ marginLeft: 6 }} title={canSeeTracking && transferChain(letter, (cid) => committees.find((c) => c.id === cid)?.nom || cid) ? 'Parcours : ' + transferChain(letter, (cid) => committees.find((c) => c.id === cid)?.nom || cid) : undefined}>{t('badge.transferred')}</span>}{letter.overdue && <span className="badge badge-overdue" style={{ marginLeft: 6 }} title="Non archivé depuis plus de 15 jours">⚠ Retard</span>}</td>
                 <td><PriorityPills value={letter.priorite} /></td>
@@ -293,6 +307,61 @@ export default function Dashboard() {
           </table></div>
         )}
       </div>
+
+      {/* Modal: Taux de clôture - 2 tables (clôturés / non clôturés) */}
+      {clotureModalOpen && (
+        <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setClotureModalOpen(false); }}>
+          <section className="modal" style={{ width: 'min(980px, 95vw)', maxHeight: '90vh' }} role="dialog" aria-modal="true" aria-labelledby="cloture-title">
+            <header className="modal-head">
+              <h2 id="cloture-title">Taux de clôture — {tauxCloture}%</h2>
+              <button type="button" className="modal-close" onClick={() => setClotureModalOpen(false)} aria-label="Fermer">×</button>
+            </header>
+            <div className="modal-body" style={{ padding: 0, display: 'flex', gap: 16, overflow: 'auto' }}>
+              <div style={{ flex: 1, minWidth: 0, borderRight: '1px solid var(--border)', paddingRight: 16 }}>
+                <h3 style={{ margin: '0 0 10px', fontSize: 15, color: '#10b981' }}>Clôturés ({closedLetters.length})</h3>
+                <div className="table-wrap" style={{ maxHeight: '60vh', overflow: 'auto' }}>
+                  <table className="table" style={{ fontSize: 13 }}>
+                    <thead><tr><th>N°</th><th>Objet</th><th>Comité</th><th>Date clôture</th></tr></thead>
+                    <tbody>
+                      {closedLetters.map((l) => (
+                        <tr key={l.id} className="row-link" onClick={() => { setClotureModalOpen(false); navigate('/lettres/' + l.id); }}>
+                          <td className="mono">{l.numeroLettre || l.ref || '—'}</td>
+                          <td>{l.objet}</td>
+                          <td>{l.commission ? (committees.find((c) => c.id === l.commission)?.nom || l.commission) : '—'}</td>
+                          <td className="date-cell">{fmtDate(l.updatedAt || l.createdAt)}</td>
+                        </tr>
+                      ))}
+                      {closedLetters.length === 0 && <tr><td colSpan="4" className="empty-cell">Aucun courrier clôturé.</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div style={{ flex: 1, minWidth: 0, paddingLeft: 16 }}>
+                <h3 style={{ margin: '0 0 10px', fontSize: 15, color: '#f59e0b' }}>Non clôturés ({openLettersList.length})</h3>
+                <div className="table-wrap" style={{ maxHeight: '60vh', overflow: 'auto' }}>
+                  <table className="table" style={{ fontSize: 13 }}>
+                    <thead><tr><th>N°</th><th>Objet</th><th>Comité</th><th>Statut</th></tr></thead>
+                    <tbody>
+                      {openLettersList.map((l) => (
+                        <tr key={l.id} className="row-link" onClick={() => { setClotureModalOpen(false); navigate('/lettres/' + l.id); }}>
+                          <td className="mono">{l.numeroLettre || l.ref || '—'}</td>
+                          <td>{l.objet}</td>
+                          <td>{l.commission ? (committees.find((c) => c.id === l.commission)?.nom || l.commission) : '—'}</td>
+                          <td><span className={'badge statut-' + (l.statut || 'recu')}>{t('status.' + (l.statut || 'recu'))}</span></td>
+                        </tr>
+                      ))}
+                      {openLettersList.length === 0 && <tr><td colSpan="4" className="empty-cell">Tous les courriers sont clôturés.</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div className="modal-foot">
+              <button className="btn btn-secondary" onClick={() => setClotureModalOpen(false)}>Fermer</button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }

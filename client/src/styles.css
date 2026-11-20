@@ -1280,6 +1280,8 @@ input:focus, select:focus, textarea:focus { outline: 2px solid #ffd3d8; outline-
 .dash-card.tone-violet { --accent: #a855f7; }
 .dash-card.tone-teal { --accent: #14b8a6; }
 .dash-card.tone-gray { --accent: #94a3b8; }
+.dash-card.clickable { cursor: pointer; }
+.dash-card.clickable:hover { transform: translateY(-3px); box-shadow: 0 12px 26px rgba(30, 25, 40, .12); }
 .dash-panels { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 18px; }
 .dash-panel-wide { grid-column: 1 / -1; }
 .dash-panel .card-title { margin-bottom: 12px; font-size: 16px; }
