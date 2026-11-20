@@ -1488,3 +1488,4 @@ input:focus, select:focus, textarea:focus { outline: 2px solid #ffd3d8; outline-
 .registre-filters .input { flex: 1 1 280px; min-width: 200px; }
 .btn-add { display: inline-flex; align-items: center; gap: 6px; }
 .btn-add .plus { font-size: 18px; line-height: 1; }
+.row-actions .btn { white-space: nowrap; }

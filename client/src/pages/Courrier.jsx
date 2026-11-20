@@ -189,6 +189,15 @@ export default function Courrier() {
     } catch { /* non-critical */ }
   };
 
+  const assignTo = async (c, employeeId) => {
+    setBusy(true); setError('');
+    try {
+      await api.assignCourrier(c.id, employeeId);
+      setNotice(employeeId ? 'Responsable : ' + employeeName(employeeId) : 'Responsable retiré');
+      await load();
+    } catch (e) { setError(e.message); } finally { setBusy(false); }
+  };
+
   const assignEmployee = async (employeeId) => {
     if (!assigningLetter) return;
     setBusy(true); setError('');
@@ -378,7 +387,7 @@ export default function Courrier() {
                     ? <span className="badge statut-en_cours" title={c.dafValidatedByName ? `Validé par ${c.dafValidatedByName}` : ''}>DAF ✓ · superviseur requis</span>
                     : <span className="badge statut-recu">DAF requis</span>}</td>
                   <td>
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <div className="row-actions" style={{ display: 'flex', gap: 8, flexWrap: 'nowrap', alignItems: 'center' }}>
                       <button className="btn btn-ghost" onClick={() => api.openCourrierFile(c.id, c.nom).catch((e) => setError(e.message))} onMouseEnter={() => api.warmFile('courrier', c.id)} onTouchStart={() => api.warmFile('courrier', c.id)}>Voir</button>
                       {isBureau && c.status === 'a_valider' && canDafStep && role !== 'admin' && <button className="btn btn-primary" onClick={() => validateDaf(c)} disabled={busy} title="Validation DAF (étape 1)">Valider (DAF)</button>}
                       {isBureau && c.status === 'a_valider' && role === 'admin' && <button className="btn btn-primary" onClick={() => validateFinal(c)} disabled={busy} title="Validation directe (les deux étapes)">Valider (2 étapes)</button>}
@@ -386,7 +395,7 @@ export default function Courrier() {
                       {isBureau && c.status === 'daf_valide' && canFinalStep && <button className="btn btn-primary" onClick={() => validateFinal(c)} disabled={busy} title="Validation finale (étape 2)">Valider (final)</button>}
                       {isBureau && c.status === 'daf_valide' && !canFinalStep && <span className="muted small">En attente du superviseur</span>}
                       {isBureau && <button className="btn btn-danger" onClick={() => { setRejecting(c); setReason(''); }} disabled={busy}>Rejeter</button>}
-                      {isBureau && <button className="btn btn-secondary" onClick={() => setAssigningLetter(c)} disabled={busy} title="Choisir l’employé de l’administration responsable">{c.assignedToName ? 'Responsable : ' + c.assignedToName : 'Responsable'}</button>}
+                      {isBureau && <div style={{ minWidth: 170 }}><Select ariaLabel="Responsable" value={c.assignedTo || ''} onChange={(v) => assignTo(c, v)} disabled={busy} options={[{ value: '', label: 'Responsable…' }, ...users.filter((u) => ['admin', 'supervisor', 'daf'].includes(u.role)).map((u) => ({ value: u.id, label: u.name || u.username }))]} /></div>}
                     </div>
                   </td>
                 </tr>
