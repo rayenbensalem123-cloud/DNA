@@ -485,12 +485,11 @@ async function route(req, res) {
     // A delegated account manager may create chef/agent accounts only, and
     // never grants roles or permissions.
     if (!isAdminLike(user) && !['chef', 'agent'].includes(role)) return send(res, 403, { error: 'Seul le bureau d’ordre peut créer ce type de compte' });
-    if ((role === 'agent' || role === 'chef') && !commission) return send(res, 400, { error: 'Choisissez le comité de ce compte' });
     if (username.length < 3 || !/^[a-z0-9._-]+$/.test(username)) return send(res, 400, { error: 'Identifiant invalide (3 caractères minimum, lettres, chiffres, . _ -)' });
     if (db.users.some((u) => u.username === username)) return send(res, 409, { error: 'Cet identifiant existe déjà' });
     if (!name) return send(res, 400, { error: 'Le nom est obligatoire' });
     if (password.length < 8) return send(res, 400, { error: 'Le mot de passe doit contenir au moins 8 caractères' });
-    if (!isValidCommission(db, commission)) return send(res, 400, { error: 'Comité invalide' });
+    if (commission && !isValidCommission(db, commission)) return send(res, 400, { error: 'Comité invalide' });
     // A chef starts with the full powers of its comité, an agent starts
     // read-only; the bureau adjusts either at any time.
     let permissions;
@@ -524,11 +523,10 @@ async function route(req, res) {
     if (!ROLES.includes(role)) return send(res, 400, { error: 'Rôle invalide' });
     if (!isAdminLike(user) && role !== effectiveRole(target.role)) return send(res, 403, { error: 'Seul le bureau d’ordre peut changer un rôle' });
     if (!name) return send(res, 400, { error: 'Le nom est obligatoire' });
-    if (!isValidCommission(db, commission)) return send(res, 400, { error: 'Comité invalide' });
+    if (commission && !isValidCommission(db, commission)) return send(res, 400, { error: 'Comité invalide' });
     if (password && password.length < 8) return send(res, 400, { error: 'Le mot de passe doit contenir au moins 8 caractères' });
     if (role !== effectiveRole(target.role) && target.id === user.id) return send(res, 400, { error: 'Vous ne pouvez pas changer votre propre rôle' });
     if (target.role === 'admin' && role !== 'admin' && db.users.filter((u) => u.role === 'admin').length <= 1) return send(res, 400, { error: 'Le dernier compte administrateur doit rester administrateur' });
-    if ((role === 'agent' || role === 'chef') && !commission) return send(res, 400, { error: 'Choisissez le comité de ce compte' });
     // A new password, role or comité signs the account out everywhere (old tokens stop working).
     if (password || role !== effectiveRole(target.role) || commission !== (target.commission || null)) target.sessionVersion = sessionVersion(target) + 1;
     target.name = name;
@@ -918,6 +916,7 @@ async function route(req, res) {
         return send(res, 200, { item: letterView(user, letter), pendingApproval: true, message: 'Transfert soumis — en attente d’approbation du bureau d’ordre' });
       }
       if (wantsCommission) letter.pendingTransfer = null;
+      if (body.assignedTo !== undefined && isBureauLike(user)) letter.assignedTo = body.assignedTo || null;
       if (body.ref && isBureauLike(user)) letter.ref = clip(body.ref, 60);
       if (body.numeroLettre !== undefined) letter.numeroLettre = clip(body.numeroLettre, 60);
       Object.assign(letter, {
@@ -1036,6 +1035,7 @@ async function route(req, res) {
       priorite: isValidPriorite(body.priorite) ? prioriteToArray(body.priorite) : ['normale'],
       statut,
       commission,
+      assignedTo: body.assignedTo || null,
       commissionHisto,
       expediteur: cleanParty(body.expediteur),
       destinataire: cleanParty(body.destinataire),
@@ -1539,6 +1539,7 @@ async function route(req, res) {
         priorite: Array.isArray(courrier.priorite) ? courrier.priorite : prioriteToArray(courrier.priorite),
         statut: 'recu',
         commission: null,
+        assignedTo: body.assignedTo || null,
         commissionHisto: [],
         expediteur: { nom: courrier.expediteur || courrier.uploadedByName || '', fonction: '', service: '' },
         destinataire: { nom: 'Bureau ordre', fonction: '', service: '' },
