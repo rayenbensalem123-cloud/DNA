@@ -78,7 +78,7 @@ export const api = {
   },
   // Courriers (scanned files awaiting validation)
   listCourriers: (status = '') => req('/api/courriers' + (status ? `?status=${encodeURIComponent(status)}` : '')),
-  uploadCourrier: (filename, dataBase64, sujet = '') => req('/api/courriers', { method: 'POST', body: { filename, dataBase64, sujet } }),
+  uploadCourrier: (filename, dataBase64, sujet = '', details = {}) => req('/api/courriers', { method: 'POST', body: { filename, dataBase64, sujet, ...details } }),
   validateCourrierDaf: (id, note = '') => req(`/api/courriers/${id}`, { method: 'PATCH', body: { action: 'valide_daf', note } }),
   validateCourrier: (id, note = '') => req(`/api/courriers/${id}`, { method: 'PATCH', body: { action: 'valide', note } }),
   rejectCourrier: (id, reason) => req(`/api/courriers/${id}`, { method: 'PATCH', body: { action: 'rejete', rejectionReason: reason } }),
@@ -97,7 +97,7 @@ export const api = {
       });
       return await req('/api/courriers/complete', { method: 'POST', body: { filename: file.name, pathname: blob.pathname, sujet, ...details } });
     } catch (error) {
-      if (file.size <= 9 * 1024 * 1024) return api.uploadCourrier(file.name, await toBase64(), sujet);
+      if (file.size <= 9 * 1024 * 1024) return api.uploadCourrier(file.name, await toBase64(), sujet, details);
       throw error;
     }
   },

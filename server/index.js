@@ -1397,7 +1397,7 @@ async function route(req, res) {
     if (process.env.VERCEL) {
       const { put } = await import('@vercel/blob');
       const blob = await put(storedAs, buf, { access: 'private', contentType: filename.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream', addRandomSuffix: true });
-      const courrier = { id: 'cr' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), nom: filename, sujet, expediteur, dateEmission, priorite, reference, categorie, taille: buf.length, storedAs: blob.pathname, uploadedBy: user.id, uploadedByName: user.name, uploadedAt, status: 'a_valider', note: '', rejectionReason: '', validatedBy: null, validatedAt: null, letterId: null };
+      const courrier = { id: 'cr' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), nom: filename, sujet, expediteur, dateEmission, priorite, reference, categorie, taille: buf.length, storedAs: blob.pathname, uploadedBy: user.id, uploadedByName: user.name, uploadedAt, direction: body.direction === 'sortant' ? 'sortant' : 'entrant', status: 'a_valider', note: '', rejectionReason: '', validatedBy: null, validatedAt: null, letterId: null };
       db.courriers.push(courrier);
       logActivity(db, user, 'courrier.upload', filename, { courrierId: courrier.id });
       await saveDB(db);
@@ -1405,7 +1405,7 @@ async function route(req, res) {
     }
     fs.mkdirSync(UPLOAD_DIR, { recursive: true });
     fs.writeFileSync(path.join(UPLOAD_DIR, storedAs), buf);
-    const courrier = { id: 'cr' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), nom: filename, sujet, expediteur, dateEmission, priorite, reference, categorie, taille: buf.length, storedAs, uploadedBy: user.id, uploadedByName: user.name, uploadedAt, status: 'a_valider', note: '', rejectionReason: '', validatedBy: null, validatedAt: null, letterId: null };
+    const courrier = { id: 'cr' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), nom: filename, sujet, expediteur, dateEmission, priorite, reference, categorie, taille: buf.length, storedAs, uploadedBy: user.id, uploadedByName: user.name, uploadedAt, direction: body.direction === 'sortant' ? 'sortant' : 'entrant', status: 'a_valider', note: '', rejectionReason: '', validatedBy: null, validatedAt: null, letterId: null };
     db.courriers.push(courrier);
     logActivity(db, user, 'courrier.upload', filename, { courrierId: courrier.id });
     await saveDB(db);
@@ -1436,7 +1436,7 @@ async function route(req, res) {
       const categorie = ['administration', 'juridique', 'finances', 'rh', 'communication', 'securite'].includes(body.categorie) ? body.categorie : 'administration';
       let courrier = db.courriers.find((c) => c.storedAs === pathnameForBlob);
       if (!courrier) {
-        courrier = { id: 'cr' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), nom: filename, sujet, expediteur, dateEmission, priorite, reference, categorie, taille: blob.size, storedAs: pathnameForBlob, uploadedBy: user.id, uploadedByName: user.name, uploadedAt: new Date().toISOString(), status: 'a_valider', note: '', rejectionReason: '', validatedBy: null, validatedAt: null, letterId: null };
+        courrier = { id: 'cr' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), nom: filename, sujet, expediteur, dateEmission, priorite, reference, categorie, taille: blob.size, storedAs: pathnameForBlob, uploadedBy: user.id, uploadedByName: user.name, uploadedAt: new Date().toISOString(), direction: body.direction === 'sortant' ? 'sortant' : 'entrant', status: 'a_valider', note: '', rejectionReason: '', validatedBy: null, validatedAt: null, letterId: null };
         db.courriers.push(courrier);
         logActivity(db, user, 'courrier.upload', filename, { courrierId: courrier.id });
         await saveDB(db);
@@ -1530,7 +1530,7 @@ async function route(req, res) {
         id: 'l' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
         ref: nextRef(db),
         numeroLettre: courrier.reference || courrier.nom,
-        direction: 'entrant',
+        direction: courrier.direction === 'sortant' ? 'sortant' : 'entrant',
         type: 'courrier',
         categorie: courrier.categorie || 'administration',
         objet: clip(courrier.sujet || courrier.nom.replace(/\.pdf$/i, ''), 200),
@@ -1541,10 +1541,10 @@ async function route(req, res) {
         commission: null,
         assignedTo: body.assignedTo || null,
         commissionHisto: [],
-        expediteur: { nom: courrier.expediteur || courrier.uploadedByName || '', fonction: '', service: '' },
-        destinataire: { nom: 'Bureau ordre', fonction: '', service: '' },
+        expediteur: courrier.direction === 'sortant' ? { nom: 'Direction Nationale d’Arbitrage', fonction: '', service: '' } : { nom: courrier.expediteur || courrier.uploadedByName || '', fonction: '', service: '' },
+        destinataire: courrier.direction === 'sortant' ? { nom: courrier.expediteur || '', fonction: '', service: '' } : { nom: 'Bureau ordre', fonction: '', service: '' },
         dateEmission: courrier.dateEmission || courrier.uploadedAt,
-        dateReception: new Date().toISOString(),
+        dateReception: courrier.direction === 'sortant' ? null : new Date().toISOString(),
         pieces: [{ id: 'p' + Date.now().toString(36), nom: courrier.nom, taille: courrier.taille, storedAs: courrier.storedAs, uploadedAt: courrier.uploadedAt }],
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),

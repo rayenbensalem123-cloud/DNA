@@ -9,6 +9,7 @@ import { extractPdfDetails } from '../utils/pdfExtract';
 import Select from '../components/Select';
 import DatePicker from '../components/DatePicker';
 import PriorityPills from '../components/PriorityPills';
+import LetterCreateModal from '../components/LetterCreateModal';
 
 export default function Courrier() {
   const { user } = useAuth();
@@ -16,6 +17,7 @@ export default function Courrier() {
   const navigate = useNavigate();
   const role = user?.role || 'agent';
   const isBureau = role === 'admin' || role === 'supervisor' || role === 'daf';
+  const canCreate = isBureau || Boolean(user?.permissions?.create);
   const canDafStep = role === 'daf' || role === 'admin';
   const canFinalStep = role === 'supervisor' || role === 'admin';
   const canSeeTracking = user?.role === 'admin' || user?.role === 'supervisor' || user?.role === 'daf' || Boolean(user?.permissions?.tracking);
@@ -38,7 +40,9 @@ export default function Courrier() {
   const [batchEmployee, setBatchEmployee] = useState('');
   const [reviewOpen, setReviewOpen] = useState(false);
   const [pendingFiles, setPendingFiles] = useState([]);
-  const [showSingleUpload, setShowSingleUpload] = useState(false);
+  const [pendingDirection, setPendingDirection] = useState('entrant');
+  const [showCreate, setShowCreate] = useState(false);
+  const [pending, setPending] = useState([]);
   const [singleFile, setSingleFile] = useState(null);
   const [assigningLetter, setAssigningLetter] = useState(null); // letter being assigned to employee
 
@@ -144,7 +148,13 @@ export default function Courrier() {
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   };
 
+  const loadPending = () => Promise.all([api.listCourriers('a_valider'), api.listCourriers('daf_valide')])
+    .then(([a, b]) => setPending([...(a.items || []), ...(b.items || [])].sort((x, y) => String(y.uploadedAt).localeCompare(String(x.uploadedAt)))))
+    .catch(() => {});
+  useEffect(() => { loadPending(); }, []);
+
   const load = () => {
+    loadPending();
     api.listLetters({ limit: 500, sort: 'date' })
       .then((d) => { setAllItems(d.items || []); setTotal(d.total || 0); applyFilters(); })
       .catch(() => {});
@@ -248,7 +258,8 @@ export default function Courrier() {
     r.readAsArrayBuffer(file);
   });
 
-  const handleFiles = async (files) => {
+  const handleFiles = async (files, direction = 'entrant') => {
+    setPendingDirection(direction);
     setBusy(true); setError(''); setNotice('');
     const extracted = [];
     try {
@@ -266,7 +277,7 @@ export default function Courrier() {
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   };
 
-  const handleSingleFile = async (file) => {
+  const handleSingleFile = async (file, direction = 'entrant') => {
     if (!file) return;
     setBusy(true); setError(''); setNotice('');
     try {
@@ -279,6 +290,7 @@ export default function Courrier() {
         priorite: details.priorite,
         reference: details.reference,
         categorie: details.categorie,
+        direction,
       });
       setNotice('Courrier importé : ' + file.name + (details.sujet ? ' (sujet lu automatiquement)' : ''));
       setSingleFile(null);
@@ -300,6 +312,7 @@ export default function Courrier() {
           priorite: p.edited.priorite,
           reference: p.edited.reference,
           categorie: p.edited.categorie,
+          direction: pendingDirection,
         });
       }
       setNotice(pendingFiles.length + ' courrier(s) importé(s).');
@@ -332,13 +345,13 @@ export default function Courrier() {
         {!hasSelection && (
           <div className="page-actions">
             <div style={{ display: 'flex', gap: 8 }}>
-              <label className="btn btn-primary" style={{ cursor: busy ? 'default' : 'pointer' }}>
-                {busy ? 'Téléversement...' : '1 fichier'}
-                <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display: 'none' }} onChange={(e) => { if (e.target.files && e.target.files.length) handleSingleFile(e.target.files[0]); e.target.value = ''; }} disabled={busy} />
-              </label>
-              <label className="btn btn-secondary" style={{ cursor: busy ? 'default' : 'pointer' }}>
-                {busy ? 'Téléversement...' : 'Plusieurs fichiers'}
-                <input type="file" accept=".pdf,.jpg,.jpeg,.png" multiple style={{ display: 'none' }} onChange={(e) => { if (e.target.files && e.target.files.length) handleFiles(Array.from(e.target.files)); e.target.value = ''; }} disabled={busy} />
+              {canCreate && <button type="button" className="btn btn-primary btn-add" style={{ gap: 6 }} onClick={() => setShowCreate(true)}>
+                <span className="plus" aria-hidden="true">+</span><span className="btn-label">Ajouter un courrier</span>
+              </button>}
+              <label className="btn btn-secondary" title="Téléverser un ou plusieurs scans à valider" style={{ cursor: busy ? 'default' : 'pointer' }}>
+                {busy ? 'Téléversement...' : 'Courrier'}
+                <input type="file" accept=".pdf,.jpg,.jpeg,.png" multiple style={{ display: 'none' }} disabled={busy}
+                  onChange={(e) => { const f = Array.from(e.target.files || []); e.target.value = ''; if (f.length === 1) handleSingleFile(f[0]); else if (f.length > 1) handleFiles(f); }} />
               </label>
             </div>
             {isBureau && <button className="btn btn-secondary" onClick={() => navigate('/courriers-rejetes')}>Courriers rejetés</button>}
@@ -349,6 +362,39 @@ export default function Courrier() {
       {notice && <div className="account-notice" role="status">{notice}</div>}
       {error && <div className="form-error" role="alert">{error}</div>}
 
+      {pending.length > 0 && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-pad" style={{ paddingBottom: 0 }}><h2 style={{ margin: 0, fontSize: 16 }}>Scans en attente de validation ({pending.length})</h2></div>
+          <div className="table-wrap"><table className="table">
+            <thead><tr><th>Fichier</th><th>Type</th><th>Téléversé par</th><th>Date</th><th>Étape</th><th>Actions</th></tr></thead>
+            <tbody>
+              {pending.map((c) => (
+                <tr key={c.id}>
+                  <td><span className="file-pill">Fichier {c.nom}</span>{c.sujet && <div className="muted small" style={{ marginTop: 4 }}>Titre lu : {c.sujet}</div>}<div className="muted small">{fmtSize(c.taille)}</div></td>
+                  <td><span className={'direction-pill direction-' + (c.direction === 'sortant' ? 'sortant' : 'entrant')}><i />{c.direction === 'sortant' ? 'Départ' : 'Arrivée'}</span></td>
+                  <td>{c.uploadedByName || '—'}</td>
+                  <td className="date-cell">{fmtDate(c.uploadedAt)}</td>
+                  <td>{c.status === 'daf_valide'
+                    ? <span className="badge statut-en_cours" title={c.dafValidatedByName ? `Validé par ${c.dafValidatedByName}` : ''}>DAF ✓ · superviseur requis</span>
+                    : <span className="badge statut-recu">DAF requis</span>}</td>
+                  <td>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <button className="btn btn-ghost" onClick={() => api.openCourrierFile(c.id, c.nom).catch((e) => setError(e.message))} onMouseEnter={() => api.warmFile('courrier', c.id)} onTouchStart={() => api.warmFile('courrier', c.id)}>Voir</button>
+                      {isBureau && c.status === 'a_valider' && canDafStep && role !== 'admin' && <button className="btn btn-primary" onClick={() => validateDaf(c)} disabled={busy} title="Validation DAF (étape 1)">Valider (DAF)</button>}
+                      {isBureau && c.status === 'a_valider' && role === 'admin' && <button className="btn btn-primary" onClick={() => validateFinal(c)} disabled={busy} title="Validation directe (les deux étapes)">Valider (2 étapes)</button>}
+                      {isBureau && c.status === 'a_valider' && role === 'supervisor' && <span className="muted small">En attente du DAF</span>}
+                      {isBureau && c.status === 'daf_valide' && canFinalStep && <button className="btn btn-primary" onClick={() => validateFinal(c)} disabled={busy} title="Validation finale (étape 2)">Valider (final)</button>}
+                      {isBureau && c.status === 'daf_valide' && !canFinalStep && <span className="muted small">En attente du superviseur</span>}
+                      {isBureau && <button className="btn btn-danger" onClick={() => { setRejecting(c); setReason(''); }} disabled={busy}>Rejeter</button>}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table></div>
+        </div>
+      )}
+
       {loading ? <div className="card-pad">{t('common.loading')}</div> : (
         <div className="card">
           <div className="filters">
@@ -357,7 +403,7 @@ export default function Courrier() {
             <Select ariaLabel="Statut" value={filters.statut} onChange={(v) => { set('statut', v); }} options={[{ value: '', label: 'Tous les statuts' }, ...['recu', 'en_cours', 'archive'].map((status) => ({ value: status, label: t('status.' + status) }))]} />
             <Select ariaLabel="Importance" value={filters.priorite} onChange={(v) => { set('priorite', v); }} options={[{ value: '', label: 'Toutes les importances' }, { value: 'normale', label: 'Normale' }, { value: 'urgente', label: 'Urgente' }, { value: 'confidentielle', label: 'Confidentielle' }]} />
             <button type="button" className="btn btn-secondary" onClick={() => { set('bucket', 'pending'); }}>En traitement</button>
-            <button type="button" className="btn btn-secondary" onClick={() => { set('bucket', 'overdue'); }}>En retard > 15 j</button>
+            <button type="button" className="btn btn-secondary" onClick={() => { set('bucket', 'overdue'); }}>En retard &gt; 15 j</button>
             {hasFilters && <button type="button" className="btn btn-ghost" onClick={() => setFilters({ q: '', direction: '', statut: '', priorite: '', bucket: '', from: '', to: '', expediteur: '' })}>Réinitialiser</button>}
           </div>
           <div className="filters filters-more">
@@ -467,6 +513,7 @@ export default function Courrier() {
           </section>
         </div>
       )}
+      {showCreate && <LetterCreateModal onClose={() => { setShowCreate(false); load(); }} />}
     </div>
   );
 }

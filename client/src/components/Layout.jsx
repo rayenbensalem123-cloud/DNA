@@ -88,12 +88,10 @@ export default function Layout() {
         <header className="topbar">
           <div className="topbar-brand"><img src="/federation-tunisienne-logo.webp" alt="" /><span>Bureau d’ordre</span></div>
           <div className="topbar-left">
-            {canAdd && <button className="btn btn-primary btn-add" type="button" aria-label="Ajouter un courrier" onClick={() => navigate('/?newLetter=1')}>
+            {canAdd && !isBureauLike && <button className="btn btn-primary btn-add" type="button" aria-label="Ajouter un courrier" onClick={() => navigate('/?newLetter=1')}>
               <span className="plus" aria-hidden="true">+</span><span className="btn-label">Ajouter un courrier</span>
             </button>}
-            {allowed('courriers') && <button className="btn btn-secondary" type="button" onClick={() => navigate('/courrier')}>
-              Courrier {rejectionUnread > 0 && <span className="nav-badge" aria-label={`${rejectionUnread} non lu(s)`}>{rejectionUnread}</span>}
-            </button>}
+            
           </div>
           <div className="topbar-right">
             <NotificationBell />
