@@ -1481,3 +1481,10 @@ input:focus, select:focus, textarea:focus { outline: 2px solid #ffd3d8; outline-
 .splash .login-brand .brand-title { color: #1f2433; }
 .splash .login-brand .brand-sub { color: #6b7185; }
 .splash .login-card .form-error { margin: 0; border-radius: 0; }
+
+/* Registre: search + filters on one tidy row */
+.registre-toolbar { row-gap: 12px; }
+.registre-filters { flex: 1 1 100%; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.registre-filters .input { flex: 1 1 280px; min-width: 200px; }
+.btn-add { display: inline-flex; align-items: center; gap: 6px; }
+.btn-add .plus { font-size: 18px; line-height: 1; }

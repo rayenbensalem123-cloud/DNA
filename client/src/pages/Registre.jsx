@@ -125,9 +125,11 @@ export default function Registre() {
           <label className="filter-field"><span>Au</span><DatePicker value={to} min={from || undefined} onChange={setTo} placeholder="jj/mm/aaaa" /></label>
           {(from || to) && <button type="button" className="btn btn-ghost" onClick={() => { setFrom(''); setTo(''); }}>Réinitialiser</button>}
         </div>
-        <input className="input" type="search" aria-label="Rechercher" placeholder="Rechercher (N°, objet, expéditeur…)" value={q} onChange={(e) => setQ(e.target.value)} style={{ minWidth: 240 }} />
-        <Select ariaLabel="Statut" value={statut} onChange={setStatut} options={[{ value: '', label: 'Tous les statuts' }, ...['recu', 'enregistre', 'en_cours', 'traite', 'transmis', 'vu', 'archive'].map((v) => ({ value: v, label: t('status.' + v) }))]} />
-        <Select ariaLabel="Importance" value={importance} onChange={setImportance} options={[{ value: '', label: 'Toutes les importances' }, { value: 'normale', label: 'Normale' }, { value: 'urgente', label: 'Urgente' }, { value: 'confidentielle', label: 'Confidentielle' }]} />
+        <div className="registre-filters">
+          <input className="input" type="search" aria-label="Rechercher" placeholder="Rechercher (N°, objet, expéditeur…)" value={q} onChange={(e) => setQ(e.target.value)} />
+          <Select ariaLabel="Statut" value={statut} onChange={setStatut} options={[{ value: '', label: 'Tous les statuts' }, ...['recu', 'enregistre', 'en_cours', 'traite', 'transmis', 'vu', 'archive'].map((v) => ({ value: v, label: t('status.' + v) }))]} />
+          <Select ariaLabel="Importance" value={importance} onChange={setImportance} options={[{ value: '', label: 'Toutes les importances' }, { value: 'normale', label: 'Normale' }, { value: 'urgente', label: 'Urgente' }, { value: 'confidentielle', label: 'Confidentielle' }]} />
+        </div>
       </div>
 
       <div className="card">
