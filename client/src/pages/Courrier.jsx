@@ -40,6 +40,7 @@ export default function Courrier() {
   const [pendingFiles, setPendingFiles] = useState([]);
   const [showSingleUpload, setShowSingleUpload] = useState(false);
   const [singleFile, setSingleFile] = useState(null);
+  const [assigningLetter, setAssigningLetter] = useState(null); // letter being assigned to employee
 
   const committeeName = (id) => committees.find((c) => c.id === id)?.nom || 'Sans comité';
   const employeeName = (id) => users.find((u) => u.id === id)?.name || id;
@@ -127,6 +128,7 @@ export default function Courrier() {
     try {
       await api.validateCourrier(c.id, '');
       setNotice('Courrier ' + c.nom + ' validé — lettre créée.');
+      setAssigningLetter(c);
       await load();
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   };
@@ -177,6 +179,17 @@ export default function Courrier() {
     } catch { /* non-critical */ }
   };
 
+  const assignEmployee = async (employeeId) => {
+    if (!assigningLetter) return;
+    setBusy(true); setError('');
+    try {
+      await api.updateLetter(assigningLetter.id, { assignedTo: employeeId });
+      setNotice('Courrier assigné à ' + employeeName(employeeId));
+      setAssigningLetter(null);
+      await load();
+    } catch (e) { setError(e.message); } finally { setBusy(false); }
+  };
+
   const executeBatchAction = async (action) => {
     try {
       if (action === 'archive') {
@@ -188,7 +201,7 @@ export default function Courrier() {
       } else if (action === 'employee') {
         if (!batchEmployee) { setError('Sélectionnez un employé'); return; }
         for (const l of selectedItems) {
-          await api.updateLetter(l.id, { commission: batchEmployee });
+          await api.updateLetter(l.id, { assignedTo: batchEmployee });
         }
         setNotice(selectedItems.length + ' courrier' + (selectedItems.length > 1 ? 's' : '') + ' assigné' + (selectedItems.length > 1 ? 's' : '') + ' à ' + employeeName(batchEmployee));
       } else if (action === 'delete') {
@@ -432,6 +445,24 @@ export default function Courrier() {
             <div className="modal-foot">
               <button className="btn btn-secondary" onClick={() => { setReviewOpen(false); setPendingFiles([]); }}>Annuler</button>
               <button className="btn btn-primary" onClick={confirmImport} disabled={busy}>{busy ? 'Import…' : 'Importer tout'}</button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {assigningLetter && (
+        <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setAssigningLetter(null); }}>
+          <section className="modal" role="dialog" aria-modal="true">
+            <header className="modal-head"><h2>Assigner le courrier à un employé</h2><button type="button" className="modal-close" onClick={() => setAssigningLetter(null)} aria-label="Fermer">×</button></header>
+            <div className="modal-body">
+              <p className="muted">{assigningLetter.objet}</p>
+              <label className="field">Responsable
+                <Select ariaLabel="Employé" value="" onChange={(v) => assignEmployee(v)} options={[{ value: '', label: '— Choisir un employé —' }, ...users.filter((u) => u.role !== 'admin').map((u) => ({ value: u.id, label: u.name || u.username }))]} />
+              </label>
+              <p className="muted small">L’employé sera responsable de ce courrier jusqu’à sa clôture.</p>
+            </div>
+            <div className="modal-foot">
+              <button className="btn btn-secondary" onClick={() => setAssigningLetter(null)}>Plus tard</button>
             </div>
           </section>
         </div>

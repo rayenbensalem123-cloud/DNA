@@ -32,6 +32,7 @@ export default function LetterDetail() {
   const canHandleCommittee = canManage;
   const canTransfer = Boolean(letter) && !isReadOnly && (isBureau || (perms.transfer && canManage));
   const [committees, setCommittees] = useState([]);
+  const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [committee, setCommittee] = useState('');
@@ -88,6 +89,7 @@ export default function LetterDetail() {
     setLoading(true);
     setError('');
     api.committees().then((d) => { if (!cancelled) setCommittees(d.items || []); }).catch(() => {});
+    api.users().then((d) => { if (!cancelled) setUsers(d.items || []); }).catch(() => {});
     // The list endpoint is the only read endpoint; find by id from a full scan.
     api.listLetters({ limit: 500, sort: 'date' })
       .then((d) => {
@@ -286,6 +288,7 @@ export default function LetterDetail() {
         ))}
         {info('detail.priorite', <PriorityPills value={letter.priorite} />)}
         {info('detail.commission', letter.commission ? committeeName(letter.commission) : '—')}
+        {letter.assignedTo && info('detail.assigne', users.find((u) => u.id === letter.assignedTo)?.name || letter.assignedTo)}
         {info('detail.expediteur', [letter.expediteur?.nom, letter.expediteur?.fonction, letter.expediteur?.service].filter(Boolean).join(' — ') || '—')}
         {info('detail.destinataire', [letter.destinataire?.nom, letter.destinataire?.fonction, letter.destinataire?.service].filter(Boolean).join(' — ') || '—')}
         {info('detail.dateEmission', fmtDate(letter.dateEmission))}
