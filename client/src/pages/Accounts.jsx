@@ -32,6 +32,7 @@ export default function Accounts() {
   const [confirmId, setConfirmId] = useState(null);
   const [accounts, setAccounts] = useState([]);
   const [committees, setCommittees] = useState([]);
+  const [letters, setLetters] = useState([]);
   const [form, setForm] = useState(null);
   const [query, setQuery] = useState('');
   const [busy, setBusy] = useState(false);
@@ -43,12 +44,20 @@ export default function Accounts() {
   const [comBusy, setComBusy] = useState(false);
 
   const load = useCallback(async () => {
-    const [usersData, committeesData] = await Promise.all([api.users(), api.committees()]);
+    const [usersData, committeesData, lettersData] = await Promise.all([api.users(), api.committees(), api.listLetters({ limit: 500, sort: 'date' })]);
     setAccounts(usersData.items || []);
     setCommittees(committeesData.items || []);
+    setLetters(lettersData.items || []);
   }, []);
 
   useEffect(() => { load().catch((e) => setError(e.message)); }, [load]);
+
+  const closureRate = (accountId) => {
+    const assigned = letters.filter((l) => l.assignedTo === accountId);
+    if (assigned.length === 0) return null;
+    const closed = assigned.filter((l) => l.statut === 'archive').length;
+    return Math.round((closed / assigned.length) * 100);
+  };
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -198,10 +207,17 @@ export default function Accounts() {
       <section className="card account-list-card">
         <div className="account-list-heading"><div><h2 className="card-title">Tous les comptes</h2><div className="muted">{accounts.length} compte{accounts.length === 1 ? '' : 's'}</div></div><input className="account-search" type="search" placeholder="Rechercher un compte…" aria-label="Rechercher un compte" value={query} onChange={(e) => setQuery(e.target.value)} /></div>
         <div className="table-wrap"><table className="table account-table">
-          <thead><tr><th>Nom</th><th>Identifiant</th><th>Type</th><th>Comité</th><th></th></tr></thead>
+          <thead><tr><th>Nom</th><th>Identifiant</th><th>Type</th><th>Comité</th><th>Clôture</th><th></th></tr></thead>
           <tbody>{filtered.map((account) => <tr key={account.id}>
             <td className="account-name-cell">{account.name}</td><td className="mono">{account.username}</td><td>{ROLE_LABELS[account.role] || account.role}{['chef', 'agent'].includes(account.role) && account.readOnly && <span className="readonly-tag">Lecture seule</span>}{['chef', 'agent'].includes(account.role) && !account.readOnly && <span className="muted perm-count">{Object.keys(account.permissions || {}).length} perm.</span>}</td>
             <td>{committees.find((committee) => committee.id === account.commission)?.nom || <span className="muted">Aucun</span>}</td>
+            <td>
+              {(() => {
+                const rate = closureRate(account.id);
+                if (rate === null) return <span className="muted">—</span>;
+                return <span className={rate === 100 ? 'statut-traite' : rate > 0 ? 'statut-en_cours' : 'statut-recu'}>{rate}%</span>;
+              })()}
+            </td>
             <td className="account-actions">{confirmId === account.id
               ? <span className="account-confirm" role="group" aria-label={`Confirmer la suppression de ${account.name}`}>
                   <span>Supprimer ce compte ?</span>
@@ -213,7 +229,7 @@ export default function Accounts() {
                   {account.id !== me?.id && account.role !== 'admin' && <button className="btn btn-danger account-delete" type="button" onClick={() => { setError(''); setNotice(''); setConfirmId(account.id); }}>Supprimer</button>}
                 </>}</td>
           </tr>)}
-          {filtered.length === 0 && <tr><td colSpan="5" className="empty-cell">Aucun compte trouvé.</td></tr>}</tbody>
+          {filtered.length === 0 && <tr><td colSpan="6" className="empty-cell">Aucun compte trouvé.</td></tr>}</tbody>
         </table></div>
       </section>
     </div>
