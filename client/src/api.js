@@ -81,6 +81,7 @@ export const api = {
   uploadCourrier: (filename, dataBase64, sujet = '', details = {}) => req('/api/courriers', { method: 'POST', body: { filename, dataBase64, sujet, ...details } }),
   validateCourrierDaf: (id, note = '') => req(`/api/courriers/${id}`, { method: 'PATCH', body: { action: 'valide_daf', note } }),
   validateCourrier: (id, note = '') => req(`/api/courriers/${id}`, { method: 'PATCH', body: { action: 'valide', note } }),
+  assignCourrier: (id, assignedTo) => req(`/api/courriers/${id}`, { method: 'PATCH', body: { action: 'assign', assignedTo } }),
   rejectCourrier: (id, reason) => req(`/api/courriers/${id}`, { method: 'PATCH', body: { action: 'rejete', rejectionReason: reason } }),
   // Files go straight from the browser to storage (signed upload URL), then a
   // small "complete" call records them. Falls back to the in-request upload

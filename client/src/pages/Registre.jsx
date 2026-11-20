@@ -21,6 +21,9 @@ export default function Registre() {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [items, setItems] = useState([]);
+  const [q, setQ] = useState('');
+  const [statut, setStatut] = useState('');
+  const [importance, setImportance] = useState('');
   const [loading, setLoading] = useState(true);
   const isBureau = user?.role === 'admin' || user?.role === 'supervisor' || user?.role === 'daf';
 
@@ -61,6 +64,16 @@ export default function Registre() {
   const selected = committees.find((c) => c.id === committeeId);
   const committeeName = (id) => committees.find((c) => c.id === id)?.nom || 'Sans comité';
 
+  const shown = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return items.filter((l) => {
+      if (statut && (l.statut || 'recu') !== statut) return false;
+      if (importance && !(Array.isArray(l.priorite) ? l.priorite : [l.priorite]).includes(importance)) return false;
+      if (!needle) return true;
+      return [l.numeroLettre, l.ref, l.objet, l.expediteur?.nom, l.destinataire?.nom].some((v) => String(v || '').toLowerCase().includes(needle));
+    });
+  }, [items, q, statut, importance]);
+
   const exportHeaders = useMemo(() => ([
     { key: 'numero', label: 'N° courrier' },
     { key: 'objet', label: 'Objet' },
@@ -70,7 +83,7 @@ export default function Registre() {
     { key: 'priorite', label: 'Priorité' },
     { key: 'date', label: 'Date' },
   ]), [tab]);
-  const exportRows = items.map((l) => ({
+  const exportRows = shown.map((l) => ({
     numero: l.numeroLettre || l.ref || '',
     objet: l.objet || '',
     expediteur: tab === 'arrivee' ? (l.expediteur?.nom || '') : (l.destinataire?.nom || ''),
@@ -112,17 +125,20 @@ export default function Registre() {
           <label className="filter-field"><span>Au</span><DatePicker value={to} min={from || undefined} onChange={setTo} placeholder="jj/mm/aaaa" /></label>
           {(from || to) && <button type="button" className="btn btn-ghost" onClick={() => { setFrom(''); setTo(''); }}>Réinitialiser</button>}
         </div>
+        <input className="input" type="search" aria-label="Rechercher" placeholder="Rechercher (N°, objet, expéditeur…)" value={q} onChange={(e) => setQ(e.target.value)} style={{ minWidth: 240 }} />
+        <Select ariaLabel="Statut" value={statut} onChange={setStatut} options={[{ value: '', label: 'Tous les statuts' }, ...['recu', 'enregistre', 'en_cours', 'traite', 'transmis', 'vu', 'archive'].map((v) => ({ value: v, label: t('status.' + v) }))]} />
+        <Select ariaLabel="Importance" value={importance} onChange={setImportance} options={[{ value: '', label: 'Toutes les importances' }, { value: 'normale', label: 'Normale' }, { value: 'urgente', label: 'Urgente' }, { value: 'confidentielle', label: 'Confidentielle' }]} />
       </div>
 
       <div className="card">
         <div className="archive-list-heading">
           <h2 className="card-title">{tab === 'arrivee' ? 'Registre d’arrivée' : 'Registre de départ'}</h2>
-          <span className="muted">{items.length} au total</span>
+          <span className="muted">{shown.length} au total</span>
         </div>
         {loading ? <div className="card-pad">{t('common.loading')}</div> : (
           <div className="table-wrap"><table className="table">
             <thead><tr><th>{t('letters.numero')}</th><th>{t('letters.objet')}</th><th>{tab === 'arrivee' ? 'Expéditeur' : 'Destinataire'}</th><th>{tab === 'arrivee' ? 'Comité destinataire' : 'Comité émetteur'}</th><th>{t('letters.statut')}</th><th>{t('letters.priorite')}</th><th>{t('letters.date')}</th></tr></thead>
-            <tbody>{items.map((l) => (
+            <tbody>{shown.map((l) => (
               <tr key={l.id} className="row-link" onClick={() => navigate('/lettres/' + l.id)}>
                 <td className="mono">{l.numeroLettre || '—'}</td>
                 <td><div className="letter-subject">{l.objet}</div></td>
@@ -132,7 +148,7 @@ export default function Registre() {
                 <td><PriorityPills value={l.priorite} /></td>
                 <td className="date-cell">{fmtDate(l.dateReception || l.dateEmission)}</td>
               </tr>
-            ))}{items.length === 0 && <tr><td colSpan={7} className="empty-cell">{tab === 'arrivee' ? 'Aucun courrier arrivé sur la période.' : 'Aucun courrier parti sur la période.'}</td></tr>}</tbody>
+            ))}{shown.length === 0 && <tr><td colSpan={7} className="empty-cell">{tab === 'arrivee' ? 'Aucun courrier arrivé sur la période.' : 'Aucun courrier parti sur la période.'}</td></tr>}</tbody>
           </table></div>
         )}
       </div>

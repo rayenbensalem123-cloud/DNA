@@ -193,8 +193,8 @@ export default function Courrier() {
     if (!assigningLetter) return;
     setBusy(true); setError('');
     try {
-      await api.updateLetter(assigningLetter.id, { assignedTo: employeeId });
-      setNotice('Courrier assigné à ' + employeeName(employeeId));
+      await api.assignCourrier(assigningLetter.id, employeeId);
+      setNotice('Responsable : ' + employeeName(employeeId));
       setAssigningLetter(null);
       await load();
     } catch (e) { setError(e.message); } finally { setBusy(false); }
@@ -386,6 +386,7 @@ export default function Courrier() {
                       {isBureau && c.status === 'daf_valide' && canFinalStep && <button className="btn btn-primary" onClick={() => validateFinal(c)} disabled={busy} title="Validation finale (étape 2)">Valider (final)</button>}
                       {isBureau && c.status === 'daf_valide' && !canFinalStep && <span className="muted small">En attente du superviseur</span>}
                       {isBureau && <button className="btn btn-danger" onClick={() => { setRejecting(c); setReason(''); }} disabled={busy}>Rejeter</button>}
+                      {isBureau && <button className="btn btn-secondary" onClick={() => setAssigningLetter(c)} disabled={busy} title="Choisir l’employé de l’administration responsable">{c.assignedToName ? 'Responsable : ' + c.assignedToName : 'Responsable'}</button>}
                     </div>
                   </td>
                 </tr>
@@ -395,41 +396,6 @@ export default function Courrier() {
         </div>
       )}
 
-      {loading ? <div className="card-pad">{t('common.loading')}</div> : (
-        <div className="card">
-          <div className="filters">
-            <input aria-label="Rechercher" placeholder="Rechercher (N°, objet, expéditeur…)" value={filters.q} onChange={(e) => { set('q', e.target.value); }} />
-            <Select ariaLabel="Direction" value={filters.direction} onChange={(v) => { set('direction', v); }} options={[{ value: '', label: 'Toutes les directions' }, { value: 'entrant', label: 'Entrant' }, { value: 'sortant', label: 'Sortant' }]} />
-            <Select ariaLabel="Statut" value={filters.statut} onChange={(v) => { set('statut', v); }} options={[{ value: '', label: 'Tous les statuts' }, ...['recu', 'en_cours', 'archive'].map((status) => ({ value: status, label: t('status.' + status) }))]} />
-            <Select ariaLabel="Importance" value={filters.priorite} onChange={(v) => { set('priorite', v); }} options={[{ value: '', label: 'Toutes les importances' }, { value: 'normale', label: 'Normale' }, { value: 'urgente', label: 'Urgente' }, { value: 'confidentielle', label: 'Confidentielle' }]} />
-            <button type="button" className="btn btn-secondary" onClick={() => { set('bucket', 'pending'); }}>En traitement</button>
-            <button type="button" className="btn btn-secondary" onClick={() => { set('bucket', 'overdue'); }}>En retard &gt; 15 j</button>
-            {hasFilters && <button type="button" className="btn btn-ghost" onClick={() => setFilters({ q: '', direction: '', statut: '', priorite: '', bucket: '', from: '', to: '', expediteur: '' })}>Réinitialiser</button>}
-          </div>
-          <div className="filters filters-more">
-            <label className="filter-field"><span>Du</span><DatePicker value={filters.from} max={filters.to || undefined} onChange={(v) => { set('from', v); }} placeholder="jj/mm/aaaa" /></label>
-            <label className="filter-field"><span>Au</span><DatePicker value={filters.to} min={filters.from || undefined} onChange={(v) => { set('to', v); }} placeholder="jj/mm/aaaa" /></label>
-            <label className="filter-field"><span>Expéditeur</span><input placeholder="Nom, fonction, service…" value={filters.expediteur} onChange={(event) => { set('expediteur', event.target.value); }} /></label>
-          </div>
-          {loading ? <div className="card-pad">{t('common.loading')}</div> : (
-            <div className="table-wrap"><table className="table archive-table">
-              <thead><tr><th style={{ width: '44px' }}><input type="checkbox" checked={items.length > 0 && selectedIds.size === items.length} onChange={(e) => toggleSelectAll(e.target.checked)} /></th><th>{t('letters.numero')}</th><th>{t('letters.objet')}</th><th>Comité</th><th>{t('letters.direction')}</th><th>{t('letters.statut')}</th><th>{t('letters.priorite')}</th><th>{t('letters.date')}</th></tr></thead>
-              <tbody>{items.map((letter) => (
-                <tr key={letter.id} className={'row-link' + (letter.unread ? ' row-unread' : '') + (isSelected(letter.id) ? ' row-selected' : '')} onClick={() => { if (isSelected(letter.id)) toggleSelect(letter.id, false); else navigate('/lettres/' + letter.id); }}>
-                  <td style={{ width: '44px' }}><input type="checkbox" checked={isSelected(letter.id)} onChange={(e) => toggleSelect(letter.id, e.target.checked)} /></td>
-                  <td className="mono">{letter.numeroLettre || '—'}</td>
-                  <td><div className="letter-subject">{letter.unread && <span className="badge-new">Nouveau</span>}{letter.objet}</div>{letter.personneConcernee && <div className="letter-subline">{letter.personneConcernee}</div>}</td>
-                  <td><span className="committee-pill">{committeeName(letter.commission)}</span></td>
-                  <td><span className={'direction-pill direction-' + (letter.direction || 'entrant')}><i />{t('direction.' + (letter.direction || 'entrant'))}</span></td>
-                  <td><span className={'badge statut-' + (letter.statut || 'recu')}>{t('status.' + (letter.statut || 'recu'))}</span>{(letter.transferred || (letter.commissionHisto || []).some((h) => h.type === 'transfert')) && <span className="badge badge-transfert" style={{ marginLeft: 6 }} title={canSeeTracking && transferChain(letter, (cid) => committees.find((c) => c.id === cid)?.nom || cid) ? 'Parcours : ' + transferChain(letter, (cid) => committees.find((c) => c.id === cid)?.nom || cid) : t('badge.transferred')}>{t('badge.transferred')}</span>}{letter.overdue && <span className="badge badge-overdue" style={{ marginLeft: 6 }} title="Non archivé depuis plus de 15 jours">⚠ Retard</span>}</td>
-                  <td><PriorityPills value={letter.priorite} /></td>
-                  <td className="date-cell">{fmtDate(letter.dateReception || letter.dateEmission)}</td>
-                </tr>
-              ))}{items.length === 0 && <tr><td colSpan={8} className="empty-cell">Aucun courrier.</td></tr>}</tbody>
-            </table></div>
-          )}
-        </div>
-      )}
 
       {rejecting && (
         <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) { setRejecting(null); setReason(''); } }}>
@@ -499,13 +465,13 @@ export default function Courrier() {
       {assigningLetter && (
         <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setAssigningLetter(null); }}>
           <section className="modal" role="dialog" aria-modal="true">
-            <header className="modal-head"><h2>Assigner le courrier à un employé</h2><button type="button" className="modal-close" onClick={() => setAssigningLetter(null)} aria-label="Fermer">×</button></header>
+            <header className="modal-head"><h2>Responsable du courrier</h2><button type="button" className="modal-close" onClick={() => setAssigningLetter(null)} aria-label="Fermer">×</button></header>
             <div className="modal-body">
-              <p className="muted">{assigningLetter.objet}</p>
+              <p className="muted">{assigningLetter.sujet || assigningLetter.nom}</p>
               <label className="field">Responsable
-                <Select ariaLabel="Employé" value="" onChange={(v) => assignEmployee(v)} options={[{ value: '', label: '— Choisir un employé —' }, ...users.filter((u) => u.role !== 'admin').map((u) => ({ value: u.id, label: u.name || u.username }))]} />
+                <Select ariaLabel="Employé" value={assigningLetter.assignedTo || ''} onChange={(v) => assignEmployee(v)} options={[{ value: '', label: '— Choisir un employé —' }, ...users.filter((u) => ['admin', 'supervisor', 'daf'].includes(u.role)).map((u) => ({ value: u.id, label: u.name || u.username }))]} />
               </label>
-              <p className="muted small">L’employé sera responsable de ce courrier jusqu’à sa clôture.</p>
+              <p className="muted small">Employés de l’administration uniquement. Il sera responsable de la lettre une fois le courrier validé.</p>
             </div>
             <div className="modal-foot">
               <button className="btn btn-secondary" onClick={() => setAssigningLetter(null)}>Plus tard</button>

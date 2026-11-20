@@ -1491,6 +1491,17 @@ async function route(req, res) {
 
     const body = await readBody(req);
     const action = String(body.action || '');
+    // Person in charge: chosen among the administration staff (never a comité account).
+    if (action === 'assign') {
+      if (!['a_valider', 'daf_valide'].includes(courrier.status)) return send(res, 409, { error: 'Ce courrier a déjà été traité' });
+      const target = body.assignedTo ? db.users.find((u) => u.id === String(body.assignedTo)) : null;
+      if (body.assignedTo && (!target || !['admin', 'supervisor', 'daf'].includes(target.role))) return send(res, 400, { error: 'Employé de l’administration invalide' });
+      courrier.assignedTo = target ? target.id : null;
+      courrier.assignedToName = target ? target.name : '';
+      logActivity(db, user, 'courrier.assign', courrier.nom, { courrierId: courrier.id, to: courrier.assignedToName, by: user.name });
+      await saveDB(db);
+      return send(res, 200, { item: courrier });
+    }
     // Two-step validation: a courrier is first validated by the DAF
     // (status daf_valide), then by the supervisor/admin (valide → letter).
     // An admin may do both steps at once.
@@ -1539,7 +1550,7 @@ async function route(req, res) {
         priorite: Array.isArray(courrier.priorite) ? courrier.priorite : prioriteToArray(courrier.priorite),
         statut: 'recu',
         commission: null,
-        assignedTo: body.assignedTo || null,
+        assignedTo: courrier.assignedTo || body.assignedTo || null,
         commissionHisto: [],
         expediteur: courrier.direction === 'sortant' ? { nom: 'Direction Nationale d’Arbitrage', fonction: '', service: '' } : { nom: courrier.expediteur || courrier.uploadedByName || '', fonction: '', service: '' },
         destinataire: courrier.direction === 'sortant' ? { nom: courrier.expediteur || '', fonction: '', service: '' } : { nom: 'Bureau ordre', fonction: '', service: '' },
