@@ -36,17 +36,13 @@ export default function Layout() {
   const showLetterModal = canAdd && new URLSearchParams(location.search).get('newLetter') === '1';
 
   const [rejectionUnread, setRejectionUnread] = useState(0);
-  const [toSendCount, setToSendCount] = useState(0);
-  const [transferCount, setTransferCount] = useState(0);
   const [gmailUnread, setGmailUnread] = useState(0);
   useEffect(() => {
     if (!user) return;
     const load = () => api.courrierNotifications().then((d) => setRejectionUnread((d.items || []).filter((n) => !n.read).length)).catch(() => {});
-    const loadToSend = () => { if (isBureauLike) api.toSend().then((d) => setToSendCount((d.waiting || []).length)).catch(() => {}); };
-    const loadTransfers = () => { if (isBureauLike) api.transferRequests().then((d) => setTransferCount((d.items || []).length)).catch(() => {}); };
     const loadGmail = () => { if (isBureauLike) api.gmailUnread().then((s) => (s.configured ? api.gmailMessages().then((d) => setGmailUnread(d.unread || 0)) : setGmailUnread(0))).catch(() => {}); };
-    load(); loadToSend(); loadTransfers(); loadGmail();
-    const timer = setInterval(() => { load(); loadToSend(); loadTransfers(); loadGmail(); }, 30000);
+    load(); loadGmail();
+    const timer = setInterval(() => { load(); loadGmail(); }, 30000);
     return () => clearInterval(timer);
   }, [user, location.pathname]);
 
@@ -68,17 +64,8 @@ export default function Layout() {
           <NavLink to="/" end className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}>
             <NavIcon type="dashboard" /><span className="nav-text">{t('nav.dashboard')}</span>
           </NavLink>
-          <NavLink to="/archive" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}>
-            <NavIcon type="letters" /><span className="nav-text">Archive{transferCount > 0 && <span className="nav-badge" title={`${transferCount} transfert${transferCount > 1 ? 's' : ''} en attente`}>{transferCount}</span>}</span>
-          </NavLink>
           {allowed('courriers') && <NavLink to="/courrier" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}>
-            <NavIcon type="inbox" /><span className="nav-text">Courrier</span>
-          </NavLink>}
-          {isBureauLike && <NavLink to="/a-envoyer" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}>
-            <NavIcon type="send" /><span className="nav-text">À envoyer{toSendCount > 0 && <span className="nav-badge">{toSendCount}</span>}</span>
-          </NavLink>}
-          {isBureauLike && <NavLink to="/courriers-rejetes" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}>
-            <NavIcon type="reject" /><span className="nav-text">Rejetés</span>
+            <NavIcon type="inbox" /><span className="nav-text">Courriers à valider{rejectionUnread > 0 && <span className="nav-badge" aria-label={`${rejectionUnread} non lu(s)`}>{rejectionUnread}</span>}</span>
           </NavLink>}
           {(isBureauLike || Boolean(user?.commission)) && <NavLink to={user?.commission && !isBureauLike ? `/registres/${encodeURIComponent(user.commission)}` : '/registres'} className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}>
             <NavIcon type="registre" /><span className="nav-text">{isBureauLike ? 'Registres' : 'Registre'}</span>

@@ -8,7 +8,6 @@ import Layout from './components/Layout';
 import ErrorBoundary from './components/ErrorBoundary';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
-import Archive from './pages/Archive';
 import LetterDetail from './pages/LetterDetail';
 import Accounts from './pages/Accounts';
 import Templates from './pages/Templates';
@@ -104,21 +103,17 @@ export default function App() {
               <Route path="/login" element={<ErrorBoundary label="login"><Login /></ErrorBoundary>} />
               <Route path="/" element={<Protected><Layout /></Protected>}>
                 <Route index element={<ErrorBoundary label="dashboard"><Dashboard /></ErrorBoundary>} />
-                <Route path="archive/comites/:committeeId" element={<ErrorBoundary label="archive"><Archive /></ErrorBoundary>} />
-                <Route path="archive" element={<ErrorBoundary label="archive"><Archive /></ErrorBoundary>} />
                 <Route path="comptes" element={<PermRoute perm="users"><ErrorBoundary label="accounts"><Accounts /></ErrorBoundary></PermRoute>} />
                 <Route path="modeles" element={<PermRoute perm="users"><ErrorBoundary label="templates"><Templates /></ErrorBoundary></PermRoute>} />
                 <Route path="activite" element={<PermRoute perm="journal"><ErrorBoundary label="activity"><Activity /></ErrorBoundary></PermRoute>} />
                 <Route path="courrier" element={<ErrorBoundary label="courrier"><Courrier /></ErrorBoundary>} />
-                <Route path="a-envoyer" element={<AdminOnly><ErrorBoundary label="tosend"><ToSend /></ErrorBoundary></AdminOnly>} />
-                <Route path="courriers-rejetes" element={<ErrorBoundary label="rejetes"><CourriersRejetes /></ErrorBoundary>} />
                 <Route path="registres" element={<RegistreRoute><ErrorBoundary label="registre"><Registre /></ErrorBoundary></RegistreRoute>} />
                 <Route path="registres/:committeeId" element={<RegistreRoute><ErrorBoundary label="registre"><Registre /></ErrorBoundary></RegistreRoute>} />
                 <Route path="gmail" element={<AdminOnly><ErrorBoundary label="gmail"><Gmail /></ErrorBoundary></AdminOnly>} />
-                <Route path="lettres" element={<Navigate to="/archive" replace />} />
+                <Route path="lettres" element={<Navigate to="/courrier" replace />} />
                 <Route path="lettres/nouveau" element={<Navigate to="/?newLetter=1" replace />} />
                 <Route path="lettres/:id" element={<ErrorBoundary label="letterdetail"><LetterDetail /></ErrorBoundary>} />
-                <Route path="reception" element={<Navigate to="/archive?direction=entrant" replace />} />
+                <Route path="reception" element={<Navigate to="/courrier?direction=entrant" replace />} />
               </Route>
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
