@@ -1474,3 +1474,10 @@ input:focus, select:focus, textarea:focus { outline: 2px solid #ffd3d8; outline-
 .sign-error { background: #fff0f2; color: #b91c1c; }
 .sign-submit { background: var(--primary); color: #fff; }
 .sign-submit:hover:not(:disabled) { background: var(--primary-dark); }
+
+/* Light only: error screen card */
+.splash .login-card { background: #fff; border: 1px solid #e6e8f0; border-top: 4px solid var(--primary); box-shadow: 0 24px 60px rgba(35,41,54,.14); }
+.splash .login-brand { background: #fff; background-image: none; color: #1f2433; }
+.splash .login-brand .brand-title { color: #1f2433; }
+.splash .login-brand .brand-sub { color: #6b7185; }
+.splash .login-card .form-error { margin: 0; border-radius: 0; }
