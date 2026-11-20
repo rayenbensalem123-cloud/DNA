@@ -70,7 +70,7 @@ export default function Dashboard() {
   const aAffecter = letters.filter((l) => !l.commission && (l.statut || 'recu') !== 'archive' && l.direction !== 'sortant').length;
   const urgentsNonClotures = letters.filter((l) => l.priorite === 'urgente' && l.statut !== 'archive').length;
   const fifteenDaysAgo = Date.now() - 15 * 24 * 3600 * 1000;
-  const enRetard = letters.filter((l) => l.statut !== 'archive' && new Date(letter.dateReception || letter.dateEmission || letter.createdAt).getTime() < fifteenDaysAgo).length;
+  const enRetard = letters.filter((l) => l.statut !== 'archive' && new Date(l.dateReception || l.dateEmission || l.createdAt).getTime() < fifteenDaysAgo).length;
   const archives = letters.filter((l) => l.statut === 'archive').length;
   const tauxCloture = total ? Math.round((archives / total) * 100) : 0;
   const traitementDays = (() => {
@@ -297,7 +297,7 @@ export default function Dashboard() {
             <tbody>{overdueLetters.map((letter) => (
               <tr key={letter.id} className="row-link" onClick={() => navigate('/lettres/' + letter.id)}>
                 <td className="mono">{letter.numeroLettre || '—'}</td>
-                <td><div className="letter-subject">{l.objet}</div></td>
+                <td><div className="letter-subject">{letter.objet}</div></td>
                 <td><span className="committee-pill">{committees.find((c) => c.id === letter.commission)?.nom || 'Sans comité'}</span></td>
                 <td><span className={'badge statut-' + (letter.statut || 'recu')}>{t('status.' + (letter.statut || 'recu'))}</span>{(letter.transferred || (letter.commissionHisto || []).some((h) => h.type === 'transfert')) && <span className="badge badge-transfert" style={{ marginLeft: 6 }} title={canSeeTracking && transferChain(letter, (cid) => committees.find((c) => c.id === cid)?.nom || cid) ? 'Parcours : ' + transferChain(letter, (cid) => committees.find((c) => c.id === cid)?.nom || cid) : undefined}>{t('badge.transferred')}</span>}{letter.overdue && <span className="badge badge-overdue" style={{ marginLeft: 6 }} title="Non archivé depuis plus de 15 jours">⚠ Retard</span>}</td>
                 <td><PriorityPills value={letter.priorite} /></td>
