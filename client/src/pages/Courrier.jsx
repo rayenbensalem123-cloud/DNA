@@ -1,61 +1,232 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../auth';
 import { useLanguage } from '../i18n';
-import { fmtDate, fmtSize } from '../utils';
-import { extractPdfDetails, DETAIL_LABELS } from '../utils/pdfExtract';
+import { fmtDate, fmtSize, transferChain } from '../utils';
+import { downloadCsv, downloadXlsx, printPdf } from '../utils/exportFile';
+import { extractPdfDetails } from '../utils/pdfExtract';
+import Select from '../components/Select';
+import DatePicker from '../components/DatePicker';
+import PriorityPills from '../components/PriorityPills';
 
 export default function Courrier() {
   const { user } = useAuth();
   const { t } = useLanguage();
   const navigate = useNavigate();
+  const role = user?.role || 'agent';
+  const isBureau = role === 'admin' || role === 'supervisor' || role === 'daf';
+  const canDafStep = role === 'daf' || role === 'admin';
+  const canFinalStep = role === 'supervisor' || role === 'admin';
+  const canSeeTracking = user?.role === 'admin' || user?.role === 'supervisor' || user?.role === 'daf' || Boolean(user?.permissions?.tracking);
+
   const [items, setItems] = useState([]);
+  const [allItems, setAllItems] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [committees, setCommittees] = useState([]);
+  const [users, setUsers] = useState([]); // employees for assignment
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [rejecting, setRejecting] = useState(null);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
-  // Two-step validation: step 1 by the DAF (or admin), step 2 by the
-  // supervisor/admin. A comité granted the "courriers" permission can deposit
-  // scans but not validate or reject them.
-  const role = user?.role || 'agent';
-  const isBureau = role === 'admin' || role === 'supervisor' || role === 'daf';
-  const canDafStep = role === 'daf' || role === 'admin';
-  const canFinalStep = role === 'supervisor' || role === 'admin';
-  // OCR review: files awaiting confirmation before upload.
+  const [filters, setFilters] = useState({ q: '', direction: '', statut: '', priorite: '', bucket: '', from: '', to: '', expediteur: '' });
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [batchOpen, setBatchOpen] = useState(false);
+  const [batchAction, setBatchAction] = useState('');
+  const [batchEmployee, setBatchEmployee] = useState('');
   const [reviewOpen, setReviewOpen] = useState(false);
-  const [pendingFiles, setPendingFiles] = useState([]); // { file, details, edited }
+  const [pendingFiles, setPendingFiles] = useState([]);
+  const [showSingleUpload, setShowSingleUpload] = useState(false);
+  const [singleFile, setSingleFile] = useState(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const [pending, dafValidated] = await Promise.all([api.listCourriers('a_valider'), api.listCourriers('daf_valide')]);
-      const merged = [...(pending.items || []), ...(dafValidated.items || [])]
-        .sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
-      setItems(merged);
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
+  const committeeName = (id) => committees.find((c) => c.id === id)?.nom || 'Sans comité';
+  const employeeName = (id) => users.find((u) => u.id === id)?.name || id;
+
+  const set = (key, value) => setFilters((current) => ({ ...current, [key]: value }));
+
+  useEffect(() => {
+    Promise.all([api.committees(), api.users()])
+      .then(([c, u]) => { setCommittees(c.items || []); setUsers(u.items || []); })
+      .catch(() => {});
   }, []);
-
-  useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
     let cancelled = false;
-    api.courrierNotifications().then(async (d) => {
-      const unread = (d.items || []).filter((n) => !n.read);
-      for (const n of unread) {
+    setLoading(true); setError('');
+    api.listLetters({ limit: 500, sort: 'date' })
+      .then((d) => {
         if (cancelled) return;
-        await api.markCourrierNotificationRead(n.id).catch(() => {});
-      }
-    }).catch(() => {});
+        setAllItems(d.items || []);
+        setTotal(d.total || 0);
+        applyFilters();
+      })
+      .catch((e) => { setError(e.message); })
+      .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, []);
+  }, [filters]);
+
+  const applyFilters = () => {
+    const fifteenDaysAgo = Date.now() - 15 * 24 * 3600 * 1000;
+    let matched = allItems;
+    if (filters.q) {
+      const q = filters.q.toLowerCase();
+      matched = matched.filter((l) => {
+        const hay = [(l.ref || ''), (l.numeroLettre || ''), (l.objet || ''), (l.expediteur?.nom || ''), (l.destinataire?.nom || '')].join(' ').toLowerCase();
+        return q.split(/\s+/).every((w) => hay.includes(w));
+      });
+    }
+    if (filters.direction) matched = matched.filter((l) => (l.direction || 'entrant') === filters.direction);
+    if (filters.statut) matched = matched.filter((l) => (l.statut || 'recu') === filters.statut);
+    if (filters.priorite) matched = matched.filter((l) => Array.isArray(l.priorite) ? l.priorite.includes(filters.priorite) : l.priorite === filters.priorite);
+    if (filters.from) matched = matched.filter((l) => (l.dateEmission || l.createdAt) >= filters.from);
+    if (filters.to) matched = matched.filter((l) => (l.dateEmission || l.createdAt) <= filters.to);
+    if (filters.expediteur) {
+      const e = filters.expediteur.toLowerCase();
+      matched = matched.filter((l) => (l.expediteur?.nom || '').toLowerCase().includes(e));
+    }
+    if (filters.bucket === 'overdue') {
+      matched = matched.filter((l) => (l.statut || 'recu') !== 'archive' && new Date(l.dateReception || l.dateEmission || l.createdAt).getTime() < fifteenDaysAgo);
+    } else if (filters.bucket === 'pending') {
+      matched = matched.filter((l) => (l.statut || 'recu') !== 'archive');
+    }
+    matched.sort((a, b) => new Date(b.dateReception || b.dateEmission || b.createdAt) - new Date(a.dateReception || a.dateEmission || a.createdAt));
+    setItems(matched);
+    setTotal(matched.length);
+  };
+  const hasFilters = Boolean(filters.q || filters.direction || filters.statut || filters.priorite || filters.bucket || filters.from || filters.to || filters.expediteur);
+
+  const toggleSelect = (id, checked) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id); else next.delete(id);
+      return next;
+    });
+  };
+  const toggleSelectAll = (checked) => {
+    setSelectedIds(checked ? new Set(items.map((l) => l.id)) : new Set());
+  };
+  const isSelected = (id) => selectedIds.has(id);
+  const hasSelection = selectedIds.size > 0;
+  const selectedItems = items.filter((l) => selectedIds.has(l.id));
+
+  const hasValidationButtons = isBureau && (canDafStep || canFinalStep);
+
+  const validateDaf = async (c) => {
+    setBusy(true); setError(''); setNotice('');
+    try {
+      await api.validateCourrierDaf(c.id, '');
+      setNotice('Courrier ' + c.nom + ' validé (étape DAF) — en attente de la validation finale.');
+      await load();
+    } catch (e) { setError(e.message); } finally { setBusy(false); }
+  };
+
+  const validateFinal = async (c) => {
+    setBusy(true); setError(''); setNotice('');
+    try {
+      await api.validateCourrier(c.id, '');
+      setNotice('Courrier ' + c.nom + ' validé — lettre créée.');
+      await load();
+    } catch (e) { setError(e.message); } finally { setBusy(false); }
+  };
+
+  const reject = async () => {
+    if (!rejecting) return;
+    setBusy(true); setError(''); setNotice('');
+    try {
+      await api.rejectCourrier(rejecting.id, reason);
+      setNotice('Courrier ' + rejecting.nom + ' rejeté.');
+      setRejecting(null); setReason('');
+      await load();
+    } catch (e) { setError(e.message); } finally { setBusy(false); }
+  };
+
+  const load = () => {
+    api.listLetters({ limit: 500, sort: 'date' })
+      .then((d) => { setAllItems(d.items || []); setTotal(d.total || 0); applyFilters(); })
+      .catch(() => {});
+  };
+
+  const exportHeaders = [
+    { key: 'numeroLettre', label: 'N° courrier' },
+    { key: 'objet', label: 'Objet' },
+    { key: 'commission', label: 'Comité' },
+    { key: 'direction', label: 'Direction' },
+    { key: 'statut', label: 'Statut' },
+    { key: 'priorite', label: 'Priorité' },
+    { key: 'expediteur', label: 'Expéditeur' },
+    { key: 'date', label: 'Date' },
+  ];
+  const exportRows = items.map((l) => ({
+    numeroLettre: l.numeroLettre || l.ref || '',
+    objet: l.objet || '',
+    commission: committeeName(l.commission),
+    direction: l.direction === 'sortant' ? 'Sortant' : 'Entrant',
+    statut: t('status.' + (l.statut || 'recu')),
+    priorite: l.priorite === 'urgente' ? 'Urgente' : l.priorite === 'confidentielle' ? 'Confidentielle' : 'Normale',
+    expediteur: l.expediteur?.nom || '',
+    date: fmtDate(l.dateReception || l.dateEmission),
+  }));
+  const doExport = async (format) => {
+    try {
+      const name = 'courriers';
+      if (format === 'csv') downloadCsv(name, exportHeaders, exportRows);
+      else if (format === 'xlsx') await downloadXlsx(name, exportHeaders, exportRows);
+      else printPdf({ title: 'Courriers à valider', subtitle: [filters.q && 'Recherche : ' + filters.q, filters.from && 'du ' + filters.from, filters.to && 'au ' + filters.to].filter(Boolean).join(' · '), headers: exportHeaders, rows: exportRows, meta: { by: user?.name } });
+    } catch { /* non-critical */ }
+  };
+
+  const executeBatchAction = async (action) => {
+    try {
+      if (action === 'archive') {
+        for (const l of selectedItems) {
+          if (l.statut === 'archive') continue;
+          await api.updateLetter(l.id, { statut: 'archive' });
+        }
+        setNotice(selectedItems.length + ' courrier' + (selectedItems.length > 1 ? 's' : '') + ' archivé' + (selectedItems.length > 1 ? 's' : ''));
+      } else if (action === 'employee') {
+        if (!batchEmployee) { setError('Sélectionnez un employé'); return; }
+        for (const l of selectedItems) {
+          await api.updateLetter(l.id, { commission: batchEmployee });
+        }
+        setNotice(selectedItems.length + ' courrier' + (selectedItems.length > 1 ? 's' : '') + ' assigné' + (selectedItems.length > 1 ? 's' : '') + ' à ' + employeeName(batchEmployee));
+      } else if (action === 'delete') {
+        for (const l of selectedItems) {
+          await api.deleteLetter(l.id);
+        }
+        setNotice(selectedItems.length + ' courrier' + (selectedItems.length > 1 ? 's' : '') + ' supprimé' + (selectedItems.length > 1 ? 's' : ''));
+      } else if (action === 'export-csv' || action === 'export-xlsx' || action === 'export-pdf') {
+        const headers = [
+          { key: 'numeroLettre', label: 'N° courrier' },
+          { key: 'objet', label: 'Objet' },
+          { key: 'commission', label: 'Comité' },
+          { key: 'direction', label: 'Direction' },
+          { key: 'statut', label: 'Statut' },
+          { key: 'priorite', label: 'Priorité' },
+          { key: 'expediteur', label: 'Expéditeur' },
+          { key: 'date', label: 'Date' },
+        ];
+        if (!filters.q) headers.splice(2, 0, { key: 'commission', label: 'Comité' });
+        const rows = selectedItems.map((l) => ({
+          numeroLettre: l.numeroLettre || l.ref || '',
+          objet: l.objet || '',
+          direction: l.direction === 'sortant' ? 'Sortant' : 'Entrant',
+          statut: t('status.' + (l.statut || 'recu')),
+          priorite: l.priorite === 'urgente' ? 'Urgente' : l.priorite === 'confidentielle' ? 'Confidentielle' : 'Normale',
+          expediteur: l.expediteur?.nom || '',
+          date: fmtDate(l.dateReception || l.dateEmission),
+        }));
+        if (action === 'export-csv') downloadCsv('courriers-selection', headers, rows);
+        else if (action === 'export-xlsx') await downloadXlsx('courriers-selection', headers, rows);
+        else printPdf({ title: 'Courriers — Sélection', subtitle: selectedItems.length + ' courrier' + (selectedItems.length > 1 ? 's' : ''), headers, rows, meta: { by: user?.name } });
+      }
+      setSelectedIds(new Set()); setBatchOpen(false); setBatchAction(''); setBatchEmployee('');
+      await load();
+    } catch (e) { setError(e.message); }
+  };
+
+  const PRIORITY_LABELS = { normale: 'Normale', urgente: 'Urgente', confidentielle: 'Confidentielle' };
 
   const readFileAsBuffer = (file) => new Promise((resolve, reject) => {
     const r = new FileReader();
@@ -65,9 +236,7 @@ export default function Courrier() {
   });
 
   const handleFiles = async (files) => {
-    setBusy(true);
-    setError('');
-    setNotice('');
+    setBusy(true); setError(''); setNotice('');
     const extracted = [];
     try {
       let readCount = 0;
@@ -81,11 +250,27 @@ export default function Courrier() {
       setPendingFiles(extracted);
       setReviewOpen(true);
       setNotice(files.length + ' fichier(s) prêt(s) à importer' + (readCount ? ` — champs lus automatiquement pour ${readCount}.` : '.'));
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setBusy(false);
-    }
+    } catch (e) { setError(e.message); } finally { setBusy(false); }
+  };
+
+  const handleSingleFile = async (file) => {
+    if (!file) return;
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const details = await extractPdfDetails(file, (phase) => {
+        if (phase === 'ocr') setNotice('Lecture de « ' + file.name + ' » (OCR du scan)…');
+      });
+      await api.uploadCourrierFile(file, details.sujet, {
+        expediteur: details.expediteur,
+        dateEmission: details.dateEmission,
+        priorite: details.priorite,
+        reference: details.reference,
+        categorie: details.categorie,
+      });
+      setNotice('Courrier importé : ' + file.name + (details.sujet ? ' (sujet lu automatiquement)' : ''));
+      setSingleFile(null);
+      await load();
+    } catch (e) { setError(e.message); } finally { setBusy(false); }
   };
 
   const updateField = (fileIdx, field, value) => {
@@ -93,9 +278,7 @@ export default function Courrier() {
   };
 
   const confirmImport = async () => {
-    setBusy(true);
-    setError('');
-    setReviewOpen(false);
+    setBusy(true); setError(''); setReviewOpen(false);
     try {
       for (const p of pendingFiles) {
         await api.uploadCourrierFile(p.file, p.edited.sujet, {
@@ -108,80 +291,46 @@ export default function Courrier() {
       }
       setNotice(pendingFiles.length + ' courrier(s) importé(s).');
       await load();
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setBusy(false);
-      setPendingFiles([]);
-    }
+    } catch (e) { setError(e.message); } finally { setBusy(false); setPendingFiles([]); }
   };
 
-  const validateDaf = async (c) => {
-    setBusy(true);
-    setError('');
-    setNotice('');
-    try {
-      await api.validateCourrierDaf(c.id, '');
-      setNotice('Courrier ' + c.nom + ' validé (étape DAF) — en attente de la validation finale.');
-      await load();
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const validate = async (c) => {
-    setBusy(true);
-    setError('');
-    setNotice('');
-    try {
-      await api.validateCourrier(c.id, '');
-      setNotice('Courrier ' + c.nom + ' validé — lettre créée.');
-      await load();
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const reject = async () => {
-    if (!rejecting) return;
-    setBusy(true);
-    setError('');
-    setNotice('');
-    try {
-      await api.rejectCourrier(rejecting.id, reason);
-      setNotice('Courrier ' + rejecting.nom + ' rejeté.');
-      setRejecting(null);
-      setReason('');
-      await load();
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const PRIORITY_LABELS = { normale: 'Normale', urgente: 'Urgente', confidentielle: 'Confidentielle' };
   const CATEGORY_LABELS = { administration: 'Administration', juridique: 'Juridique', finances: 'Finances', rh: 'Ressources humaines', communication: 'Communication', securite: 'Sécurité' };
 
   return (
     <div className="page">
       <div className="page-header">
-          <div className="page-title-copy">
-            <span className="page-title-kicker">Validation</span>
-            <h1>Courriers à valider</h1>
-            <div className="muted">{items.length} courrier{items.length === 1 ? '' : 's'} en attente — validation en deux étapes : DAF puis superviseur</div>
-          </div>
-        <div className="page-actions">
-          <label className="btn btn-primary" style={{ cursor: busy ? 'default' : 'pointer' }}>
-            {busy ? 'Téléversement...' : 'Téléverser des courriers'}
-            <input type="file" accept=".pdf,.jpg,.jpeg,.png" multiple style={{ display: 'none' }} onChange={(e) => { if (e.target.files && e.target.files.length) handleFiles(Array.from(e.target.files)); e.target.value = ''; }} disabled={busy} />
-          </label>
-          {isBureau && <button className="btn btn-secondary" onClick={() => navigate('/courriers-rejetes')}>Courriers rejetés</button>}
+        <div className="page-title-copy">
+          <span className="page-title-kicker">Courriers à valider</span>
+          <h1>Courriers à valider</h1>
+          <div className="muted">{items.length} courrier{items.length === 1 ? '' : 's'} — DAF puis superviseur</div>
         </div>
+        {hasSelection && (
+          <div className="batch-bar">
+            <span className="muted">{selectedIds.size} courrier{selectedIds.size > 1 ? 's' : ''} sélectionné{selectedIds.size > 1 ? 's' : ''}</span>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => toggleSelectAll(false)}>Tout désélectionner</button>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setBatchAction('archive'); setBatchOpen(true); }}>Archiver la sélection</button>
+            {isBureau && <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setBatchAction('employee'); setBatchOpen(true); }}>Assigner à un employé</button>}
+            <button type="button" className="btn btn-danger btn-sm" onClick={() => { setBatchAction('delete'); setBatchOpen(true); }}>Supprimer la sélection</button>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setBatchAction('export-csv'); setBatchOpen(true); }}>Exporter CSV</button>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setBatchAction('export-xlsx'); setBatchOpen(true); }}>Exporter Excel</button>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setBatchAction('export-pdf'); setBatchOpen(true); }}>Exporter PDF</button>
+          </div>
+        )}
+        {!hasSelection && (
+          <div className="page-actions">
+            <div style={{ display: 'flex', gap: 8 }}>
+              <label className="btn btn-primary" style={{ cursor: busy ? 'default' : 'pointer' }}>
+                {busy ? 'Téléversement...' : '1 fichier'}
+                <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display: 'none' }} onChange={(e) => { if (e.target.files && e.target.files.length) handleSingleFile(e.target.files[0]); e.target.value = ''; }} disabled={busy} />
+              </label>
+              <label className="btn btn-secondary" style={{ cursor: busy ? 'default' : 'pointer' }}>
+                {busy ? 'Téléversement...' : 'Plusieurs fichiers'}
+                <input type="file" accept=".pdf,.jpg,.jpeg,.png" multiple style={{ display: 'none' }} onChange={(e) => { if (e.target.files && e.target.files.length) handleFiles(Array.from(e.target.files)); e.target.value = ''; }} disabled={busy} />
+              </label>
+            </div>
+            {isBureau && <button className="btn btn-secondary" onClick={() => navigate('/courriers-rejetes')}>Courriers rejetés</button>}
+          </div>
+        )}
       </div>
 
       {notice && <div className="account-notice" role="status">{notice}</div>}
@@ -189,34 +338,37 @@ export default function Courrier() {
 
       {loading ? <div className="card-pad">{t('common.loading')}</div> : (
         <div className="card">
-          <div className="table-wrap"><table className="table">
-            <thead><tr><th>Fichier</th><th>Taille</th><th>Téléversé par</th><th>Date</th><th>Étape</th><th>Actions</th></tr></thead>
-            <tbody>
-              {items.map((c) => (
-                <tr key={c.id}>
-                  <td><span className="file-pill">Fichier {c.nom}</span>{c.sujet && <div className="muted small" style={{ marginTop: 4 }}>Titre lu : {c.sujet}</div>}</td>
-                  <td>{fmtSize(c.taille)}</td>
-                  <td>{c.uploadedByName || '—'}</td>
-                  <td className="date-cell">{fmtDate(c.uploadedAt)}</td>
-                  <td>{c.status === 'daf_valide'
-                    ? <span className="badge statut-en_cours" title={c.dafValidatedByName ? `Validé par ${c.dafValidatedByName}` : ''}>DAF ✓ · superviseur requis</span>
-                    : <span className="badge statut-recu" title={c.dafValidatedByName ? `Validé par ${c.dafValidatedByName}` : ''}>DAF requis</span>}</td>
-                  <td>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <button className="btn btn-ghost" onClick={() => api.openCourrierFile(c.id, c.nom)} onMouseEnter={() => api.warmFile('courrier', c.id)} onTouchStart={() => api.warmFile('courrier', c.id)}>Voir</button>
-                      {isBureau && c.status === 'a_valider' && canDafStep && <button className="btn btn-secondary" onClick={() => validateDaf(c)} disabled={busy} title="Validation DAF (étape 1)">Valider (DAF)</button>}
-                      {isBureau && c.status === 'a_valider' && role === 'admin' && <button className="btn btn-primary" onClick={() => validate(c)} disabled={busy} title="Validation directe (les deux étapes)">Valider (2 étapes)</button>}
-                      {isBureau && c.status === 'a_valider' && role === 'supervisor' && <span className="muted small">En attente du DAF</span>}
-                      {isBureau && c.status === 'daf_valide' && canFinalStep && <button className="btn btn-primary" onClick={() => validate(c)} disabled={busy} title="Validation finale (étape 2)">Valider (final)</button>}
-                      {isBureau && c.status === 'daf_valide' && !canFinalStep && <span className="muted small">En attente du superviseur</span>}
-                      {isBureau && <button className="btn btn-danger" onClick={() => { setRejecting(c); setReason(''); }} disabled={busy}>Rejeter</button>}
-                    </div>
-                  </td>
+          <div className="filters">
+            <input aria-label="Rechercher" placeholder="Rechercher (N°, objet, expéditeur…)" value={filters.q} onChange={(e) => { set('q', e.target.value); }} />
+            <Select ariaLabel="Direction" value={filters.direction} onChange={(v) => { set('direction', v); }} options={[{ value: '', label: 'Toutes les directions' }, { value: 'entrant', label: 'Entrant' }, { value: 'sortant', label: 'Sortant' }]} />
+            <Select ariaLabel="Statut" value={filters.statut} onChange={(v) => { set('statut', v); }} options={[{ value: '', label: 'Tous les statuts' }, ...['recu', 'en_cours', 'archive'].map((status) => ({ value: status, label: t('status.' + status) }))]} />
+            <Select ariaLabel="Importance" value={filters.priorite} onChange={(v) => { set('priorite', v); }} options={[{ value: '', label: 'Toutes les importances' }, { value: 'normale', label: 'Normale' }, { value: 'urgente', label: 'Urgente' }, { value: 'confidentielle', label: 'Confidentielle' }]} />
+            <button type="button" className="btn btn-secondary" onClick={() => { set('bucket', 'pending'); }}>En traitement</button>
+            <button type="button" className="btn btn-secondary" onClick={() => { set('bucket', 'overdue'); }}>En retard > 15 j</button>
+            {hasFilters && <button type="button" className="btn btn-ghost" onClick={() => setFilters({ q: '', direction: '', statut: '', priorite: '', bucket: '', from: '', to: '', expediteur: '' })}>Réinitialiser</button>}
+          </div>
+          <div className="filters filters-more">
+            <label className="filter-field"><span>Du</span><DatePicker value={filters.from} max={filters.to || undefined} onChange={(v) => { set('from', v); }} placeholder="jj/mm/aaaa" /></label>
+            <label className="filter-field"><span>Au</span><DatePicker value={filters.to} min={filters.from || undefined} onChange={(v) => { set('to', v); }} placeholder="jj/mm/aaaa" /></label>
+            <label className="filter-field"><span>Expéditeur</span><input placeholder="Nom, fonction, service…" value={filters.expediteur} onChange={(event) => { set('expediteur', event.target.value); }} /></label>
+          </div>
+          {loading ? <div className="card-pad">{t('common.loading')}</div> : (
+            <div className="table-wrap"><table className="table archive-table">
+              <thead><tr><th style={{ width: '44px' }}><input type="checkbox" checked={items.length > 0 && selectedIds.size === items.length} onChange={(e) => toggleSelectAll(e.target.checked)} /></th><th>{t('letters.numero')}</th><th>{t('letters.objet')}</th><th>Comité</th><th>{t('letters.direction')}</th><th>{t('letters.statut')}</th><th>{t('letters.priorite')}</th><th>{t('letters.date')}</th></tr></thead>
+              <tbody>{items.map((letter) => (
+                <tr key={letter.id} className={'row-link' + (letter.unread ? ' row-unread' : '') + (isSelected(letter.id) ? ' row-selected' : '')} onClick={() => { if (isSelected(letter.id)) toggleSelect(letter.id, false); else navigate('/lettres/' + letter.id); }}>
+                  <td style={{ width: '44px' }}><input type="checkbox" checked={isSelected(letter.id)} onChange={(e) => toggleSelect(letter.id, e.target.checked)} /></td>
+                  <td className="mono">{letter.numeroLettre || '—'}</td>
+                  <td><div className="letter-subject">{letter.unread && <span className="badge-new">Nouveau</span>}{letter.objet}</div>{letter.personneConcernee && <div className="letter-subline">{letter.personneConcernee}</div>}</td>
+                  <td><span className="committee-pill">{committeeName(letter.commission)}</span></td>
+                  <td><span className={'direction-pill direction-' + (letter.direction || 'entrant')}><i />{t('direction.' + (letter.direction || 'entrant'))}</span></td>
+                  <td><span className={'badge statut-' + (letter.statut || 'recu')}>{t('status.' + (letter.statut || 'recu'))}</span>{(letter.transferred || (letter.commissionHisto || []).some((h) => h.type === 'transfert')) && <span className="badge badge-transfert" style={{ marginLeft: 6 }} title={canSeeTracking && transferChain(letter, (cid) => committees.find((c) => c.id === cid)?.nom || cid) ? 'Parcours : ' + transferChain(letter, (cid) => committees.find((c) => c.id === cid)?.nom || cid) : t('badge.transferred')}>{t('badge.transferred')}</span>}{letter.overdue && <span className="badge badge-overdue" style={{ marginLeft: 6 }} title="Non archivé depuis plus de 15 jours">⚠ Retard</span>}</td>
+                  <td><PriorityPills value={letter.priorite} /></td>
+                  <td className="date-cell">{fmtDate(letter.dateReception || letter.dateEmission)}</td>
                 </tr>
-              ))}
-              {items.length === 0 && <tr><td colSpan={6} className="empty-cell">Aucun courrier à valider</td></tr>}
-            </tbody>
-          </table></div>
+              ))}{items.length === 0 && <tr><td colSpan={8} className="empty-cell">Aucun courrier.</td></tr>}</tbody>
+            </table></div>
+          )}
         </div>
       )}
 
