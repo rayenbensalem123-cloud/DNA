@@ -725,6 +725,58 @@ async function route(req, res) {
 
   // ---- Referees (arbitres) ----
   const refereeIdMatch = /^\/api\/referees\/([A-Za-z0-9_-]+)$/.exec(pathname);
+  // Génère un matricule unique et séquentiel: ARB-AAAA-NNNN
+  const nextMatricule = (db) => {
+    const year = new Date().getFullYear();
+    const prefix = 'ARB-' + year + '-';
+    let max = 0;
+    for (const r of (db.referees || [])) {
+      const m = String(r.matricule || '').match(new RegExp('^' + prefix + '(\\d{4})$'));
+      if (m) max = Math.max(max, parseInt(m[1], 10));
+    }
+    return prefix + String(max + 1).padStart(4, '0');
+  };
+  // Import en lot (ex: depuis un PDF): valide et insère plusieurs arbitres d'un coup
+  if (pathname === '/api/referees/import' && method === 'POST') {
+    const user = requireAuth(req, res);
+    if (!user) return;
+    if (!isBureauLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
+    if (denyReadOnly(user, res)) return;
+    const body = await readBody(req, 4);
+    const list = Array.isArray(body.referees) ? body.referees : [];
+    if (!list.length) return send(res, 400, { error: 'Aucun arbitre à importer' });
+    const db = getDB();
+    const created = [], errors = [];
+    for (const item of list.slice(0, 500)) {
+      const nom = String(item.nom || '').trim().replace(/\s+/g, ' ');
+      if (nom.length < 2) { errors.push('Nom manquant: ' + JSON.stringify(item).slice(0, 60)); continue; }
+      const email = String(item.email || '').trim().toLowerCase().slice(0, 120);
+      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { errors.push('Email invalide: ' + email); continue; }
+      const referee = {
+        id: 'ref' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex'),
+        nom,
+        prenom: String(item.prenom || '').trim().slice(0, 120),
+        grade: String(item.grade || '').trim().slice(0, 80),
+        categorie: String(item.categorie || '').trim().slice(0, 80),
+        region: String(item.region || '').trim().slice(0, 80),
+        telephone: String(item.telephone || '').trim().slice(0, 40),
+        email,
+        matricule: nextMatricule(db),
+        dateNaissance: String(item.dateNaissance || '').trim().slice(0, 20),
+        association: String(item.association || '').trim().slice(0, 120),
+        statut: ['actif', 'inactif', 'suspendu'].includes(item.statut) ? item.statut : 'actif',
+        note: String(item.note || '').trim().slice(0, 2000),
+        createdAt: new Date().toISOString(), createdBy: user.id,
+      };
+      db.referees.push(referee);
+      created.push(referee);
+    }
+    if (created.length) {
+      logActivity(db, user, 'referee.import', created.length + ' arbitres', { count: created.length, by: user.name });
+      await saveDB(db);
+    }
+    return send(res, 200, { created: created.length, errors, items: created });
+  }
   if (pathname === '/api/referees' && method === 'GET') {
     const user = requireAuth(req, res);
     if (!user) return;
@@ -765,16 +817,18 @@ async function route(req, res) {
     if (fields.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fields.email)) return send(res, 400, { error: 'Email invalide' });
 
     if (method === 'POST') {
-      const referee = { id: 'ref' + Date.now().toString(36) + crypto.randomBytes(2).toString('hex'), nom, ...fields, createdAt: new Date().toISOString(), createdBy: user.id };
+      // Matricule toujours généré par la plateforme, jamais accepté du client
+      const referee = { id: 'ref' + Date.now().toString(36) + crypto.randomBytes(2).toString('hex'), nom, ...fields, matricule: nextMatricule(db), createdAt: new Date().toISOString(), createdBy: user.id };
       db.referees.push(referee);
       logActivity(db, user, 'referee.create', nom, { refereeId: referee.id, by: user.name });
       await saveDB(db);
       return send(res, 201, { item: referee });
     }
-    // PATCH
+    // PATCH — le matricule reste immuable (généré à la création)
     const referee = (db.referees || []).find((r) => r.id === refereeIdMatch[1]);
     if (!referee) return send(res, 404, { error: 'Arbitre introuvable' });
-    Object.assign(referee, { nom, ...fields });
+    const { matricule: _ignored, ...editableFields } = fields;
+    Object.assign(referee, { nom, ...editableFields });
     logActivity(db, user, 'referee.update', nom, { refereeId: referee.id, by: user.name });
     await saveDB(db);
     return send(res, 200, { item: referee });

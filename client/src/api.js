@@ -143,6 +143,7 @@ export const api = {
   createReferee: (data) => req('/api/referees', { method: 'POST', body: data }),
   updateReferee: (id, data) => req(`/api/referees/${encodeURIComponent(id)}`, { method: 'PATCH', body: data }),
   deleteReferee: (id) => req(`/api/referees/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  importReferees: (referees) => req('/api/referees/import', { method: 'POST', body: { referees } }),
   templates: () => req('/api/templates'),
   createTemplate: (data) => req('/api/templates', { method: 'POST', body: data }),
   updateTemplate: (id, data) => req(`/api/templates/${id}`, { method: 'PUT', body: data }),

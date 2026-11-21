@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import { useAuth } from '../auth';
+import { downloadCsv, downloadXlsx, printPdf } from '../utils/exportFile';
+import { extractPdfDetails } from '../utils/pdfExtract';
 import Select from '../components/Select';
 import DatePicker from '../components/DatePicker';
 
 const STATUS_LABELS = { actif: 'Actif', inactif: 'Inactif', suspendu: 'Suspendu' };
 const emptyReferee = () => ({
   nom: '', prenom: '', grade: '', categorie: '', region: '', telephone: '',
-  email: '', matricule: '', dateNaissance: '', association: '', statut: 'actif', note: '',
+  email: '', dateNaissance: '', association: '', statut: 'actif', note: '',
 });
 const FIELDS = [
   ['matricule', 'Matricule'],
@@ -33,6 +35,10 @@ export default function Referees() {
   const [form, setForm] = useState(null);
   const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importText, setImportText] = useState('');
+  const [importRows, setImportRows] = useState([]);
+  const [importReading, setImportReading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -96,13 +102,99 @@ export default function Referees() {
   const fullName = (r) => [r.prenom, r.nom].filter(Boolean).join(' ').trim() || '—';
   const initials = (r) => [r.prenom, r.nom].filter(Boolean).map((w) => w[0]).join('').slice(0, 2).toUpperCase() || '?';
 
+  const EXPORT_HEADERS = [
+    { key: 'matricule', label: 'Matricule' }, { key: 'nom', label: 'Nom' }, { key: 'prenom', label: 'Prénom' },
+    { key: 'grade', label: 'Grade' }, { key: 'categorie', label: 'Catégorie' }, { key: 'region', label: 'Région' },
+    { key: 'association', label: 'Association' }, { key: 'telephone', label: 'Téléphone' },
+    { key: 'email', label: 'Email' }, { key: 'dateNaissance', label: 'Date naissance' }, { key: 'statut', label: 'Statut' },
+  ];
+  const exportRows = items.map((r) => Object.fromEntries(EXPORT_HEADERS.map((h) => [h.key, r[h.key] || ''])));
+  const doExport = async (format) => {
+    try {
+      if (format === 'csv') downloadCsv('liste-arbitres', EXPORT_HEADERS, exportRows);
+      else if (format === 'xlsx') await downloadXlsx('liste-arbitres', EXPORT_HEADERS, exportRows);
+      else printPdf({ title: 'Liste des arbitres', subtitle: `${items.length} arbitres — Direction Nationale d’Arbitrage`, headers: EXPORT_HEADERS, rows: exportRows, meta: { by: user?.name } });
+    } catch (e) { setError(e.message); }
+  };
+
+  // Parser le texte brut (collé ou issu d'un PDF) en lignes d'arbitres.
+  // Formats acceptés (séparateur | , ; ou tab):
+  //   Nom | Prénom | Grade | Catégorie | Région | Email | Téléphone
+  //   ou une ligne par arbitre avec les champs dans cet ordre.
+  const parseImportText = (text) => {
+    return String(text || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean).map((line) => {
+      const parts = line.split(/[|;\t]+/).map((p) => p.trim()).filter(Boolean);
+      if (parts.length < 2) return null;
+      // Heuristic: email = part with @, phone = part with + or digits>=8
+      const email = parts.find((p) => /@/.test(p)) || '';
+      const telephone = parts.find((p) => /^[+\d][\d\s().-]{7,}$/.test(p)) || '';
+      const nameParts = parts[0].split(/\s+/);
+      const nom = nameParts.length > 1 ? nameParts.slice(-1)[0] : parts[0];
+      const prenom = nameParts.length > 1 ? nameParts.slice(0, -1).join(' ') : (parts[1] && !/@/.test(parts[1]) ? parts[1] : '');
+      const rest = parts.filter((p) => p !== parts[0] && p !== email && p !== telephone && p !== prenom);
+      return { nom, prenom, grade: rest[0] || '', categorie: rest[1] || '', region: rest[2] || '', association: rest[3] || '', email, telephone, statut: 'actif' };
+    }).filter(Boolean);
+  };
+
+  const readImportPdf = async (file) => {
+    setImportReading(true); setError('');
+    try {
+      const d = await extractPdfDetails(file);
+      // extractPdfDetails ne garde pas tout le texte; on relit le PDF pour le brut
+      const pdfjs = await import('pdfjs-dist');
+      const worker = await import('pdfjs-dist/build/pdf.worker.min.mjs?url');
+      pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
+      const data = new Uint8Array(await file.arrayBuffer());
+      const task = pdfjs.getDocument({ data, disableFontFace: true, isEvalSupported: false });
+      const doc = await task.promise;
+      let raw = '';
+      for (let p = 1; p <= Math.min(doc.numPages, 20); p++) {
+        const page = await doc.getPage(p);
+        const c = await page.getTextContent();
+        const lines = {};
+        for (const it of c.items) {
+          if (!it.str) continue;
+          const y = it.transform ? it.transform[5] : 0;
+          (lines[y] = lines[y] || []).push(it.str);
+        }
+        raw += Object.keys(lines).sort((a, b) => b - a).map((y) => lines[y].join(' ')).join('\n') + '\n';
+        page.cleanup();
+      }
+      await task.destroy();
+      setImportText(raw.slice(0, 20000));
+      setImportRows(parseImportText(raw));
+      setNotice(`Texte lu depuis ${file.name}. Vérifiez les ${parseImportText(raw).length} lignes détectées.`);
+    } catch (e) {
+      setError('Lecture PDF impossible : ' + e.message + '. Vous pouvez coller le texte manuellement.');
+    } finally { setImportReading(false); }
+  };
+
+  const doImport = async () => {
+    const rows = importRows.length ? importRows : parseImportText(importText);
+    if (!rows.length) { setError('Aucune ligne valide à importer.'); return; }
+    setBusy(true); setError('');
+    try {
+      const d = await api.importReferees(rows);
+      setNotice(`${d.created} arbitre(s) importé(s) avec matricule auto.${d.errors?.length ? ' Erreurs: ' + d.errors.join('; ') : ''}`);
+      setImportOpen(false); setImportRows([]); setImportText('');
+      await load();
+    } catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  };
+
   return (
     <div className="page referees-page">
       <header className="page-header page-title-header">
         <div className="page-title-copy"><span className="page-title-kicker">Direction Nationale d’Arbitrage</span><h1>Arbitres</h1>
           <div className="muted">{items.length} arbitre{items.length > 1 ? 's' : ''} enregistré{items.length > 1 ? 's' : ''}</div>
         </div>
-        {isBureau && <button className="btn btn-primary" onClick={add}>+ Ajouter un arbitre</button>}
+        {isBureau && <div className="page-actions" style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-secondary" onClick={() => doExport('csv')}>CSV</button>
+          <button className="btn btn-secondary" onClick={() => doExport('xlsx')}>Excel</button>
+          <button className="btn btn-secondary" onClick={() => doExport('pdf')}>PDF</button>
+          <button className="btn btn-secondary" onClick={() => { setImportOpen(true); setError(''); }}>Importer</button>
+          <button className="btn btn-primary" onClick={add}>+ Ajouter un arbitre</button>
+        </div>}
       </header>
 
       {notice && <div className="account-notice" role="status">{notice}</div>}
@@ -189,7 +281,7 @@ export default function Referees() {
             <div className="form-grid">
               <label className="field">Nom<input value={form.nom} onChange={(e) => update('nom', e.target.value)} required placeholder="Nom de famille" /></label>
               <label className="field">Prénom<input value={form.prenom} onChange={(e) => update('prenom', e.target.value)} placeholder="Prénom" /></label>
-              <label className="field">Matricule<input value={form.matricule} onChange={(e) => update('matricule', e.target.value)} placeholder="Ex. ARB-2026-001" /></label>
+              <label className="field">Matricule<input value={form.matricule || (form.id ? '' : 'Généré automatiquement')} readOnly disabled placeholder="Généré automatiquement" title="Le matricule est attribué automatiquement par la plateforme" /></label>
               <label className="field">Grade<input value={form.grade} onChange={(e) => update('grade', e.target.value)} placeholder="Ex. FIFA, continental, national" /></label>
               <label className="field">Catégorie<input value={form.categorie} onChange={(e) => update('categorie', e.target.value)} placeholder="Ex. Élite, A, B" /></label>
               <label className="field">Région<input value={form.region} onChange={(e) => update('region', e.target.value)} placeholder="Région" /></label>
@@ -204,6 +296,41 @@ export default function Referees() {
             <div className="page-actions"><button className="btn btn-primary" disabled={busy}>{busy ? 'Enregistrement…' : 'Enregistrer'}</button><button className="btn btn-secondary" type="button" onClick={() => { setForm(null); setError(''); }}>Annuler</button></div>
           </form>
         </section>
+      )}
+
+      {/* Modale d'import (PDF ou texte collé) */}
+      {importOpen && (
+        <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setImportOpen(false); }}>
+          <section className="modal" style={{ width: 'min(900px, 94vw)', maxHeight: '90vh' }} role="dialog" aria-modal="true">
+            <header className="modal-head"><h2>Importer une liste d’arbitres</h2><button type="button" className="modal-close" onClick={() => setImportOpen(false)}>×</button></header>
+            <div className="modal-body">
+              <p className="muted">Déposez un PDF contenant la liste des arbitres, ou collez le texte ci-dessous. Un matricule unique sera généré pour chacun.</p>
+              <label className="btn btn-secondary" style={{ cursor: importReading ? 'default' : 'pointer', margin: '10px 0' }}>
+                {importReading ? 'Lecture du PDF…' : 'Choisir un PDF'}
+                <input type="file" accept=".pdf" style={{ display: 'none' }} disabled={importReading} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) readImportPdf(f); }} />
+              </label>
+              <label className="field"><span>Ou collez le texte (1 arbitre par ligne)</span>
+                <textarea rows={7} value={importText} onChange={(e) => { setImportText(e.target.value); setImportRows(parseImportText(e.target.value)); }} placeholder={'Nom Prénom | Grade | Catégorie | Région | email@exemple.tn | +216…\nEx: Benali Karim | FIFA | Élite | Tunis | karim@ftf.tn | +216 71 234 567'} />
+              </label>
+              {importRows.length > 0 && (
+                <div style={{ marginTop: 12 }}>
+                  <div className="muted small" style={{ marginBottom: 6 }}>{importRows.length} arbitre(s) détecté(s) — vérifiez avant d’importer :</div>
+                  <div className="table-wrap" style={{ maxHeight: '30vh', overflow: 'auto' }}>
+                    <table className="table" style={{ fontSize: 12 }}>
+                      <thead><tr><th>Nom</th><th>Prénom</th><th>Grade</th><th>Région</th><th>Email</th></tr></thead>
+                      <tbody>{importRows.map((r, i) => <tr key={i}><td>{r.nom}</td><td>{r.prenom}</td><td>{r.grade}</td><td>{r.region}</td><td>{r.email}</td></tr>)}</tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+              {error && <div className="form-error" role="alert" style={{ marginTop: 10 }}>{error}</div>}
+            </div>
+            <div className="modal-foot">
+              <button className="btn btn-secondary" onClick={() => setImportOpen(false)}>Annuler</button>
+              <button className="btn btn-primary" onClick={doImport} disabled={busy || (!importRows.length && !importText.trim())}>{busy ? 'Import…' : `Importer ${importRows.length || ''} arbitre(s)`}</button>
+            </div>
+          </section>
+        </div>
       )}
     </div>
   );
