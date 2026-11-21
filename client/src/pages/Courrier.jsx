@@ -63,18 +63,19 @@ export default function Courrier() {
     api.listLetters({ limit: 500, sort: 'date' })
       .then((d) => {
         if (cancelled) return;
-        setAllItems(d.items || []);
+        const fresh = d.items || [];
+        setAllItems(fresh);
         setTotal(d.total || 0);
-        applyFilters();
+        applyFilters(fresh);
       })
       .catch((e) => { setError(e.message); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [filters]);
 
-  const applyFilters = () => {
+  const applyFilters = (source) => {
     const fifteenDaysAgo = Date.now() - 15 * 24 * 3600 * 1000;
-    let matched = allItems;
+    let matched = source || allItems;
     if (filters.q) {
       const q = filters.q.toLowerCase();
       matched = matched.filter((l) => {
@@ -156,7 +157,7 @@ export default function Courrier() {
   const load = () => {
     loadPending();
     api.listLetters({ limit: 500, sort: 'date' })
-      .then((d) => { setAllItems(d.items || []); setTotal(d.total || 0); applyFilters(); })
+      .then((d) => { const fresh = d.items || []; setAllItems(fresh); setTotal(d.total || 0); applyFilters(fresh); })
       .catch(() => {});
   };
 
