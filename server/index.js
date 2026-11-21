@@ -383,7 +383,7 @@ function letterView(user, l) {
 // non archivé dépasse 15 jours. Une seule notification par courrier.
 function ensureOverdueNotification(db, letter, bureauUser) {
   const already = (db.notifications || []).some((n) => n.type === 'courrier_retard' && n.courrierId === letter.id);
-  if (already) return;
+  if (already) return false;
   const recipients = (db.users || []).filter((u) => isBureauLike(u));
   for (const u of recipients) {
     db.notifications.push({
@@ -398,6 +398,7 @@ function ensureOverdueNotification(db, letter, bureauUser) {
   }
   logActivity(db, bureauUser, 'courrier.retard', letter.ref, { courrierId: letter.id });
   if (db.notifications.length > 500) db.notifications = db.notifications.slice(-500);
+  return true;
 }
 
 process.on('uncaughtException', (e) => { console.error('uncaught', e); });
@@ -867,15 +868,15 @@ async function route(req, res) {
     // Alerte retard: marquer les courriers non archivés de plus de 15 jours
     // et créer une notification pour ceux qui viennent de basculer en retard.
     const fifteenDaysAgo = Date.now() - 15 * 24 * 3600 * 1000;
-    const now = new Date().toISOString();
+    let createdNotification = false;
     const viewed = pageItems.map((l) => {
       const overdue = (l.statut || 'recu') !== 'archive' && new Date(l.dateEmission || l.createdAt).getTime() < fifteenDaysAgo;
       const view = { ...letterView(user, l), unread: !isAdmin && l.commission === user.commission && isUnread(l), overdue };
-      if (overdue) ensureOverdueNotification(db, l, user);
+      if (overdue && ensureOverdueNotification(db, l, user)) createdNotification = true;
       return view;
     });
-    // Persister les nouvelles notifications d'alerte retard
-    if (viewed.some((v) => v.overdue)) await saveDB(db);
+    // Ne persister que si une NOUVELLE alerte a été créée (évite une écriture DB à chaque lecture)
+    if (createdNotification) await saveDB(db);
     return send(res, 200, { items: viewed, total, page, limit });
   }
 

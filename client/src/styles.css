@@ -222,6 +222,8 @@ h2.card-title { font-size: 16px; margin: 0 0 12px; }
   transition: background .16s ease, box-shadow .16s ease;
 }
 .table tbody tr { animation: rowIn .32s ease both; }
+/* N'animer que les premières lignes visibles : évite les saccades sur les longues tables (ex: Activity 500 lignes) */
+.table tbody tr:nth-child(n+31) { animation: none; }
 .table tbody tr:nth-child(even) td { background: rgba(255,255,255,.022); }
 .table tbody tr:hover td { background: rgba(230,0,27,.085); }
 .table tbody tr:hover td:first-child { box-shadow: inset 3px 0 0 var(--primary); }
