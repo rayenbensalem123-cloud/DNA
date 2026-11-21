@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import { useAuth } from '../auth';
 import { downloadCsv, downloadXlsx, printPdf } from '../utils/exportFile';
-import { extractPdfDetails } from '../utils/pdfExtract';
 import Select from '../components/Select';
 import DatePicker from '../components/DatePicker';
 
@@ -36,7 +35,6 @@ export default function Referees() {
   const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
-  const [importText, setImportText] = useState('');
   const [importRows, setImportRows] = useState([]);
   const [importReading, setImportReading] = useState(false);
 
@@ -136,47 +134,83 @@ export default function Referees() {
     }).filter(Boolean);
   };
 
-  const readImportPdf = async (file) => {
-    setImportReading(true); setError('');
+  const readImportFile = async (file) => {
+    setImportReading(true); setError(''); setImportRows([]);
+    const ext = file.name.split('.').pop()?.toLowerCase();
     try {
-      const d = await extractPdfDetails(file);
-      // extractPdfDetails ne garde pas tout le texte; on relit le PDF pour le brut
-      const pdfjs = await import('pdfjs-dist');
-      const worker = await import('pdfjs-dist/build/pdf.worker.min.mjs?url');
-      pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
-      const data = new Uint8Array(await file.arrayBuffer());
-      const task = pdfjs.getDocument({ data, disableFontFace: true, isEvalSupported: false });
-      const doc = await task.promise;
-      let raw = '';
-      for (let p = 1; p <= Math.min(doc.numPages, 20); p++) {
-        const page = await doc.getPage(p);
-        const c = await page.getTextContent();
-        const lines = {};
-        for (const it of c.items) {
-          if (!it.str) continue;
-          const y = it.transform ? it.transform[5] : 0;
-          (lines[y] = lines[y] || []).push(it.str);
+      if (ext === 'xlsx' || ext === 'xls' || ext === 'csv') {
+        // Excel / CSV: lecture structurée avec xlsx
+        const XLSX = await import('xlsx');
+        const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const data = XLSX.utils.sheet_to_json(sheet, { defval: '', header: 1 });
+        const header = (data[0] || []).map((h) => String(h).toLowerCase().trim());
+        const col = (names) => header.findIndex((h) => names.some((n) => h.includes(n)));
+        const cNom = col(['nom', 'name', 'arbitre']);
+        const cPrenom = col(['prenom', 'prénom', 'firstname', 'first name']);
+        const cGrade = col(['grade', 'niveau']);
+        const cCat = col(['categorie', 'catégorie', 'category']);
+        const cRegion = col(['region', 'région', 'lieu']);
+        const cEmail = col(['email', 'mail', 'e-mail']);
+        const cTel = col(['telephone', 'téléphone', 'tel', 'phone']);
+        const cAssoc = col(['association', 'ligue', 'club']);
+        const cDate = col(['date', 'naissance', 'birth']);
+        const cStatut = col(['statut', 'status', 'etat']);
+        const rows = data.slice(1).map((r) => {
+          if (!Array.isArray(r)) return null;
+          const get = (i) => (i >= 0 ? String(r[i] ?? '').trim() : '');
+          const nom = get(cNom), prenom = get(cPrenom);
+          if (!nom && !prenom) return null;
+          return {
+            nom, prenom,
+            grade: get(cGrade), categorie: get(cCat), region: get(cRegion),
+            email: get(cEmail), telephone: get(cTel), association: get(cAssoc),
+            dateNaissance: get(cDate),
+            statut: /suspend/i.test(get(cStatut)) ? 'suspendu' : /inactif|inactive/i.test(get(cStatut)) ? 'inactif' : 'actif',
+          };
+        }).filter(Boolean);
+        setImportRows(rows);
+        setNotice(`${rows.length} arbitre(s) détecté(s) depuis ${file.name}. Vérifiez avant d’importer.`);
+      } else if (ext === 'pdf') {
+        // PDF: lecture brute avec pdf.js (text layer), puis parsing des lignes
+        const pdfjs = await import('pdfjs-dist');
+        const worker = await import('pdfjs-dist/build/pdf.worker.min.mjs?url');
+        pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
+        const data = new Uint8Array(await file.arrayBuffer());
+        const task = pdfjs.getDocument({ data, disableFontFace: true, isEvalSupported: false });
+        const doc = await task.promise;
+        let raw = '';
+        for (let p = 1; p <= Math.min(doc.numPages, 20); p++) {
+          const page = await doc.getPage(p);
+          const c = await page.getTextContent();
+          const lines = {};
+          for (const it of c.items) {
+            if (!it.str) continue;
+            const y = it.transform ? it.transform[5] : 0;
+            (lines[y] = lines[y] || []).push(it.str);
+          }
+          raw += Object.keys(lines).sort((a, b) => b - a).map((y) => lines[y].join(' ')).join('\n') + '\n';
+          page.cleanup();
         }
-        raw += Object.keys(lines).sort((a, b) => b - a).map((y) => lines[y].join(' ')).join('\n') + '\n';
-        page.cleanup();
+        await task.destroy();
+        const rows = parseImportText(raw);
+        setImportRows(rows);
+        setNotice(`${rows.length} arbitre(s) détecté(s) depuis ${file.name}. Vérifiez avant d’importer.`);
+      } else {
+        setError('Format non pris en charge. Utilisez un fichier PDF, Excel (.xlsx/.xls) ou CSV.');
       }
-      await task.destroy();
-      setImportText(raw.slice(0, 20000));
-      setImportRows(parseImportText(raw));
-      setNotice(`Texte lu depuis ${file.name}. Vérifiez les ${parseImportText(raw).length} lignes détectées.`);
     } catch (e) {
-      setError('Lecture PDF impossible : ' + e.message + '. Vous pouvez coller le texte manuellement.');
+      setError('Lecture du fichier impossible : ' + e.message);
     } finally { setImportReading(false); }
   };
 
   const doImport = async () => {
-    const rows = importRows.length ? importRows : parseImportText(importText);
-    if (!rows.length) { setError('Aucune ligne valide à importer.'); return; }
+    if (!importRows.length) { setError('Aucun arbitre détecté. Choisissez un fichier valide.'); return; }
     setBusy(true); setError('');
     try {
-      const d = await api.importReferees(rows);
+      const d = await api.importReferees(importRows);
       setNotice(`${d.created} arbitre(s) importé(s) avec matricule auto.${d.errors?.length ? ' Erreurs: ' + d.errors.join('; ') : ''}`);
-      setImportOpen(false); setImportRows([]); setImportText('');
+      setImportOpen(false); setImportRows([]);
       await load();
     } catch (e) { setError(e.message); }
     finally { setBusy(false); }
@@ -298,19 +332,18 @@ export default function Referees() {
         </section>
       )}
 
-      {/* Modale d'import (PDF ou texte collé) */}
+      {/* Modale d'import (fichier PDF / Excel / CSV uniquement) */}
       {importOpen && (
         <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setImportOpen(false); }}>
           <section className="modal" style={{ width: 'min(900px, 94vw)', maxHeight: '90vh' }} role="dialog" aria-modal="true">
             <header className="modal-head"><h2>Importer une liste d’arbitres</h2><button type="button" className="modal-close" onClick={() => setImportOpen(false)}>×</button></header>
             <div className="modal-body">
-              <p className="muted">Déposez un PDF contenant la liste des arbitres, ou collez le texte ci-dessous. Un matricule unique sera généré pour chacun.</p>
-              <label className="btn btn-secondary" style={{ cursor: importReading ? 'default' : 'pointer', margin: '10px 0' }}>
-                {importReading ? 'Lecture du PDF…' : 'Choisir un PDF'}
-                <input type="file" accept=".pdf" style={{ display: 'none' }} disabled={importReading} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) readImportPdf(f); }} />
-              </label>
-              <label className="field"><span>Ou collez le texte (1 arbitre par ligne)</span>
-                <textarea rows={7} value={importText} onChange={(e) => { setImportText(e.target.value); setImportRows(parseImportText(e.target.value)); }} placeholder={'Nom Prénom | Grade | Catégorie | Région | email@exemple.tn | +216…\nEx: Benali Karim | FIFA | Élite | Tunis | karim@ftf.tn | +216 71 234 567'} />
+              <p className="muted">Choisissez un fichier <strong>PDF</strong>, <strong>Excel (.xlsx/.xls)</strong> ou <strong>CSV</strong> contenant la liste des arbitres. Un matricule unique sera généré pour chacun.</p>
+              <label className={'import-dropzone' + (importReading ? ' reading' : '')} style={{ cursor: importReading ? 'default' : 'pointer' }}>
+                <span className="dz-icon" aria-hidden="true">📄</span>
+                <span>{importReading ? 'Lecture du fichier en cours…' : 'Choisir un fichier (PDF, Excel ou CSV)'}</span>
+                <span className="muted small">Les colonnes reconnues : Nom, Prénom, Grade, Catégorie, Région, Email, Téléphone, Association, Date, Statut</span>
+                <input type="file" accept=".pdf,.xlsx,.xls,.csv" style={{ display: 'none' }} disabled={importReading} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) readImportFile(f); }} />
               </label>
               {importRows.length > 0 && (
                 <div style={{ marginTop: 12 }}>
@@ -327,7 +360,7 @@ export default function Referees() {
             </div>
             <div className="modal-foot">
               <button className="btn btn-secondary" onClick={() => setImportOpen(false)}>Annuler</button>
-              <button className="btn btn-primary" onClick={doImport} disabled={busy || (!importRows.length && !importText.trim())}>{busy ? 'Import…' : `Importer ${importRows.length || ''} arbitre(s)`}</button>
+              <button className="btn btn-primary" onClick={doImport} disabled={busy || !importRows.length}>{busy ? 'Import…' : `Importer ${importRows.length || ''} arbitre(s)`}</button>
             </div>
           </section>
         </div>
