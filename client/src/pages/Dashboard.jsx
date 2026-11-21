@@ -99,16 +99,16 @@ export default function Dashboard() {
     : transferHisto.length;
 
   const cards = [
-    { label: 'Courriers enregistrés', value: total, href: '/courrier', tone: 'blue' },
-    { label: 'Arrivée', value: entrants, href: '/courrier?direction=entrant', tone: 'green' },
-    { label: 'Départ', value: sortants, href: '/courrier?direction=sortant', tone: 'purple' },
+    { label: 'Courriers enregistrés', value: total, href: '/registres', tone: 'blue' },
+    { label: 'Arrivée', value: entrants, href: '/registres', tone: 'green' },
+    { label: 'Départ', value: sortants, href: '/registres', tone: 'purple' },
     { label: 'Clôturés', value: archives, href: '#', tone: 'teal', clickable: false },
-    { label: 'Transferts reçus', value: transfertsRecus, href: '/courrier', tone: 'indigo' },
-    { label: 'Transferts envoyés', value: transfertsEnvoyes, href: '/courrier', tone: 'violet' },
-    { label: 'En traitement', value: enCours, href: '/courrier?statut=en_cours', tone: 'amber' },
-    { label: 'À affecter', value: aAffecter, href: '/courrier', tone: 'cyan' },
-    { label: 'Urgents non clôturés', value: urgentsNonClotures, href: '/courrier?priorite=urgente', tone: 'red' },
-    { label: 'En retard > 15 j', value: enRetard, href: '/courrier?bucket=overdue', tone: 'orange' },
+    { label: 'Transferts reçus', value: transfertsRecus, href: '/registres', tone: 'indigo' },
+    { label: 'Transferts envoyés', value: transfertsEnvoyes, href: '/registres', tone: 'violet' },
+    { label: 'En traitement', value: enCours, href: '/registres', tone: 'amber' },
+    { label: 'À affecter', value: aAffecter, href: '/registres', tone: 'cyan' },
+    { label: 'Urgents non clôturés', value: urgentsNonClotures, href: '/registres', tone: 'red' },
+    { label: 'En retard > 15 j', value: enRetard, href: '/registres', tone: 'orange' },
     { label: 'Taux de clôture', value: `${loading ? '—' : tauxCloture}%`, href: '#', tone: 'teal', raw: true, onClick: () => setClotureModalOpen(true) },
     { label: 'Jours de traitement moy.', value: traitementDays === null ? '—' : traitementDays, href: '#', tone: 'gray', raw: true },
   ];
@@ -260,7 +260,7 @@ export default function Dashboard() {
       </div>
 
       <div className="card open-letters-card">
-        <div className="card-head-row"><div><h2 className="card-title">Courriers en cours</h2><div className="muted">{openLetters.length} courrier{openLetters.length === 1 ? '' : 's'} non archivé{openLetters.length === 1 ? '' : 's'}</div></div><Link className="btn btn-secondary" to="/courrier">Voir tout <span aria-hidden="true">→</span></Link></div>
+        <div className="card-head-row"><div><h2 className="card-title">Courriers en cours</h2><div className="muted">{openLetters.length} courrier{openLetters.length === 1 ? '' : 's'} non archivé{openLetters.length === 1 ? '' : 's'}</div></div><Link className="btn btn-secondary" to="/registres">Voir tout <span aria-hidden="true">→</span></Link></div>
         {loading ? <div className="card-pad">{t('common.loading')}</div> : (
           <div className="table-wrap"><table className="table open-letters-table">
             <thead><tr><th>{t('letters.numero')}</th><th>{t('letters.objet')}</th><th>{t('letters.direction')}</th><th>Comité</th><th>Statut</th><th>{t('letters.priorite')}</th><th>{t('letters.date')}</th></tr></thead>
@@ -279,7 +279,7 @@ export default function Dashboard() {
         )}
       </div>
       <div className="card scan-card">
-          <div className="card-head-row"><div className="scan-heading"><span className="scan-heading-icon" aria-hidden="true">▤</span><div><h2 className="card-title">Courriers numérisés cette semaine</h2><div className="muted">Les fichiers ajoutés depuis lundi</div></div></div><Link className="btn btn-secondary" to="/courrier">Voir l’archive <span aria-hidden="true">→</span></Link></div>
+          <div className="card-head-row"><div className="scan-heading"><span className="scan-heading-icon" aria-hidden="true">▤</span><div><h2 className="card-title">Courriers numérisés cette semaine</h2><div className="muted">Les fichiers ajoutés depuis lundi</div></div></div><Link className="btn btn-secondary" to="/registres">Voir l’archive <span aria-hidden="true">→</span></Link></div>
         {loading ? <div className="card-pad">{t('common.loading')}</div> : (
           <div className="table-wrap"><table className="table scan-table">
             <thead><tr><th>{t('letters.objet')}</th><th>Fichier numérisé</th><th>{t('letters.direction')}</th><th>Ajouté le</th></tr></thead>
@@ -290,7 +290,7 @@ export default function Dashboard() {
         )}
       </div>
       <div className="card overdue-card">
-        <div className="card-head-row"><div><h2 className="card-title">Courriers en retard (non archivés)</h2><div className="muted">{overdueLetters.length} courrier{overdueLetters.length === 1 ? '' : 's'} des semaines précédentes non clôturé{overdueLetters.length === 1 ? '' : 's'}</div></div><Link className="btn btn-secondary" to="/courrier">Voir tout <span aria-hidden="true">→</span></Link></div>
+        <div className="card-head-row"><div><h2 className="card-title">Courriers en retard (non archivés)</h2><div className="muted">{overdueLetters.length} courrier{overdueLetters.length === 1 ? '' : 's'} des semaines précédentes non clôturé{overdueLetters.length === 1 ? '' : 's'}</div></div><Link className="btn btn-secondary" to="/registres">Voir tout <span aria-hidden="true">→</span></Link></div>
         {loading ? <div className="card-pad">{t('common.loading')}</div> : (
           <div className="table-wrap"><table className="table overdue-table">
             <thead><tr><th>{t('letters.numero')}</th><th>{t('letters.objet')}</th><th>Comité</th><th>Statut</th><th>{t('letters.priorite')}</th><th>Depuis</th></tr></thead>
