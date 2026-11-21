@@ -655,6 +655,26 @@ async function route(req, res) {
     // the state, which can predate a committee created moments ago.
     await initializeDB(true);
     const db = getDB();
+
+    // DELETE n'a pas de nom dans le body — traiter avant la validation du nom
+    if (method === 'DELETE') {
+      const committee = db.committees.find((c) => c.id === committeeIdMatch[1]);
+      if (!committee) return send(res, 404, { error: 'Comité introuvable' });
+      const id = committee.id;
+      const oldNom = committee.nom;
+      let accountsDetached = 0, lettersDetached = 0;
+      (db.users || []).forEach((u) => { if (u.commission === id) { u.commission = null; accountsDetached++; } });
+      (db.letters || []).forEach((l) => {
+        if (l.commission === id) { l.commission = null; lettersDetached++; }
+        if (l.departCommission === id) l.departCommission = null;
+        if (l.createdByCommission === id) l.createdByCommission = null;
+      });
+      db.committees = db.committees.filter((c) => c.id !== id);
+      logActivity(db, user, 'committee.delete', oldNom, { committeeId: id, accountsDetached, lettersDetached, by: user.name });
+      await saveDB(db);
+      return send(res, 200, { ok: true, accountsDetached, lettersDetached });
+    }
+
     const body = await readBody(req);
     const nom = String(body.nom || '').trim().replace(/\s+/g, ' ');
     if (nom.length < 2 || nom.length > 80) return send(res, 400, { error: 'Le nom du comité doit contenir entre 2 et 80 caractères' });
@@ -671,23 +691,6 @@ async function route(req, res) {
     // PATCH: rename; references stay valid because everything points to the id
     const committee = db.committees.find((c) => c.id === committeeIdMatch[1]);
     if (!committee) return send(res, 404, { error: 'Comité introuvable' });
-    if (method === 'DELETE') {
-      // Detach and delete: remove the commission from accounts and letters,
-      // then drop the committee. No data is lost — references just become null.
-      const id = committee.id;
-      const oldNom = committee.nom;
-      let accountsDetached = 0, lettersDetached = 0;
-      (db.users || []).forEach((u) => { if (u.commission === id) { u.commission = null; accountsDetached++; } });
-      (db.letters || []).forEach((l) => {
-        if (l.commission === id) { l.commission = null; lettersDetached++; }
-        if (l.departCommission === id) l.departCommission = null;
-        if (l.createdByCommission === id) l.createdByCommission = null;
-      });
-      db.committees = db.committees.filter((c) => c.id !== id);
-      logActivity(db, user, 'committee.delete', oldNom, { committeeId: id, accountsDetached, lettersDetached, by: user.name });
-      await saveDB(db);
-      return send(res, 200, { ok: true, accountsDetached, lettersDetached });
-    }
     if (committee.nom === nom) return send(res, 200, { item: committee });
     const oldNom = committee.nom;
     committee.nom = nom;
