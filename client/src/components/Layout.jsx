@@ -16,6 +16,7 @@ function NavIcon({ type }) {
   if (type === 'inbox') return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 13.5 6.5 5h11l3 8.5v5.5h-17z" /><path d="M3.5 13.5h5l1 2.5h5l1-2.5h5" /></svg>;
   if (type === 'reject') return <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" /><path d="m9 9 6 6M15 9l-6 6" /></svg>;
   if (type === 'activity') return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 12h4l2.5-6 4 12 2.5-6h4" /></svg>;
+  if (type === 'referee') return <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="7" r="3.2" /><path d="M5.5 20c.4-3.7 2.9-5.8 6.5-5.8s6.1 2.1 6.5 5.8" /><path d="M8 11l1.5 2M16 11l-1.5 2" /></svg>;
   if (type === 'users') return <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2" /><path d="M3.5 19c.3-3.1 2.3-5 5.5-5s5.2 1.9 5.5 5M16 5.3a3.1 3.1 0 0 1 0 5.9M17 14c2.2.6 3.4 2.2 3.6 4.5" /></svg>;
   if (type === 'registre') return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3.5h14v17H5zM5 8h14M9.5 3.5v17" /><path d="M12 12h4.5M12 15.5h4.5" /></svg>;
   if (type === 'mail') return <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5.5" width="17" height="13" rx="2" /><path d="m4.5 7 7.5 6 7.5-6" /></svg>;
@@ -86,6 +87,9 @@ export default function Layout() {
           {allowed('journal') && <NavLink to="/activite" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}>
             <NavIcon type="activity" /><span className="nav-text">Journal d’activité</span>
           </NavLink>}
+          <NavLink to="/arbitres" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}>
+            <NavIcon type="referee" /><span className="nav-text">Arbitres</span>
+          </NavLink>
           {isBureauLike && <NavLink to="/gmail" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}>
             <NavIcon type="mail" /><span className="nav-text">Gmail{gmailUnread > 0 && <span className="nav-badge">{gmailUnread}</span>}</span>
           </NavLink>}

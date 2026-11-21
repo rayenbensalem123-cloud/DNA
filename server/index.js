@@ -723,6 +723,70 @@ async function route(req, res) {
     return send(res, 200, { item: committee });
   }
 
+  // ---- Referees (arbitres) ----
+  const refereeIdMatch = /^\/api\/referees\/([A-Za-z0-9_-]+)$/.exec(pathname);
+  if (pathname === '/api/referees' && method === 'GET') {
+    const user = requireAuth(req, res);
+    if (!user) return;
+    return send(res, 200, { items: (getDB().referees || []).slice().sort((a, b) => String(a.nom || '').localeCompare(String(b.nom || ''))) });
+  }
+  if ((pathname === '/api/referees' && method === 'POST') || (refereeIdMatch && (method === 'PATCH' || method === 'DELETE'))) {
+    const user = requireAuth(req, res);
+    if (!user) return;
+    if (!isBureauLike(user)) return send(res, 403, { error: 'Droits insuffisants' });
+    if (denyReadOnly(user, res)) return;
+    const db = getDB();
+
+    if (method === 'DELETE' && refereeIdMatch) {
+      const idx = (db.referees || []).findIndex((r) => r.id === refereeIdMatch[1]);
+      if (idx < 0) return send(res, 404, { error: 'Arbitre introuvable' });
+      const removed = db.referees.splice(idx, 1)[0];
+      logActivity(db, user, 'referee.delete', removed.nom, { refereeId: removed.id, by: user.name });
+      await saveDB(db);
+      return send(res, 200, { ok: true });
+    }
+
+    const body = await readBody(req);
+    const nom = String(body.nom || '').trim().replace(/\s+/g, ' ');
+    if (nom.length < 2 || nom.length > 120) return send(res, 400, { error: 'Le nom doit contenir entre 2 et 120 caractères' });
+    const fields = {
+      prenom: String(body.prenom || '').trim().slice(0, 120),
+      grade: String(body.grade || '').trim().slice(0, 80),
+      categorie: String(body.categorie || '').trim().slice(0, 80),
+      region: String(body.region || '').trim().slice(0, 80),
+      telephone: String(body.telephone || '').trim().slice(0, 40),
+      email: String(body.email || '').trim().toLowerCase().slice(0, 120),
+      matricule: String(body.matricule || '').trim().slice(0, 40),
+      dateNaissance: String(body.dateNaissance || '').trim().slice(0, 20),
+      association: String(body.association || '').trim().slice(0, 120),
+      statut: ['actif', 'inactif', 'suspendu'].includes(body.statut) ? body.statut : 'actif',
+      note: String(body.note || '').trim().slice(0, 2000),
+    };
+    if (fields.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fields.email)) return send(res, 400, { error: 'Email invalide' });
+
+    if (method === 'POST') {
+      const referee = { id: 'ref' + Date.now().toString(36) + crypto.randomBytes(2).toString('hex'), nom, ...fields, createdAt: new Date().toISOString(), createdBy: user.id };
+      db.referees.push(referee);
+      logActivity(db, user, 'referee.create', nom, { refereeId: referee.id, by: user.name });
+      await saveDB(db);
+      return send(res, 201, { item: referee });
+    }
+    // PATCH
+    const referee = (db.referees || []).find((r) => r.id === refereeIdMatch[1]);
+    if (!referee) return send(res, 404, { error: 'Arbitre introuvable' });
+    Object.assign(referee, { nom, ...fields });
+    logActivity(db, user, 'referee.update', nom, { refereeId: referee.id, by: user.name });
+    await saveDB(db);
+    return send(res, 200, { item: referee });
+  }
+  if (refereeIdMatch && method === 'GET') {
+    const user = requireAuth(req, res);
+    if (!user) return;
+    const referee = (getDB().referees || []).find((r) => r.id === refereeIdMatch[1]);
+    if (!referee) return send(res, 404, { error: 'Arbitre introuvable' });
+    return send(res, 200, { item: referee });
+  }
+
   if (pathname === '/api/blob-upload' && method === 'POST') {
     let body;
     try { body = await readBody(req, 1); }

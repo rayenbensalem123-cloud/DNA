@@ -11,6 +11,7 @@ const PAGES = [
   { label: 'Journal d’activité', path: '/activite', keywords: 'activite journal log' },
   { label: 'Gmail', path: '/gmail', keywords: 'gmail mail boite' },
   { label: 'Modèles', path: '/modeles', keywords: 'modeles templates' },
+  { label: 'Arbitres', path: '/arbitres', keywords: 'arbitres referees' },
 ];
 
 export default function GlobalSearch({ open, onClose }) {

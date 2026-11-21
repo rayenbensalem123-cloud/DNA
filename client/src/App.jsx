@@ -11,6 +11,7 @@ import Dashboard from './pages/Dashboard';
 import LetterDetail from './pages/LetterDetail';
 import Accounts from './pages/Accounts';
 import Templates from './pages/Templates';
+import Referees from './pages/Referees';
 import Activity from './pages/Activity';
 import Courrier from './pages/Courrier';
 import CourriersRejetes from './pages/CourriersRejetes';
@@ -105,6 +106,7 @@ export default function App() {
                 <Route index element={<ErrorBoundary label="dashboard"><Dashboard /></ErrorBoundary>} />
                 <Route path="comptes" element={<PermRoute perm="users"><ErrorBoundary label="accounts"><Accounts /></ErrorBoundary></PermRoute>} />
                 <Route path="modeles" element={<PermRoute perm="users"><ErrorBoundary label="templates"><Templates /></ErrorBoundary></PermRoute>} />
+                <Route path="arbitres" element={<ErrorBoundary label="referees"><Referees /></ErrorBoundary>} />
                 <Route path="activite" element={<PermRoute perm="journal"><ErrorBoundary label="activity"><Activity /></ErrorBoundary></PermRoute>} />
                 <Route path="courrier" element={<ErrorBoundary label="courrier"><Courrier /></ErrorBoundary>} />
                 <Route path="registres" element={<RegistreRoute><ErrorBoundary label="registre"><Registre /></ErrorBoundary></RegistreRoute>} />
