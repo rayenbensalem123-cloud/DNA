@@ -645,7 +645,7 @@ async function route(req, res) {
 
   // ---- Comité management (create + rename), admin only ----
   const committeeIdMatch = /^\/api\/committees\/([A-Za-z0-9_-]+)$/.exec(pathname);
-  if ((pathname === '/api/committees' && method === 'POST') || (committeeIdMatch && method === 'PATCH')) {
+  if ((pathname === '/api/committees' && method === 'POST') || (committeeIdMatch && (method === 'PATCH' || method === 'DELETE'))) {
     const user = requireAuth(req, res);
     if (!user) return;
     if (user.role !== 'admin' && !can(user, 'committees')) return send(res, 403, { error: 'Droits insuffisants' });
@@ -670,6 +670,23 @@ async function route(req, res) {
     // PATCH: rename; references stay valid because everything points to the id
     const committee = db.committees.find((c) => c.id === committeeIdMatch[1]);
     if (!committee) return send(res, 404, { error: 'Comité introuvable' });
+    if (method === 'DELETE') {
+      // Detach and delete: remove the commission from accounts and letters,
+      // then drop the committee. No data is lost — references just become null.
+      const id = committee.id;
+      const oldNom = committee.nom;
+      let accountsDetached = 0, lettersDetached = 0;
+      (db.users || []).forEach((u) => { if (u.commission === id) { u.commission = null; accountsDetached++; } });
+      (db.letters || []).forEach((l) => {
+        if (l.commission === id) { l.commission = null; lettersDetached++; }
+        if (l.departCommission === id) l.departCommission = null;
+        if (l.createdByCommission === id) l.createdByCommission = null;
+      });
+      db.committees = db.committees.filter((c) => c.id !== id);
+      logActivity(db, user, 'committee.delete', oldNom, { committeeId: id, accountsDetached, lettersDetached, by: user.name });
+      await saveDB(db);
+      return send(res, 200, { ok: true, accountsDetached, lettersDetached });
+    }
     if (committee.nom === nom) return send(res, 200, { item: committee });
     const oldNom = committee.nom;
     committee.nom = nom;

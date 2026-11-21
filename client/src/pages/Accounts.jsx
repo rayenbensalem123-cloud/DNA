@@ -41,6 +41,7 @@ export default function Accounts() {
   // --- Comité management (admin) ---
   const [newCommittee, setNewCommittee] = useState('');
   const [editingCommittee, setEditingCommittee] = useState(null); // { id, nom }
+  const [confirmDeleteCommittee, setConfirmDeleteCommittee] = useState(null); // committee object
   const [comBusy, setComBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -132,6 +133,17 @@ export default function Accounts() {
     finally { setComBusy(false); }
   };
 
+  const deleteCommittee = async (committee) => {
+    setComBusy(true); setError(''); setNotice('');
+    try {
+      const d = await api.deleteCommittee(committee.id);
+      setNotice(`Comité « ${committee.nom} » supprimé. ${d.accountsDetached || 0} compte(s) et ${d.lettersDetached || 0} courrier(s) détaché(s) (maintenant sans comité).`);
+      setConfirmDeleteCommittee(null);
+      await load();
+    } catch (e) { setError(e.message); }
+    finally { setComBusy(false); }
+  };
+
   return (
     <div className="page accounts-page">
       <header className="page-header page-title-header">
@@ -196,7 +208,18 @@ export default function Accounts() {
                 <>
                   <span className="committee-row-name">{committee.nom}</span>
                   <span className="muted">{accounts.filter((a) => a.commission === committee.id).length} compte{accounts.filter((a) => a.commission === committee.id).length === 1 ? '' : 's'}</span>
-                  <button className="btn btn-secondary" type="button" onClick={() => { setEditingCommittee({ id: committee.id, nom: committee.nom }); setError(''); }}>Renommer</button>
+                  {confirmDeleteCommittee?.id === committee.id ? (
+                    <span className="committee-confirm" role="group" aria-label={`Confirmer la suppression de ${committee.nom}`}>
+                      <span>Supprimer ?</span>
+                      <button className="btn btn-danger" type="button" onClick={() => deleteCommittee(committee)} disabled={comBusy}>Oui</button>
+                      <button className="btn btn-secondary" type="button" onClick={() => setConfirmDeleteCommittee(null)} disabled={comBusy}>Annuler</button>
+                    </span>
+                  ) : (
+                    <>
+                      <button className="btn btn-secondary" type="button" onClick={() => { setEditingCommittee({ id: committee.id, nom: committee.nom }); setError(''); }}>Renommer</button>
+                      <button className="btn btn-danger" type="button" onClick={() => { setError(''); setNotice(''); setConfirmDeleteCommittee(committee); }}>Supprimer</button>
+                    </>
+                  )}
                 </>
               )}
             </li>

@@ -36,6 +36,7 @@ export const api = {
   committees: () => req('/api/committees'),
   createCommittee: (nom) => req('/api/committees', { method: 'POST', body: { nom } }),
   updateCommittee: (id, nom) => req(`/api/committees/${id}`, { method: 'PATCH', body: { nom } }),
+  deleteCommittee: (id) => req(`/api/committees/${id}`, { method: 'DELETE' }),
   activity: (action = '', extra = {}) => {
     const p = new URLSearchParams({ limit: 500, ...(action ? { action } : {}), ...extra });
     return req('/api/activity?' + p.toString());
