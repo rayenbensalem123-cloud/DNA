@@ -24,10 +24,16 @@ export default function Registre() {
   const [q, setQ] = useState('');
   const [statut, setStatut] = useState('');
   const [importance, setImportance] = useState('');
+  const [type, setType] = useState('');
+  const [categorie, setCategorie] = useState('');
+  const [responsable, setResponsable] = useState('');
+  const [retard, setRetard] = useState(false);
+  const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const isBureau = user?.role === 'admin' || user?.role === 'supervisor' || user?.role === 'daf';
 
   useEffect(() => { api.committees().then((d) => setCommittees(d.items || [])).catch(() => {}); }, []);
+  useEffect(() => { api.users().then((d) => setUsers(d.items || [])).catch(() => {}); }, []);
 
   // A non-bureau account is always scoped to its own comité.
   useEffect(() => {
@@ -70,13 +76,18 @@ export default function Registre() {
 
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
+    const fifteenDaysAgo = Date.now() - 15 * 24 * 3600 * 1000;
     return items.filter((l) => {
       if (statut && (l.statut || 'recu') !== statut) return false;
       if (importance && !(Array.isArray(l.priorite) ? l.priorite : [l.priorite]).includes(importance)) return false;
+      if (type && (l.type || 'courrier') !== type) return false;
+      if (categorie && (l.categorie || 'autre') !== categorie) return false;
+      if (responsable && l.assignedTo !== responsable) return false;
+      if (retard && !((l.statut || 'recu') !== 'archive' && new Date(l.dateReception || l.dateEmission || l.createdAt).getTime() < fifteenDaysAgo)) return false;
       if (!needle) return true;
-      return [l.numeroLettre, l.ref, l.objet, l.expediteur?.nom, l.destinataire?.nom].some((v) => String(v || '').toLowerCase().includes(needle));
+      return [l.numeroLettre, l.ref, l.objet, l.expediteur?.nom, l.destinataire?.nom, l.responsableNom].some((v) => String(v || '').toLowerCase().includes(needle));
     });
-  }, [items, q, statut, importance]);
+  }, [items, q, statut, importance, type, categorie, responsable, retard]);
 
   const exportHeaders = useMemo(() => ([
     { key: 'numero', label: 'N° courrier' },
@@ -117,9 +128,6 @@ export default function Registre() {
       </header>
 
       <div className="registre-toolbar">
-        {isBureau && <label className="filter-field"><span>Comité</span>
-          <Select ariaLabel="Comité" value={committeeId || 'global'} onChange={(v) => navigate(`/registres/${encodeURIComponent(v)}`)} options={[{ value: 'global', label: 'Tous les courriers' }, ...committees.map((c) => ({ value: c.id, label: c.nom }))]} />
-        </label>}
         <div className="registre-tabs" role="tablist" aria-label="Type de registre">
           <button type="button" role="tab" aria-selected={tab === 'arrivee'} className={'btn ' + (tab === 'arrivee' ? 'btn-primary' : 'btn-secondary')} onClick={() => setTab('arrivee')}>Courriers arrivés{tab === 'arrivee' ? ` (${items.length})` : ''}</button>
           <button type="button" role="tab" aria-selected={tab === 'depart'} className={'btn ' + (tab === 'depart' ? 'btn-primary' : 'btn-secondary')} onClick={() => setTab('depart')}>Courriers partis{tab === 'depart' ? ` (${items.length})` : ''}</button>
@@ -127,13 +135,19 @@ export default function Registre() {
         <div className="activity-dates">
           <label className="filter-field"><span>Du</span><DatePicker value={from} max={to || undefined} onChange={setFrom} placeholder="jj/mm/aaaa" /></label>
           <label className="filter-field"><span>Au</span><DatePicker value={to} min={from || undefined} onChange={setTo} placeholder="jj/mm/aaaa" /></label>
-          {(from || to) && <button type="button" className="btn btn-ghost" onClick={() => { setFrom(''); setTo(''); }}>Réinitialiser</button>}
         </div>
         <div className="registre-filters">
           <input className="input" type="search" aria-label="Rechercher" placeholder="Rechercher (N°, objet, expéditeur…)" value={q} onChange={(e) => setQ(e.target.value)} />
           <Select ariaLabel="Statut" value={statut} onChange={setStatut} options={[{ value: '', label: 'Tous les statuts' }, ...['recu', 'enregistre', 'en_cours', 'traite', 'transmis', 'vu', 'archive'].map((v) => ({ value: v, label: t('status.' + v) }))]} />
           <Select ariaLabel="Importance" value={importance} onChange={setImportance} options={[{ value: '', label: 'Toutes les importances' }, { value: 'normale', label: 'Normale' }, { value: 'urgente', label: 'Urgente' }, { value: 'confidentielle', label: 'Confidentielle' }]} />
+          <Select ariaLabel="Type" value={type} onChange={setType} options={[{ value: '', label: 'Tous les types' }, { value: 'courrier', label: 'Courrier' }, { value: 'officielle', label: 'Lettre officielle' }, { value: 'note', label: 'Note' }, { value: 'arrete', label: 'Arrêté' }, { value: 'decret', label: 'Décret' }, { value: 'mandat', label: 'Mandat' }, { value: 'autre', label: 'Autre' }]} />
+          <Select ariaLabel="Catégorie" value={categorie} onChange={setCategorie} options={[{ value: '', label: 'Toutes les catégories' }, { value: 'administration', label: 'Administration' }, { value: 'juridique', label: 'Juridique' }, { value: 'finances', label: 'Finances' }, { value: 'rh', label: 'Ressources humaines' }, { value: 'communication', label: 'Communication' }, { value: 'securite', label: 'Sécurité' }, { value: 'autre', label: 'Autre' }]} />
+          <Select ariaLabel="Responsable" value={responsable} onChange={setResponsable} options={[{ value: '', label: 'Tous les responsables' }, ...users.filter((u) => ['admin', 'supervisor', 'daf'].includes(u.role)).map((u) => ({ value: u.id, label: u.name || u.username }))]} />
+          <button type="button" className={'btn ' + (retard ? 'btn-primary' : 'btn-secondary')} onClick={() => setRetard((v) => !v)} title="Courriers non archivés depuis plus de 15 jours">⚠ Retard &gt; 15 j</button>
         </div>
+        {(q || statut || importance || type || categorie || responsable || retard || from || to) && (
+          <button type="button" className="btn btn-ghost" onClick={() => { setQ(''); setStatut(''); setImportance(''); setType(''); setCategorie(''); setResponsable(''); setRetard(false); setFrom(''); setTo(''); }}>Réinitialiser les filtres</button>
+        )}
       </div>
 
       <div className="card">
