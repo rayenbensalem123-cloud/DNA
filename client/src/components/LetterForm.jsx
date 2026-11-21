@@ -3,9 +3,11 @@ import { api } from '../api';
 import { useLanguage } from '../i18n';
 import { useAuth } from '../auth';
 import { fmtSize, todayInputValue } from '../utils';
-import { extractPdfSubject } from '../utils/pdfSubject';
+import { extractPdfDetails } from '../utils/pdfExtract';
 import Select from './Select';
 import DatePicker from './DatePicker';
+
+const OCR_LANGS_LABEL = 'FR + EN + AR';
 
 const SUBJECTS = [
   "Plainte d'un club",
@@ -59,9 +61,10 @@ export default function LetterForm({ onSubmit, onCancel, busy = false, error = '
   const [fileError, setFileError] = useState('');
   const [formError, setFormError] = useState('');
   const [dragging, setDragging] = useState(false);
-  const [pdfSubject, setPdfSubject] = useState('');
+  const [pdfFields, setPdfFields] = useState(null);
   const [pdfReading, setPdfReading] = useState(false);
   const [pdfOcr, setPdfOcr] = useState(false);
+  const [showPdfDetails, setShowPdfDetails] = useState(false);
   const [form, setForm] = useState(() => initialForm(initialLetter, initialDirection));
   const set = (key, value) => setForm((current) => ({ ...current, [key]: value }));
 
@@ -130,17 +133,25 @@ export default function LetterForm({ onSubmit, onCancel, busy = false, error = '
       }
     }
     setFiles((current) => [...current, ...accepted]);
-    // Read the first PDF and suggest its subject when none was picked yet.
-    // Scanned PDFs go through OCR, which takes a few seconds — show progress.
-    const firstPdf = accepted.find((f) => /\.pdf$/i.test(f.name));
-    if (firstPdf) {
+    // OCR multi-langue (FR/EN/AR) sur le premier fichier: remplir TOUS les champs
+    const firstFile = accepted.find((f) => /\.(pdf|jpe?g|png|webp)$/i.test(f.name));
+    if (firstFile) {
       setPdfReading(true);
-      extractPdfSubject(firstPdf, (phase) => { if (phase === 'ocr') setPdfOcr(true); }).then((sujet) => {
+      extractPdfDetails(firstFile, (phase) => { if (phase === 'ocr') setPdfOcr(true); }).then((d) => {
         setPdfReading(false);
         setPdfOcr(false);
-        if (!sujet) return;
-        setPdfSubject(sujet);
-        setForm((current) => (current.objet ? current : { ...current, objet: 'autre', objetAutre: sujet }));
+        setPdfFields(d);
+        if (!d.sujet && !d.expediteur && !d.dateEmission) return;
+        setForm((current) => {
+          const updates = {};
+          if (d.sujet && !current.objet) { updates.objet = 'autre'; updates.objetAutre = d.sujet; }
+          if (d.expediteur && !current.expediteurNom) updates.expediteurNom = d.expediteur;
+          if (d.dateEmission && !current.dateEmission) updates.dateEmission = d.dateEmission;
+          if (d.reference && !current.numeroLettre) updates.numeroLettre = d.reference;
+          if (d.categorie && !current.categorie) updates.categorie = d.categorie;
+          if (d.priorite && d.priorite !== 'normale') updates.priorite = [d.priorite];
+          return Object.keys(updates).length ? { ...current, ...updates } : current;
+        });
       }).catch(() => { setPdfReading(false); setPdfOcr(false); });
     }
   };
@@ -200,13 +211,35 @@ export default function LetterForm({ onSubmit, onCancel, busy = false, error = '
             <span className="muted">PDF, JPG ou PNG — 25 Mo max par fichier</span>
           </label>
           {fileError && <div className="form-error modal-file-error" role="alert">{fileError}</div>}
-          {(pdfReading || pdfSubject) && (
-            <div className={'pdf-subject-hint' + (pdfOcr && !pdfSubject ? ' pdf-ocr-progress' : '')}>
-              {pdfSubject
-                ? <>Sujet lu dans le PDF : « {pdfSubject} » {form.objet ? '' : '— pré-rempli ci-dessous, modifiable.'}</>
-                : pdfOcr
-                  ? <>Lecture du PDF (OCR du scan) en cours… ça peut prendre quelques secondes.</>
-                  : <>Lecture du PDF en cours…</>}
+          {(pdfReading || pdfFields) && (
+            <div className={'pdf-subject-hint' + (pdfOcr && !pdfFields ? ' pdf-ocr-progress' : '')}>
+              {pdfFields ? (
+                <>
+                  <div className="pdf-hint-head">
+                    <strong>✦ Champs lus automatiquement</strong>
+                    {pdfFields.usedOcr && <span className="muted small"> · OCR {OCR_LANGS_LABEL}</span>}
+                    <button type="button" className="btn-link" onClick={() => setShowPdfDetails((v) => !v)}>{showPdfDetails ? 'Masquer' : 'Voir le détail'}</button>
+                  </div>
+                  <div className="pdf-hint-summary">
+                    {pdfFields.sujet && <span>Objet : {pdfFields.sujet}</span>}
+                    {pdfFields.expediteur && <span>Expéditeur : {pdfFields.expediteur}</span>}
+                    {pdfFields.dateEmission && <span>Date : {pdfFields.dateEmission}</span>}
+                  </div>
+                  {showPdfDetails && (
+                    <div className="pdf-hint-grid">
+                      {pdfFields.sujet && <div><b>Objet</b> {pdfFields.sujet}</div>}
+                      {pdfFields.expediteur && <div><b>Expéditeur</b> {pdfFields.expediteur}</div>}
+                      {pdfFields.dateEmission && <div><b>Date</b> {pdfFields.dateEmission}</div>}
+                      {pdfFields.reference && <div><b>Référence</b> {pdfFields.reference}</div>}
+                      {pdfFields.priorite && <div><b>Priorité</b> {pdfFields.priorite}</div>}
+                      {pdfFields.categorie && <div><b>Catégorie</b> {pdfFields.categorie}</div>}
+                    </div>
+                  )}
+                  <span className="muted small">Les champs du formulaire ont été pré-remplis — modifiez-les si nécessaire.</span>
+                </>
+              ) : pdfOcr
+                ? <>Lecture du scan (OCR français + anglais + arabe) en cours… ça peut prendre quelques secondes.</>
+                : <>Lecture du document en cours…</>}
             </div>
           )}
           {files.length > 0 && (

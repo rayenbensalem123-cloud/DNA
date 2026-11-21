@@ -1315,8 +1315,16 @@ body.pdf-open { overflow: hidden; }
 .perm-count { font-size: 11px; margin-left: 8px; }
 
 /* Subject read from an attached PDF (letter form + courrier queue) */
-.pdf-subject-hint { margin-top: 6px; padding: 8px 10px; border: 1px solid rgba(217,177,59,.35); border-radius: 8px; background: rgba(217,177,59,.08); color: #ecd9a0; font-size: 12.5px; }
+.pdf-subject-hint { margin-top: 6px; padding: 10px 12px; border: 1px solid rgba(217,177,59,.35); border-radius: 8px; background: rgba(217,177,59,.08); color: #ecd9a0; font-size: 12.5px; }
 :root[data-theme='light'] .pdf-subject-hint { background: #fdf6e3; border-color: #e8d5a4; color: #7a5a10; }
+.pdf-hint-head { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+.pdf-hint-head .btn-link { margin-left: auto; font-size: 12px; }
+.pdf-hint-summary { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 5px; }
+.pdf-hint-summary span { display: inline-block; padding: 3px 8px; border-radius: 6px; background: rgba(217,177,59,.12); font-size: 12px; }
+.pdf-hint-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 5px; margin: 6px 0; }
+.pdf-hint-grid div { padding: 5px 8px; border-radius: 6px; background: rgba(255,255,255,.05); overflow-wrap: anywhere; }
+.pdf-hint-grid b { display: block; font-size: 10px; letter-spacing: .05em; text-transform: uppercase; opacity: .75; }
+:root[data-theme='light'] .pdf-hint-grid div { background: rgba(122,90,16,.06); }
 .pdf-ocr-progress { animation: pdf-ocr-pulse 1.6s ease-in-out infinite; }
 @keyframes pdf-ocr-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .65; } }
 /* ── UI polish pass: focus, legibility, touch targets, status clarity ── */
