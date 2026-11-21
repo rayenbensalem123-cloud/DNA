@@ -2,6 +2,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth';
 import { useLanguage } from '../i18n';
 import PdfViewer from './PdfViewer';
+import GlobalSearch from './GlobalSearch';
 import NotificationBell from './NotificationBell';
 import InstallButton from './InstallButton';
 import ChatDock from './ChatDock';
@@ -32,8 +33,20 @@ export default function Layout() {
   const isBureauLike = isAdminLike || user?.role === 'daf';
   const allowed = (perm) => isBureauLike || Boolean(perms[perm]);
 
+  const [searchOpen, setSearchOpen] = useState(false);
   const [rejectionUnread, setRejectionUnread] = useState(0);
   const [gmailUnread, setGmailUnread] = useState(0);
+  // Ctrl/Cmd+K opens global search
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setSearchOpen((v) => !v);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
   useEffect(() => {
     if (!user) return;
     const load = () => api.courrierNotifications().then((d) => setRejectionUnread((d.items || []).filter((n) => !n.read).length)).catch(() => {});
@@ -85,6 +98,11 @@ export default function Layout() {
         <header className="topbar">
           <div className="topbar-brand"><img src="/federation-tunisienne-logo.webp" alt="" /><span>Bureau d’ordre</span></div>
           <div className="topbar-left">
+            <button type="button" className="gs-trigger" onClick={() => setSearchOpen(true)} title="Recherche globale (Ctrl+K)">
+              <span className="gs-trigger-icon" aria-hidden="true">⌕</span>
+              <span className="gs-trigger-label">Rechercher…</span>
+              <kbd className="gs-trigger-kbd">Ctrl K</kbd>
+            </button>
           </div>
           <div className="topbar-right">
             <NotificationBell />
@@ -104,6 +122,7 @@ export default function Layout() {
         </main>
       </div>
       <PdfViewer />
+      <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
       <ChatDock />
     </div>
   );

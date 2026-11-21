@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTableKeyboardNav } from '../utils/useTableKeyboardNav';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../auth';
@@ -31,6 +32,9 @@ export default function Courrier() {
   const [showCreate, setShowCreate] = useState(false);
   const [pending, setPending] = useState([]);
   const [assigningLetter, setAssigningLetter] = useState(null);
+  const [dragging, setDragging] = useState(false);
+  const tableRef = useRef(null);
+  useTableKeyboardNav(tableRef);
 
   const employeeName = (id) => users.find((u) => u.id === id)?.name || id;
 
@@ -189,6 +193,23 @@ export default function Courrier() {
       {notice && <div className="account-notice" role="status">{notice}</div>}
       {error && <div className="form-error" role="alert">{error}</div>}
 
+      <div
+        className={'scan-dropzone' + (dragging ? ' drag' : '')}
+        onDragEnter={(e) => { e.preventDefault(); setDragging(true); }}
+        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+        onDragLeave={(e) => { e.preventDefault(); setDragging(false); }}
+        onDrop={(e) => {
+          e.preventDefault(); setDragging(false);
+          const f = Array.from(e.dataTransfer.files || []).filter((x) => /\.(pdf|jpe?g|png)$/i.test(x.name));
+          if (f.length === 1) handleSingleFile(f[0]);
+          else if (f.length > 1) handleFiles(f);
+        }}
+      >
+        <span className="dz-icon" aria-hidden="true">📄</span>
+        <span>Glissez vos scans ici pour les ajouter à la validation</span>
+        <span className="muted small">PDF, JPG ou PNG — plusieurs fichiers possibles</span>
+      </div>
+
       {loading ? <div className="card-pad">{t('common.loading')}</div> : (
         <div className="card">
           <div className="archive-list-heading">
@@ -198,11 +219,11 @@ export default function Courrier() {
           {pending.length === 0 ? (
             <div className="card-pad empty-cell">Aucun courrier à valider.</div>
           ) : (
-            <div className="table-wrap"><table className="table">
+            <div className="table-wrap" ref={tableRef}><table className="table">
               <thead><tr><th>Fichier</th><th>Type</th><th>Téléversé par</th><th>Date</th><th>Étape</th><th>Responsable</th><th>Actions</th></tr></thead>
               <tbody>
                 {pending.map((c) => (
-                  <tr key={c.id}>
+                  <tr key={c.id} data-nav-row tabIndex={0}>
                     <td title={c.nom}><span className="file-pill">Fichier {c.nom}</span>{c.sujet && <div className="muted small" style={{ marginTop: 4 }}>Titre lu : {c.sujet}</div>}<div className="muted small">{fmtSize(c.taille)}</div></td>
                     <td><span className={'direction-pill direction-' + (c.direction === 'sortant' ? 'sortant' : 'entrant')}><i />{c.direction === 'sortant' ? 'Départ' : 'Arrivée'}</span></td>
                     <td>{c.uploadedByName || '—'}</td>

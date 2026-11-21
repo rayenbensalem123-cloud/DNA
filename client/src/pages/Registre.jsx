@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTableKeyboardNav } from '../utils/useTableKeyboardNav';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../auth';
@@ -31,6 +32,8 @@ export default function Registre() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const isBureau = user?.role === 'admin' || user?.role === 'supervisor' || user?.role === 'daf';
+  const tableRef = useRef(null);
+  useTableKeyboardNav(tableRef);
 
   useEffect(() => { api.committees().then((d) => setCommittees(d.items || [])).catch(() => {}); }, []);
   useEffect(() => { api.users().then((d) => setUsers(d.items || [])).catch(() => {}); }, []);
@@ -156,10 +159,10 @@ export default function Registre() {
           <span className="muted">{shown.length} au total</span>
         </div>
         {loading ? <div className="card-pad">{t('common.loading')}</div> : (
-          <div className="table-wrap"><table className="table">
+          <div className="table-wrap" ref={tableRef}><table className="table">
             <thead><tr><th>{t('letters.numero')}</th><th>{t('letters.objet')}</th><th>{tab === 'arrivee' ? 'Expéditeur' : 'Destinataire'}</th><th>{tab === 'arrivee' ? 'Comité destinataire' : 'Comité émetteur'}</th><th>{t('letters.statut')}</th><th>{t('letters.priorite')}</th><th>{t('letters.date')}</th></tr></thead>
             <tbody>{shown.map((l) => (
-              <tr key={l.id} className="row-link" onClick={() => navigate('/lettres/' + l.id)}>
+              <tr key={l.id} className="row-link" data-nav-row tabIndex={0} onClick={() => navigate('/lettres/' + l.id)}>
                 <td className="mono" title={l.numeroLettre || l.ref || ''}>{l.numeroLettre || l.ref || '—'}</td>
                 <td><div className="letter-subject" title={l.objet}>{l.objet}</div></td>
                 <td title={tab === 'arrivee' ? (l.expediteur?.nom || '') : (l.destinataire?.nom || '')}>{tab === 'arrivee' ? (l.expediteur?.nom || '—') : (l.destinataire?.nom || '—')}</td>

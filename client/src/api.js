@@ -26,6 +26,7 @@ export const api = {
   logout: () => req('/api/logout', { method: 'POST' }),
   me: () => req('/api/me'),
   stats: () => req('/api/stats'),
+  search: (q) => req('/api/search?q=' + encodeURIComponent(q)),
   listLetters: (params = {}) => {
     const qs = new URLSearchParams(params).toString();
     return req('/api/letters' + (qs ? `?${qs}` : ''));

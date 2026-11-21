@@ -3,7 +3,7 @@ import { api, setToken } from '../api';
 import { useAuth } from '../auth';
 import Select from '../components/Select';
 
-const emptyAccount = () => ({ name: '', username: '', password: '', commission: '', role: 'agent', permissions: {}, readOnly: false });
+const emptyAccount = () => ({ name: '', username: '', email: '', password: '', commission: '', role: 'agent', permissions: {}, readOnly: false });
 const ROLE_HINTS = {
   agent: 'Compte de comité : lecture seule au départ — l’administrateur lui accorde ensuite les permissions voulues.',
   chef: 'Responsable du comité : tous les pouvoirs du comité (modifier, fichiers, demandes de transfert) — l’administrateur peut les retirer un par un.',
@@ -53,16 +53,18 @@ export default function Accounts() {
 
   useEffect(() => { load().catch((e) => setError(e.message)); }, [load]);
 
+  const assignedLetters = (accountId) => letters.filter((l) => l.assignedTo === accountId);
   const closureRate = (accountId) => {
-    const assigned = letters.filter((l) => l.assignedTo === accountId);
+    const assigned = assignedLetters(accountId);
     if (assigned.length === 0) return null;
     const closed = assigned.filter((l) => l.statut === 'archive').length;
     return Math.round((closed / assigned.length) * 100);
   };
+  const workload = (accountId) => assignedLetters(accountId).filter((l) => (l.statut || 'recu') !== 'archive').length;
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return accounts.filter((account) => !q || `${account.name} ${account.username}`.toLowerCase().includes(q));
+    return accounts.filter((account) => !q || `${account.name} ${account.username} ${account.email || ''}`.toLowerCase().includes(q));
   }, [accounts, query]);
 
   const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
@@ -76,7 +78,7 @@ export default function Accounts() {
   }));
   const edit = (account) => {
     setError(''); setNotice('');
-    setForm({ id: account.id, name: account.name, username: account.username, password: '', commission: account.commission || '', role: account.role, permissions: { ...(account.permissions || {}) }, readOnly: !!account.readOnly });
+    setForm({ id: account.id, name: account.name, username: account.username, email: account.email || '', password: '', commission: account.commission || '', role: account.role, permissions: { ...(account.permissions || {}) }, readOnly: !!account.readOnly });
   };
   const save = async (event) => {
     event.preventDefault();
@@ -160,6 +162,7 @@ export default function Accounts() {
           <div className="form-grid">
             <label className="field">Nom complet<input autoComplete="name" value={form.name} onChange={(e) => update('name', e.target.value)} required /></label>
             <label className="field">Identifiant<input autoComplete="username" value={form.username} onChange={(e) => update('username', e.target.value)} required minLength={3} disabled={Boolean(form.id)} /></label>
+            <label className="field">Email (notifications)<input type="email" autoComplete="email" value={form.email} onChange={(e) => update('email', e.target.value)} placeholder="employe@exemple.tn (facultatif)" /></label>
             <label className="field">{form.id ? 'Nouveau mot de passe (facultatif)' : 'Mot de passe'}<input type="password" autoComplete="new-password" value={form.password} onChange={(e) => update('password', e.target.value)} minLength={form.password ? 8 : undefined} required={!form.id} placeholder={form.id ? 'Laisser vide pour conserver' : '8 caractères minimum'} /></label>
             <label className="field">Type de compte<Select ariaLabel="Type de compte" value={form.role} onChange={changeRole} disabled={form.id === me?.id} options={[{ value: 'agent', label: 'Comité' }, { value: 'chef', label: 'Chef de comité' }, { value: 'daf', label: 'DAF' }, { value: 'supervisor', label: 'Superviseur' }, { value: 'admin', label: 'Administration' }]} /><span className="muted">{ROLE_HINTS[form.role]}</span></label>
             <label className="field">{['admin', 'daf', 'supervisor'].includes(form.role) ? 'Comité (facultatif)' : 'Comité'}<Select ariaLabel="Comité" value={form.commission} onChange={(v) => update('commission', v)} placeholder={['admin', 'daf', 'supervisor'].includes(form.role) ? 'Aucun comité' : '— Choisir un comité —'} options={[{ value: '', label: ['admin', 'daf', 'supervisor'].includes(form.role) ? 'Aucun comité' : '— Choisir un comité —' }, ...committees.map((committee) => ({ value: committee.id, label: committee.nom }))]} /></label>
@@ -230,10 +233,16 @@ export default function Accounts() {
       <section className="card account-list-card">
         <div className="account-list-heading"><div><h2 className="card-title">Tous les comptes</h2><div className="muted">{accounts.length} compte{accounts.length === 1 ? '' : 's'}</div></div><input className="account-search" type="search" placeholder="Rechercher un compte…" aria-label="Rechercher un compte" value={query} onChange={(e) => setQuery(e.target.value)} /></div>
         <div className="table-wrap"><table className="table account-table">
-          <thead><tr><th>Nom</th><th>Identifiant</th><th>Type</th><th>Comité</th><th>Clôture</th><th></th></tr></thead>
+          <thead><tr><th>Nom</th><th>Identifiant</th><th>Email</th><th>Type</th><th>Comité</th><th>En cours</th><th>Clôture</th><th></th></tr></thead>
           <tbody>{filtered.map((account) => <tr key={account.id}>
-            <td className="account-name-cell">{account.name}</td><td className="mono">{account.username}</td><td>{ROLE_LABELS[account.role] || account.role}{['chef', 'agent'].includes(account.role) && account.readOnly && <span className="readonly-tag">Lecture seule</span>}{['chef', 'agent'].includes(account.role) && !account.readOnly && <span className="muted perm-count">{Object.keys(account.permissions || {}).length} perm.</span>}</td>
+            <td className="account-name-cell">{account.name}</td><td className="mono">{account.username}</td><td>{account.email || <span className="muted">—</span>}</td><td>{ROLE_LABELS[account.role] || account.role}{['chef', 'agent'].includes(account.role) && account.readOnly && <span className="readonly-tag">Lecture seule</span>}{['chef', 'agent'].includes(account.role) && !account.readOnly && <span className="muted perm-count">{Object.keys(account.permissions || {}).length} perm.</span>}</td>
             <td>{committees.find((committee) => committee.id === account.commission)?.nom || <span className="muted">Aucun</span>}</td>
+            <td>
+              {(() => {
+                const n = workload(account.id);
+                return n > 0 ? <span className="workload-badge" title={`${n} courrier${n > 1 ? 's' : ''} en cours`}>{n}</span> : <span className="muted">0</span>;
+              })()}
+            </td>
             <td>
               {(() => {
                 const rate = closureRate(account.id);
@@ -252,7 +261,7 @@ export default function Accounts() {
                   {account.id !== me?.id && account.role !== 'admin' && <button className="btn btn-danger account-delete" type="button" onClick={() => { setError(''); setNotice(''); setConfirmId(account.id); }}>Supprimer</button>}
                 </>}</td>
           </tr>)}
-          {filtered.length === 0 && <tr><td colSpan="6" className="empty-cell">Aucun compte trouvé.</td></tr>}</tbody>
+          {filtered.length === 0 && <tr><td colSpan="8" className="empty-cell">Aucun compte trouvé.</td></tr>}</tbody>
         </table></div>
       </section>
     </div>

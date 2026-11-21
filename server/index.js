@@ -4,6 +4,25 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { getDB, saveDB, updateDB, verifyPassword, hashPassword, initializeDB, getSessionSecret } from './store.js';
 
+// Best-effort email sending via the configured Gmail account (nodemailer SMTP).
+// Never blocks a request — failures are swallowed so the app stays usable.
+async function sendNotificationEmail(to, subject, text) {
+  if (!to) return;
+  try {
+    const db = getDB();
+    const g = (db.settings || {}).gmail || {};
+    if (!g.email || !g.appPassword) return; // Gmail not configured
+    const nodemailer = await import('nodemailer');
+    const transporter = nodemailer.createTransport({
+      host: 'smtp.gmail.com', port: 465, secure: true,
+      auth: { user: g.email, pass: g.appPassword },
+    });
+    await transporter.sendMail({ from: `"Bureau d'ordre DNA" <${g.email}>`, to, subject, text });
+  } catch (e) {
+    console.error('Email notification failed:', e.message || e);
+  }
+}
+
 const PORT = process.env.PORT || 3001;
 const CLIENT_DIST = path.join(process.cwd(), 'client', 'dist');
 const UPLOAD_DIR = path.join(process.cwd(), 'server', 'data', 'uploads');
@@ -71,7 +90,7 @@ function readBody(req, limitMB = 0.25) {
   });
 }
 
-function publicUser(u) { return { id: u.id, username: u.username, name: u.name, role: effectiveRole(u.role), commission: u.commission || null, createdAt: u.createdAt, permissions: userPerms(u), readOnly: !!u.readOnly }; }
+function publicUser(u) { return { id: u.id, username: u.username, name: u.name, email: u.email || '', role: effectiveRole(u.role), commission: u.commission || null, createdAt: u.createdAt, permissions: userPerms(u), readOnly: !!u.readOnly }; }
 
 // ---- Access by comité ---------------------------------------------------------------
 // Two kinds of accounts: Administration (role "admin": sees and does everything) and comité accounts
@@ -479,6 +498,7 @@ async function route(req, res) {
     const body = await readBody(req);
     const username = String(body.username || '').trim().toLowerCase();
     const name = clip(body.name, 100).trim();
+    const email = String(body.email || '').trim().toLowerCase();
     const password = typeof body.password === 'string' ? body.password.slice(0, 200) : '';
     const commission = body.commission ? String(body.commission) : null;
     const role = body.role === undefined ? 'agent' : normalizeRole(String(body.role));
@@ -489,6 +509,7 @@ async function route(req, res) {
     if (username.length < 3 || !/^[a-z0-9._-]+$/.test(username)) return send(res, 400, { error: 'Identifiant invalide (3 caractères minimum, lettres, chiffres, . _ -)' });
     if (db.users.some((u) => u.username === username)) return send(res, 409, { error: 'Cet identifiant existe déjà' });
     if (!name) return send(res, 400, { error: 'Le nom est obligatoire' });
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return send(res, 400, { error: 'Adresse email invalide' });
     if (password.length < 8) return send(res, 400, { error: 'Le mot de passe doit contenir au moins 8 caractères' });
     if (commission && !isValidCommission(db, commission)) return send(res, 400, { error: 'Comité invalide' });
     // A chef starts with the full powers of its comité, an agent starts
@@ -497,7 +518,7 @@ async function route(req, res) {
     if (isAdminLike(user) && body.permissions !== undefined) permissions = sanitizePerms(body.permissions);
     else if (role === 'chef') permissions = { ...CHEF_DEFAULT_PERMS };
     else permissions = {};
-    const created = { id: 'u' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex'), username, name, password: hashPassword(password), role, commission, permissions, readOnly: isAdminLike(user) ? !!body.readOnly : false, createdAt: new Date().toISOString() };
+    const created = { id: 'u' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex'), username, name, email, password: hashPassword(password), role, commission, permissions, readOnly: isAdminLike(user) ? !!body.readOnly : false, createdAt: new Date().toISOString() };
     db.users.push(created);
     logActivity(db, user, 'user.create', created.username, { role: created.role, commission: created.commission });
     await saveDB(db);
@@ -518,12 +539,14 @@ async function route(req, res) {
     if (denyReadOnly(user, res)) return;
     const body = await readBody(req);
     const name = clip(body.name ?? target.name, 100).trim();
+    const email = body.email === undefined ? (target.email || '') : String(body.email).trim().toLowerCase();
     const commission = body.commission === undefined ? (target.commission || null) : (body.commission ? String(body.commission) : null);
     const password = typeof body.password === 'string' ? body.password.slice(0, 200) : '';
     const role = body.role === undefined ? effectiveRole(target.role) : normalizeRole(String(body.role));
     if (!ROLES.includes(role)) return send(res, 400, { error: 'Rôle invalide' });
     if (!isAdminLike(user) && role !== effectiveRole(target.role)) return send(res, 403, { error: 'Seul le bureau d’ordre peut changer un rôle' });
     if (!name) return send(res, 400, { error: 'Le nom est obligatoire' });
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return send(res, 400, { error: 'Adresse email invalide' });
     if (commission && !isValidCommission(db, commission)) return send(res, 400, { error: 'Comité invalide' });
     if (password && password.length < 8) return send(res, 400, { error: 'Le mot de passe doit contenir au moins 8 caractères' });
     if (role !== effectiveRole(target.role) && target.id === user.id) return send(res, 400, { error: 'Vous ne pouvez pas changer votre propre rôle' });
@@ -531,6 +554,7 @@ async function route(req, res) {
     // A new password, role or comité signs the account out everywhere (old tokens stop working).
     if (password || role !== effectiveRole(target.role) || commission !== (target.commission || null)) target.sessionVersion = sessionVersion(target) + 1;
     target.name = name;
+    target.email = email;
     target.commission = commission;
     target.role = role;
     if (password) target.password = hashPassword(password);
@@ -745,6 +769,36 @@ async function route(req, res) {
     } catch (error) {
       return send(res, 400, { error: error.message || 'Téléversement impossible' });
     }
+  }
+
+  // Global search (Ctrl+K): courriers + comptes + pages
+  if (pathname === '/api/search' && method === 'GET') {
+    const user = requireAuth(req, res);
+    if (!user) return;
+    const q = fold((url.searchParams.get('q') || '').trim());
+    if (q.length < 2) return send(res, 200, { courriers: [], comptes: [] });
+    const db = getDB();
+    const results = { courriers: [], comptes: [] };
+    // Courriers/lettres visibles par l'utilisateur
+    for (const l of (db.letters || [])) {
+      if (!isBureauLike(user) && !canSeeLetter(user, l)) continue;
+      const hay = fold([l.ref, l.numeroLettre, l.objet, l.expediteur?.nom, l.destinataire?.nom].join(' '));
+      if (q.split(/\s+/).every((w) => hay.includes(w))) {
+        results.courriers.push({ id: l.id, ref: l.ref || l.numeroLettre, objet: l.objet, statut: l.statut });
+      }
+      if (results.courriers.length >= 8) break;
+    }
+    // Comptes (admin uniquement)
+    if (user.role === 'admin' || can(user, 'users')) {
+      for (const u of (db.users || [])) {
+        const hay = fold([u.name, u.username, u.email].join(' '));
+        if (q.split(/\s+/).every((w) => hay.includes(w))) {
+          results.comptes.push({ id: u.id, name: u.name, username: u.username, role: effectiveRole(u.role) });
+        }
+        if (results.comptes.length >= 8) break;
+      }
+    }
+    return send(res, 200, results);
   }
 
   if (pathname === '/api/stats' && method === 'GET') {
@@ -1521,6 +1575,14 @@ async function route(req, res) {
       courrier.assignedToName = target ? target.name : '';
       logActivity(db, user, 'courrier.assign', courrier.nom, { courrierId: courrier.id, to: courrier.assignedToName, by: user.name });
       await saveDB(db);
+      // Notifier l'employé responsable par email (si Gmail configuré + email renseigné)
+      if (target?.email) {
+        sendNotificationEmail(
+          target.email,
+          `Nouveau courrier assigné — ${courrier.sujet || courrier.nom}`,
+          `Bonjour ${target.name},\n\nLe courrier « ${courrier.sujet || courrier.nom} » vous a été assigné par ${user.name}.\nVous en êtes le responsable jusqu'à sa clôture.\n\nCordialement,\nBureau d'ordre DNA`
+        );
+      }
       return send(res, 200, { item: courrier });
     }
     // Two-step validation: a courrier is first validated by the DAF
@@ -1591,6 +1653,15 @@ async function route(req, res) {
       courrier.letterId = letter.id;
       logActivity(db, user, 'courrier.validate', courrier.nom, { courrierId: courrier.id, letterRef: letter.ref, by: user.name });
       await saveDB(db);
+      // Notifier le responsable que sa lettre est validée et enregistrée
+      const assignee = courrier.assignedTo ? db.users.find((u) => u.id === courrier.assignedTo) : null;
+      if (assignee?.email) {
+        sendNotificationEmail(
+          assignee.email,
+          `Lettre validée — ${letter.ref}`,
+          `Bonjour ${assignee.name},\n\nLa lettre « ${letter.objet} » (réf. ${letter.ref}) a été validée et enregistrée. Vous en restez le responsable jusqu'à sa clôture.\n\nCordialement,\nBureau d'ordre DNA`
+        );
+      }
       return send(res, 200, { item: courrier, letter: letterView(user, letter) });
     }
     if (action === 'rejete') {
