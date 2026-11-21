@@ -203,7 +203,7 @@ export default function Courrier() {
               <tbody>
                 {pending.map((c) => (
                   <tr key={c.id}>
-                    <td><span className="file-pill">Fichier {c.nom}</span>{c.sujet && <div className="muted small" style={{ marginTop: 4 }}>Titre lu : {c.sujet}</div>}<div className="muted small">{fmtSize(c.taille)}</div></td>
+                    <td title={c.nom}><span className="file-pill">Fichier {c.nom}</span>{c.sujet && <div className="muted small" style={{ marginTop: 4 }}>Titre lu : {c.sujet}</div>}<div className="muted small">{fmtSize(c.taille)}</div></td>
                     <td><span className={'direction-pill direction-' + (c.direction === 'sortant' ? 'sortant' : 'entrant')}><i />{c.direction === 'sortant' ? 'Départ' : 'Arrivée'}</span></td>
                     <td>{c.uploadedByName || '—'}</td>
                     <td className="date-cell">{fmtDate(c.uploadedAt)}</td>

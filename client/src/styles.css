@@ -197,7 +197,20 @@ h2.card-title { font-size: 16px; margin: 0 0 12px; }
   box-shadow: 0 1px 2px rgba(15,10,12,.04), 0 12px 32px rgba(15,10,12,.07);
   background: rgba(255,255,255,.02);
 }
-.table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13.5px; }
+.table { width: 100%; max-width: 100%; table-layout: auto; border-collapse: separate; border-spacing: 0; font-size: 13.5px; }
+/* Tables de courriers (contiennent .letter-subject): largeurs fixes pour garder tout à l'écran */
+.table:has(.letter-subject) { table-layout: fixed; }
+.table:has(.letter-subject) th:first-child, .table:has(.letter-subject) td:first-child { width: 14%; }
+.table:has(.letter-subject) th:nth-child(2), .table:has(.letter-subject) td:nth-child(2) { width: 27%; }
+.table:has(.letter-subject) th:nth-child(3), .table:has(.letter-subject) td:nth-child(3) { width: 15%; }
+.table:has(.letter-subject) th:nth-child(4), .table:has(.letter-subject) td:nth-child(4) { width: 16%; }
+.table:has(.letter-subject) th:nth-child(5), .table:has(.letter-subject) td:nth-child(5) { width: 12%; }
+.table:has(.letter-subject) th:nth-child(6), .table:has(.letter-subject) td:nth-child(6) { width: 9%; }
+.table:has(.letter-subject) th:nth-child(7), .table:has(.letter-subject) td:nth-child(7) { width: 7%; }
+/* En-têtes des tables de courriers:允许 passer à la ligne plutôt que forcer le débordement */
+.table:has(.letter-subject) th { white-space: normal; font-size: 10px; padding: 12px 10px; }
+.table:has(.letter-subject) td { padding: 12px 10px; }
+.table:has(.letter-subject) td.date-cell { font-size: 12px !important; white-space: nowrap; }
 .table th {
   text-align: left;
   padding: 15px 18px;
@@ -220,8 +233,17 @@ h2.card-title { font-size: 16px; margin: 0 0 12px; }
   vertical-align: middle;
   color: #e8dfe2;
   line-height: 1.45;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   transition: background .15s ease, box-shadow .15s ease;
 }
+/* Cellules longues: garder la table dans l'écran */
+.table td.mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.table .letter-subject {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;
+  overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+}
+.table .committee-pill { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 /* Séparateurs verticaux discrets entre colonnes */
 .table th + th, .table td + td { border-left: 1px solid rgba(255,255,255,.04); }
 .table tbody tr:nth-child(even) td { background: rgba(255,255,255,.03); }

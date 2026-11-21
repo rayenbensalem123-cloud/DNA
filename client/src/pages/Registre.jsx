@@ -160,10 +160,10 @@ export default function Registre() {
             <thead><tr><th>{t('letters.numero')}</th><th>{t('letters.objet')}</th><th>{tab === 'arrivee' ? 'Expéditeur' : 'Destinataire'}</th><th>{tab === 'arrivee' ? 'Comité destinataire' : 'Comité émetteur'}</th><th>{t('letters.statut')}</th><th>{t('letters.priorite')}</th><th>{t('letters.date')}</th></tr></thead>
             <tbody>{shown.map((l) => (
               <tr key={l.id} className="row-link" onClick={() => navigate('/lettres/' + l.id)}>
-                <td className="mono">{l.numeroLettre || '—'}</td>
-                <td><div className="letter-subject">{l.objet}</div></td>
-                <td>{tab === 'arrivee' ? (l.expediteur?.nom || '—') : (l.destinataire?.nom || '—')}</td>
-                <td><span className="committee-pill">{tab === 'arrivee' ? committeeName(l.commission) : committeeName(l.departCommission || l.createdByCommission)}</span></td>
+                <td className="mono" title={l.numeroLettre || l.ref || ''}>{l.numeroLettre || l.ref || '—'}</td>
+                <td><div className="letter-subject" title={l.objet}>{l.objet}</div></td>
+                <td title={tab === 'arrivee' ? (l.expediteur?.nom || '') : (l.destinataire?.nom || '')}>{tab === 'arrivee' ? (l.expediteur?.nom || '—') : (l.destinataire?.nom || '—')}</td>
+                <td title={tab === 'arrivee' ? committeeName(l.commission) : committeeName(l.departCommission || l.createdByCommission)}><span className="committee-pill">{tab === 'arrivee' ? committeeName(l.commission) : committeeName(l.departCommission || l.createdByCommission)}</span></td>
                 <td><span className={'badge statut-' + (l.statut || 'recu')}>{t('status.' + (l.statut || 'recu'))}</span></td>
                 <td><PriorityPills value={l.priorite} /></td>
                 <td className="date-cell">{fmtDate(l.dateReception || l.dateEmission)}</td>
