@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import { useAuth } from '../auth';
 import Select from '../components/Select';
+import DatePicker from '../components/DatePicker';
 
 const STATUS_LABELS = { actif: 'Actif', inactif: 'Inactif', suspendu: 'Suspendu' };
 const emptyReferee = () => ({
@@ -195,7 +196,7 @@ export default function Referees() {
               <label className="field">Association / Ligue<input value={form.association} onChange={(e) => update('association', e.target.value)} placeholder="Ligue régionale" /></label>
               <label className="field">Téléphone<input value={form.telephone} onChange={(e) => update('telephone', e.target.value)} placeholder="+216…" /></label>
               <label className="field">Email<input type="email" value={form.email} onChange={(e) => update('email', e.target.value)} placeholder="email@exemple.tn" /></label>
-              <label className="field">Date de naissance<input type="date" value={form.dateNaissance} onChange={(e) => update('dateNaissance', e.target.value)} /></label>
+              <label className="field"><span>Date de naissance</span><DatePicker value={form.dateNaissance} onChange={(v) => update('dateNaissance', v)} placeholder="jj/mm/aaaa" /></label>
               <label className="field">Statut<Select ariaLabel="Statut" value={form.statut} onChange={(v) => update('statut', v)} options={Object.entries(STATUS_LABELS).map(([v, l]) => ({ value: v, label: l }))} /></label>
             </div>
             <label className="field full"><span>Note</span><textarea rows={3} value={form.note} onChange={(e) => update('note', e.target.value)} placeholder="Note interne sur l'arbitre…" /></label>
