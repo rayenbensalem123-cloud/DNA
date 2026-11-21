@@ -29,27 +29,31 @@ export default function Registre() {
 
   useEffect(() => { api.committees().then((d) => setCommittees(d.items || [])).catch(() => {}); }, []);
 
+  // A non-bureau account is always scoped to its own comité.
   useEffect(() => {
     if (!isBureau && user?.commission) {
       if (committeeId !== user.commission) {
         navigate(`/registres/${encodeURIComponent(user.commission)}`, { replace: true });
       }
-      return;
     }
-    if (!committeeId && committees.length) {
-      navigate(`/registres/${encodeURIComponent(committees[0].id)}`, { replace: true });
-    }
-  }, [committeeId, committees, isBureau, user?.commission, navigate]);
+  }, [committeeId, isBureau, user?.commission, navigate]);
+
+  // `committeeId === 'global'` means: all courriers, all comités confondus.
+  const isGlobal = !committeeId || committeeId === 'global';
 
   useEffect(() => {
-    if (!committeeId) return;
     let cancelled = false;
     setLoading(true);
     const params = { limit: 500, sort: 'date' };
-    if (tab === 'arrivee') {
-      params.commission = committeeId;
-    } else {
-      params.departCommission = committeeId;
+    if (!isGlobal) {
+      if (tab === 'arrivee') {
+        params.commission = committeeId;
+      } else {
+        params.departCommission = committeeId;
+        params.direction = 'sortant';
+      }
+    } else if (tab === 'depart') {
+      // Global départ: all outgoing letters.
       params.direction = 'sortant';
     }
     if (from) params.from = from;
@@ -59,7 +63,7 @@ export default function Registre() {
       .catch(() => {})
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [committeeId, tab, from, to]);
+  }, [committeeId, isGlobal, tab, from, to]);
 
   const selected = committees.find((c) => c.id === committeeId);
   const committeeName = (id) => committees.find((c) => c.id === id)?.nom || 'Sans comité';
@@ -104,7 +108,7 @@ export default function Registre() {
   return (
     <div className="page registre-page">
       <header className="page-header page-title-header">
-        <div className="page-title-copy"><span className="page-title-kicker">Registres internes</span><h1>Registre — {selected?.nom || 'Comité'}</h1></div>
+        <div className="page-title-copy"><span className="page-title-kicker">Registres internes</span><h1>Registre — {isGlobal ? 'Tous les courriers' : (selected?.nom || 'Comité')}</h1></div>
         <div className="export-group" role="group" aria-label="Exporter le registre">
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => doExport('csv')}>CSV</button>
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => doExport('xlsx')}>Excel</button>
@@ -114,7 +118,7 @@ export default function Registre() {
 
       <div className="registre-toolbar">
         {isBureau && <label className="filter-field"><span>Comité</span>
-          <Select ariaLabel="Comité" value={committeeId || ''} onChange={(v) => navigate(`/registres/${encodeURIComponent(v)}`)} options={committees.map((c) => ({ value: c.id, label: c.nom }))} />
+          <Select ariaLabel="Comité" value={committeeId || 'global'} onChange={(v) => navigate(`/registres/${encodeURIComponent(v)}`)} options={[{ value: 'global', label: 'Tous les courriers' }, ...committees.map((c) => ({ value: c.id, label: c.nom }))]} />
         </label>}
         <div className="registre-tabs" role="tablist" aria-label="Type de registre">
           <button type="button" role="tab" aria-selected={tab === 'arrivee'} className={'btn ' + (tab === 'arrivee' ? 'btn-primary' : 'btn-secondary')} onClick={() => setTab('arrivee')}>Courriers arrivés{tab === 'arrivee' ? ` (${items.length})` : ''}</button>
@@ -134,7 +138,7 @@ export default function Registre() {
 
       <div className="card">
         <div className="archive-list-heading">
-          <h2 className="card-title">{tab === 'arrivee' ? 'Registre d’arrivée' : 'Registre de départ'}</h2>
+          <h2 className="card-title">{tab === 'arrivee' ? 'Registre d’arrivée' : 'Registre de départ'}{isGlobal ? ' — tous les comités' : ''}</h2>
           <span className="muted">{shown.length} au total</span>
         </div>
         {loading ? <div className="card-pad">{t('common.loading')}</div> : (

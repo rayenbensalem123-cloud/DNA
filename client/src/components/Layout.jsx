@@ -1,7 +1,6 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth';
 import { useLanguage } from '../i18n';
-import LetterCreateModal from './LetterCreateModal';
 import PdfViewer from './PdfViewer';
 import NotificationBell from './NotificationBell';
 import InstallButton from './InstallButton';
@@ -32,8 +31,6 @@ export default function Layout() {
   const isAdminLike = user?.role === 'admin' || user?.role === 'supervisor';
   const isBureauLike = isAdminLike || user?.role === 'daf';
   const allowed = (perm) => isBureauLike || Boolean(perms[perm]);
-  const canAdd = allowed('create');
-  const showLetterModal = canAdd && new URLSearchParams(location.search).get('newLetter') === '1';
 
   const [rejectionUnread, setRejectionUnread] = useState(0);
   const [gmailUnread, setGmailUnread] = useState(0);
@@ -88,10 +85,6 @@ export default function Layout() {
         <header className="topbar">
           <div className="topbar-brand"><img src="/federation-tunisienne-logo.webp" alt="" /><span>Bureau d’ordre</span></div>
           <div className="topbar-left">
-            {canAdd && !isBureauLike && <button className="btn btn-primary btn-add" type="button" aria-label="Ajouter un courrier" onClick={() => navigate('/?newLetter=1')}>
-              <span className="plus" aria-hidden="true">+</span><span className="btn-label">Ajouter un courrier</span>
-            </button>}
-            
           </div>
           <div className="topbar-right">
             <NotificationBell />
@@ -110,10 +103,6 @@ export default function Layout() {
           <Outlet />
         </main>
       </div>
-      {canAdd && <button className="fab" type="button" aria-label="Ajouter un courrier" onClick={() => navigate('/?newLetter=1')}><span aria-hidden="true">+</span></button>}
-      {showLetterModal && (
-        <LetterCreateModal onClose={() => navigate(location.pathname, { replace: true })} />
-      )}
       <PdfViewer />
       <ChatDock />
     </div>
