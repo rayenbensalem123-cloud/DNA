@@ -127,11 +127,11 @@ const CLUB_LOGOS = [
   ['479oun1691565385', 'AS Marsa', 'asm', 'as la marsa', 'association sportive de la marsa'],
   ['gj23q71589898013', 'CS Hammam-Lif', 'cshl', 'club sportif de hammam lif'],
   ['tpfo8k1753933830', 'ES Métlaoui', 'esm', 'etoile sportive de metlaoui'],
-  ['xorutz1753933741', 'ES Zarzis', 'esz', 'etoile sportive de zarzis'],
+  ['xorutz1753933741', 'ES Zarzis', 'esz', 'etoile sportive de zarzis', 'esperance de zarzis'],
   ['zhofzo1607356608', 'Olympique Béja', 'ob', 'olympique de beja'],
   ['0sgi751753933510', 'JS El Omrane', 'js omrane', 'jso'],
-  ['r0o21i1791695547', 'Sakiet Eddaïer', 'as sakiet eddaier'],
-  ['wf634m1785432763', 'Hammam-Sousse', 'us hammam sousse'],
+  ['r0o21i1791695547', 'Sakiet Eddaïer', 'as sakiet eddaier', 'ps sakiet eddaier', 'progres sakiet eddaier'],
+  ['wf634m1785432763', 'Hammam-Sousse', 'us hammam sousse', 'es hammam sousse'],
 ];
 const LOGO_BY_NAME = new Map(CLUB_LOGOS.flatMap(([id, ...names]) => names.map((n) => [normName(n), `${BADGE}${id}.png/medium`])));
 

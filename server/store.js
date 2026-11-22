@@ -88,6 +88,26 @@ function migrate(db) {
   if (!Array.isArray(db.notifications)) { db.notifications = []; changed = true; }
   if (!Array.isArray(db.referees)) { db.referees = []; changed = true; }
   if (!Array.isArray(db.matches)) { db.matches = []; changed = true; }
+  // One-time data load (runs once per database, recorded in db.seeds): Ligue 1, journée 8 (20-22 nov. 2026).
+  if (!Array.isArray(db.seeds)) { db.seeds = []; changed = true; }
+  if (!db.seeds.includes('ligue1-j8-2026')) {
+    const empty = () => [{ refereeId: null, nom: '' }, { refereeId: null, nom: '' }, { refereeId: null, nom: '' }, { refereeId: null, nom: '' }];
+    const rows = [
+      ['2026-11-20', 'CS Hammam-Lif', 'ES Métlaoui', 'Stade Municipal de Hammam-Lif'],
+      ['2026-11-20', 'ES Hammam-Sousse', 'Progrès Sakiet Eddaïer', 'Stade Bou Ali Lahouar, Sousse'],
+      ['2026-11-20', 'Olympique de Béja', 'AS Marsa', 'Stade Boujemaa Kmiti, Béja'],
+      ['2026-11-21', 'CS Sfaxien', 'JS El Omrane', 'Stade Taïeb Mhiri, Sfax'],
+      ['2026-11-21', 'Stade Tunisien', 'CA Bizertin', 'Stade Hédi Enneifer, Le Bardo'],
+      ['2026-11-21', 'US Monastir', 'Étoile du Sahel', 'Stade Mustapha Ben Jannet, Monastir'],
+      ['2026-11-22', 'Club Africain', 'Espérance de Tunis', 'Stade Olympique Hammadi Agrebi, Radès'],
+      ['2026-11-22', 'ES Zarzis', 'US Ben Guerdane', 'Stade Abdessalem Kazouz, Zarzis'],
+    ];
+    rows.forEach(([date, home, away, venue], i) => {
+      db.matches.push({ id: `mseed-l1-j8-${i + 1}`, league: 'ligue1', gameweek: 8, home, away, date, time: '14:30', venue, field: empty(), var: empty(), createdAt: new Date().toISOString(), createdBy: 'seed' });
+    });
+    db.seeds.push('ligue1-j8-2026');
+    changed = true;
+  }
   if (!Array.isArray(db.chat)) { db.chat = []; changed = true; }
   if (!db.presence || typeof db.presence !== 'object') { db.presence = {}; changed = true; }
   if (!db.chatRead || typeof db.chatRead !== 'object') { db.chatRead = {}; changed = true; }
