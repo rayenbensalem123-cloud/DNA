@@ -49,6 +49,7 @@ const dayLabel = (iso) => {
 };
 const initials = (name) => String(name || '?').replace(/[^\p{L}\s]/gu, '').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '?';
 const assigned = (m) => [...(m.field || []), ...(m.var || [])].filter((x) => x?.nom).length;
+const normName = (v) => String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const fullName = (r) => [r.prenom, r.nom].filter(Boolean).join(' ');
 
 function Crumbs({ items }) {
@@ -112,32 +113,40 @@ function MatchModal({ league, gameweek, match, referees, teams, onClose, onSaved
   );
 }
 
-// Club logo (uploaded once per team) with an initials badge as fallback.
-function TeamLogo({ name, logos, size = 'md', dark, onPick }) {
-  const src = logos?.[String(name || '').trim().toLowerCase()];
-  const cls = 'fx-logo fx-logo-' + size + (dark ? ' dark' : '');
-  const inner = src ? <img src={src} alt="" className="fx-logo-img" /> : <span className="fx-logo-fallback">{initials(name)}</span>;
-  if (!onPick) return <span className={cls} aria-hidden="true">{inner}</span>;
+// Club logos (Ligue 1 clubs, from TheSportsDB). Matching ignores accents/case; clubs without a logo fall back to their initials.
+const BADGE = 'https://r2.thesportsdb.com/images/media/team/badge/';
+const CLUB_LOGOS = [
+  ['csvbqw1753934121', 'Espérance de Tunis', 'es tunis', 'est', 'esperance sportive de tunis'],
+  ['2gijg71753933998', 'Club Africain', 'ca', 'club africain'],
+  ['zyy5p81753933927', 'Étoile du Sahel', 'ess', 'etoile sportive du sahel'],
+  ['d89tpa1589898020', 'CS Sfaxien', 'css', 'club sportif sfaxien'],
+  ['ig19641753933662', 'Stade Tunisien', 'st'],
+  ['l0og3b1793659071', 'US Monastir', 'usm', 'union sportive monastirienne'],
+  ['vrk6l01589898068', 'US Ben Guerdane', 'usbg', 'union sportive de ben guerdane'],
+  ['wlof3v1589897978', 'CA Bizertin', 'cab', 'club athletique bizertin'],
+  ['479oun1691565385', 'AS Marsa', 'asm', 'as la marsa', 'association sportive de la marsa'],
+  ['gj23q71589898013', 'CS Hammam-Lif', 'cshl', 'club sportif de hammam lif'],
+  ['tpfo8k1753933830', 'ES Métlaoui', 'esm', 'etoile sportive de metlaoui'],
+  ['xorutz1753933741', 'ES Zarzis', 'esz', 'etoile sportive de zarzis'],
+  ['zhofzo1607356608', 'Olympique Béja', 'ob', 'olympique de beja'],
+  ['0sgi751753933510', 'JS El Omrane', 'js omrane', 'jso'],
+  ['r0o21i1791695547', 'Sakiet Eddaïer', 'as sakiet eddaier'],
+  ['wf634m1785432763', 'Hammam-Sousse', 'us hammam sousse'],
+];
+const LOGO_BY_NAME = new Map(CLUB_LOGOS.flatMap(([id, ...names]) => names.map((n) => [normName(n), `${BADGE}${id}.png/medium`])));
+
+function TeamLogo({ name, size = 'md' }) {
+  const src = LOGO_BY_NAME.get(normName(name));
+  const [failed, setFailed] = useState(false);
+  useEffect(() => { setFailed(false); }, [src]);
   return (
-    <label className={cls + ' editable'} title="Changer le logo">
-      {inner}<span className="fx-logo-edit" aria-hidden="true">📷</span>
-      <input type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) onPick(f); }} />
-    </label>
+    <span className={'fx-logo fx-logo-' + size} aria-hidden="true">
+      {src && !failed
+        ? <img src={src} alt="" className="fx-logo-img" loading="lazy" referrerPolicy="no-referrer" onError={() => setFailed(true)} />
+        : <span className="fx-logo-fallback">{initials(name)}</span>}
+    </span>
   );
 }
-
-// Reduce a picked image to a 128px square PNG so the stored logo stays tiny.
-const shrinkLogo = (file) => new Promise((resolve, reject) => {
-  const url = URL.createObjectURL(file); const img = new Image();
-  img.onload = () => {
-    const c = document.createElement('canvas'); c.width = c.height = 128;
-    const g = c.getContext('2d'); const k = Math.min(128 / img.width, 128 / img.height);
-    g.drawImage(img, (128 - img.width * k) / 2, (128 - img.height * k) / 2, img.width * k, img.height * k);
-    URL.revokeObjectURL(url); resolve(c.toDataURL('image/png'));
-  };
-  img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Image illisible')); };
-  img.src = url;
-});
 
 function Status({ m }) {
   const n = assigned(m);
@@ -149,7 +158,7 @@ function Status({ m }) {
   );
 }
 
-function MatchPanel({ match, league, referees, logos, onLogo, onEdit, onDelete }) {
+function MatchPanel({ match, league, referees, onEdit, onDelete }) {
   const region = (slot) => (slot?.refereeId ? referees.find((r) => r.id === slot.refereeId)?.region : '') || '';
   return (
     <div className="fx-panel">
@@ -162,9 +171,9 @@ function MatchPanel({ match, league, referees, logos, onLogo, onEdit, onDelete }
           </span>
         </div>
         <div className="fx-versus">
-          <div className="fx-club"><TeamLogo name={match.home} logos={logos} size="lg" onPick={(f) => onLogo(match.home, f)} /><span>{match.home}</span></div>
+          <div className="fx-club"><TeamLogo name={match.home} size="lg" /><span>{match.home}</span></div>
           <span className="fx-vs">VS</span>
-          <div className="fx-club"><TeamLogo name={match.away} logos={logos} size="lg" onPick={(f) => onLogo(match.away, f)} /><span>{match.away}</span></div>
+          <div className="fx-club"><TeamLogo name={match.away} size="lg" /><span>{match.away}</span></div>
         </div>
         <p className="fx-stadium">📍 {match.venue || 'Stade à confirmer'}</p>
       </div>
@@ -193,10 +202,6 @@ function LeaguePage({ league, gameweek, onNav }) {
   const [confirm, setConfirm] = useState(null);
   const [openId, setOpenId] = useState(null);
   const panelRef = useRef(null);
-  const [logos, setLogos] = useState({});
-  const loadLogos = useCallback(() => { api.teams().then((d) => setLogos(Object.fromEntries((d.items || []).map((t) => [t.nom.toLowerCase(), t.logo])))).catch(() => {}); }, []);
-  useEffect(loadLogos, [loadLogos]);
-  const changeLogo = async (nom, file) => { try { setError(''); await api.setTeamLogo(nom, await shrinkLogo(file)); loadLogos(); } catch (e) { setError(e.message || 'Logo non enregistré'); } };
 
   const load = useCallback(() => {
     setLoading(true);
@@ -277,9 +282,9 @@ function LeaguePage({ league, gameweek, onNav }) {
                     <span className="fx-time">{m.time || '—'}</span>
                     <span className="fx-card-main">
                       <span className="fx-card-teams">
-                        <span className="fx-side home"><b>{m.home}</b><TeamLogo name={m.home} logos={logos} size="sm" /></span>
+                        <span className="fx-side home"><b>{m.home}</b><TeamLogo name={m.home} size="sm" /></span>
                         <i>vs</i>
-                        <span className="fx-side away"><TeamLogo name={m.away} logos={logos} size="sm" /><b>{m.away}</b></span>
+                        <span className="fx-side away"><TeamLogo name={m.away} size="sm" /><b>{m.away}</b></span>
                       </span>
                       <span className="fx-card-venue">{m.venue || 'Stade à confirmer'}</span>
                     </span>
@@ -290,7 +295,7 @@ function LeaguePage({ league, gameweek, onNav }) {
             ))}
           </section>
           <aside ref={panelRef} className="fx-aside">
-            {opened && <MatchPanel match={opened} league={league} referees={referees} logos={logos} onLogo={changeLogo} onEdit={() => setEditing(opened)} onDelete={() => setConfirm(opened)} />}
+            {opened && <MatchPanel match={opened} league={league} referees={referees} onEdit={() => setEditing(opened)} onDelete={() => setConfirm(opened)} />}
           </aside>
         </div>
       )}

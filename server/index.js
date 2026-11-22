@@ -59,7 +59,7 @@ const SECURITY_HEADERS = {
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=()',
   'Cross-Origin-Opener-Policy': 'same-origin',
   'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
-  'Content-Security-Policy': "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; child-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://*.vercel-storage.com https://vercel.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+  'Content-Security-Policy': "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; child-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://r2.thesportsdb.com; connect-src 'self' https://*.vercel-storage.com https://vercel.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
 };
 
 function send(res, status, data, extraHeaders = {}) {
@@ -727,37 +727,13 @@ async function route(req, res) {
   // Réservé à l'admin et au DAF (lecture comme écriture).
   const MATCH_LEAGUES = { ligue1: 'Ligue 1', ligue2: 'Ligue 2', c1: 'Amateurs C1', c2: 'Amateurs C2' };
   const matchIdMatch = /^\/api\/matches\/([A-Za-z0-9_-]+)$/.exec(pathname);
-  if (pathname === '/api/matches' || pathname === '/api/matches/summary' || pathname === '/api/teams' || pathname === '/api/teams/logo' || matchIdMatch) {
+  if (pathname === '/api/matches' || pathname === '/api/matches/summary' || matchIdMatch) {
     const user = requireAuth(req, res);
     if (!user) return;
     if (!(user.role === 'admin' || user.role === 'daf')) return send(res, 403, { error: 'Réservé à l’admin et au DAF' });
     const db = getDB();
     if (!Array.isArray(db.matches)) db.matches = [];
     const byDate = (a, b) => String(a.date || '9999').localeCompare(String(b.date || '9999')) || String(a.time || '').localeCompare(String(b.time || '')) || String(a.createdAt).localeCompare(String(b.createdAt));
-
-    // Logos des équipes (une image par nom d'équipe, réduite côté navigateur).
-    if (pathname === '/api/teams' && method === 'GET') {
-      if (!Array.isArray(db.teams)) db.teams = [];
-      return send(res, 200, { items: db.teams.map((t) => ({ nom: t.nom, logo: t.logo })) });
-    }
-    if (pathname === '/api/teams/logo' && method === 'PUT') {
-      if (denyReadOnly(user, res)) return;
-      const body = await readBody(req, 0.5);
-      const nom = String(body.nom || '').trim().replace(/\s+/g, ' ').slice(0, 80);
-      if (nom.length < 2) return send(res, 400, { error: 'Nom d’équipe invalide' });
-      const logo = String(body.logo || '');
-      if (logo && !/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(logo)) return send(res, 400, { error: 'Image invalide (PNG, JPEG ou WebP)' });
-      if (logo.length > 160000) return send(res, 413, { error: 'Image trop lourde' });
-      if (!Array.isArray(db.teams)) db.teams = [];
-      const key = nom.toLowerCase();
-      const idx = db.teams.findIndex((t) => t.nom.toLowerCase() === key);
-      if (!logo) { if (idx >= 0) db.teams.splice(idx, 1); }
-      else if (idx >= 0) db.teams[idx] = { ...db.teams[idx], nom, logo };
-      else db.teams.push({ nom, logo });
-      logActivity(db, user, 'team.logo', nom, { by: user.name });
-      await saveDB(db);
-      return send(res, 200, { ok: true });
-    }
 
     if (pathname === '/api/matches/summary' && method === 'GET') {
       const leagues = Object.entries(MATCH_LEAGUES).map(([id, nom]) => {

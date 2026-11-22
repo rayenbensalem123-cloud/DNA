@@ -138,8 +138,6 @@ export const api = {
   saveSettings: (body) => req('/api/settings', { method: 'PUT', body }),
   // Templates de courrier
   // Referees (arbitres)
-  teams: () => req('/api/teams'),
-  setTeamLogo: (nom, logo) => req('/api/teams/logo', { method: 'PUT', body: { nom, logo } }),
   matchSummary: () => req('/api/matches/summary'),
   listMatches: (league, gameweek) => req(`/api/matches?league=${encodeURIComponent(league)}&gameweek=${encodeURIComponent(gameweek)}`),
   createMatch: (data) => req('/api/matches', { method: 'POST', body: data }),
