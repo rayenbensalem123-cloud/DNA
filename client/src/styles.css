@@ -1743,3 +1743,82 @@ input:focus, select:focus, textarea:focus { outline: 2px solid #ffd3d8; outline-
   .fin-refs-grid, .fin-grid2 { grid-template-columns: 1fr; }
   .fin-gw-select { flex: 1 1 100%; order: -1; }
 }
+
+/* ---------- Finance v2: liste de matchs + tiroir de détails ---------- */
+.fin-hint { margin: 0 0 10px; }
+.fin-days { display: grid; gap: 18px; }
+.fin-day-title { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin: 0 0 8px; padding: 0 4px; font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: #232936; }
+.fin-day-title span { font-size: 11.5px; font-weight: 600; letter-spacing: 0; text-transform: none; color: #6a7180; }
+.fin-rows { list-style: none; margin: 0; padding: 0; background: #fff; border: 1px solid #e2e5ee; border-radius: 14px; overflow: hidden; box-shadow: 0 6px 18px rgba(35,41,54,.05); }
+.fin-rows li + li { border-top: 1px solid #eceef4; }
+.fin-row { width: 100%; display: grid; grid-template-columns: 64px minmax(0, 1.6fr) minmax(0, 1fr) auto 18px; align-items: center; gap: 14px; padding: 14px 18px; background: none; border: 0; text-align: left; font: inherit; color: inherit; cursor: pointer; transition: background .15s ease; }
+.fin-row:hover { background: #fff6f7; }
+.fin-row:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; background: #fff6f7; }
+.fin-time { font-weight: 800; font-variant-numeric: tabular-nums; color: #a30014; font-size: 15px; }
+.fin-row-teams { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-weight: 800; font-size: 15.5px; min-width: 0; }
+.fin-row-team { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.fin-row-vs { font-size: 11px; font-weight: 700; color: #9aa0ad; text-transform: uppercase; }
+.fin-row-venue { font-size: 13px; color: #514448; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fin-chevron { font-size: 22px; color: #b3b8c4; line-height: 1; transition: transform .15s ease, color .15s ease; }
+.fin-row:hover .fin-chevron { transform: translateX(3px); color: var(--primary); }
+.fin-count { display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; padding: 3px 10px; border-radius: 999px; background: #fff3d6; color: #8a5a00; white-space: nowrap; }
+.fin-count.is-full { background: #e3f6ea; color: #17693a; }
+.fin-crest { display: inline-grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: #a30014; color: #fff; font-weight: 900; font-size: 15px; letter-spacing: .02em; }
+.fin-crest.alt { background: #232936; }
+.fin-crest.sm { width: 28px; height: 28px; font-size: 11px; flex: none; }
+.fin-drawer-backdrop { position: fixed; inset: 0; z-index: 60; background: rgba(20,24,34,.45); display: flex; justify-content: flex-end; animation: finFade .15s ease; }
+.fin-drawer { width: min(480px, 100%); height: 100%; background: #fff; display: flex; flex-direction: column; box-shadow: -18px 0 50px rgba(20,24,34,.25); animation: finSlide .2s ease; }
+@keyframes finSlide { from { transform: translateX(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes finFade { from { opacity: 0; } to { opacity: 1; } }
+.fin-drawer-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 18px 20px 6px; }
+.fin-drawer-head > div { display: flex; flex-direction: column; gap: 4px; }
+.fin-drawer-date { font-weight: 800; font-size: 15px; }
+.fin-drawer-versus { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px; padding: 14px 20px; text-align: center; }
+.fin-club { display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 15px; }
+.fin-club .fin-crest { width: 58px; height: 58px; font-size: 19px; }
+.fin-club small { color: #6a7180; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+.fin-drawer-venue { margin: 0 20px; padding: 10px 14px; border-radius: 10px; background: #f4f6fb; font-size: 13.5px; font-weight: 600; text-align: center; }
+.fin-drawer-body { flex: 1; overflow: auto; padding: 8px 20px 12px; }
+.fin-drawer-body h3 { margin: 18px 0 8px; font-size: 11.5px; letter-spacing: .14em; text-transform: uppercase; color: #a67c00; }
+.fin-people { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.fin-people li { display: flex; align-items: center; gap: 12px; padding: 9px 12px; border: 1px solid #eceef4; border-radius: 12px; }
+.fin-people li.is-empty { border-style: dashed; background: #fafbfd; }
+.fin-avatar { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: #fde8eb; color: #a30014; font-weight: 800; font-size: 12px; flex: none; }
+.is-empty .fin-avatar { background: #eef0f5; color: #9aa0ad; }
+.fin-person { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
+.fin-person small { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #6a7180; }
+.fin-person strong { font-size: 14.5px; }
+.is-empty .fin-person strong { font-weight: 500; font-style: italic; color: #9aa0ad; }
+.fin-drawer-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 14px 20px; border-top: 1px solid #eceef4; background: #fafbfd; }
+.fin-drawer-foot > div { display: flex; gap: 8px; }
+@media (max-width: 700px) {
+  .fin-row { grid-template-columns: 52px minmax(0, 1fr) auto 14px; gap: 10px; padding: 12px; }
+  .fin-row-venue { display: none; }
+  .fin-drawer-backdrop { align-items: flex-end; }
+  .fin-drawer { height: auto; max-height: 92vh; border-radius: 18px 18px 0 0; }
+}
+@media (prefers-reduced-motion: reduce) { .fin-drawer, .fin-drawer-backdrop { animation: none; } }
+
+/* Finance v2: retouches suite à la revue UX */
+.fin-count.is-none { background: #fde8ea; color: #a30014; }
+.fin-chevron { color: #5b6270; }
+.fin-hint, .fin-day-title span { font-size: 13px; color: #5b6270; }
+.fin-row { border-left: 3px solid transparent; }
+.fin-row:hover, .fin-row:focus-visible { border-left-color: #a30014; }
+.fin-drawer .modal-close { width: 44px; height: 44px; font-size: 26px; }
+@media (max-width: 700px) {
+  .fin-count-word { display: none; }
+  .fin-row-teams { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .fin-row-vs { display: none; }
+  .fin-main .btn, .fin-bar .btn { min-height: 44px; }
+  .fin-actions { width: 100%; }
+  .fin-actions > .btn-primary { flex: 1 1 100%; justify-content: center; }
+  .fin-actions .export-group { width: 100%; display: flex; gap: 8px; }
+  .fin-actions .export-group .btn { flex: 1; }
+  .fin-gw .btn { flex: 1; }
+  .fin-drawer::before { content: ''; display: block; width: 40px; height: 4px; border-radius: 4px; background: #d3d7e0; margin: 8px auto 0; }
+  .fin-drawer-foot { flex-direction: column; align-items: stretch; box-shadow: 0 -6px 14px rgba(35,41,54,.06); }
+  .fin-drawer-foot .fin-count { align-self: flex-start; }
+  .fin-drawer-foot > div { flex-direction: row-reverse; }
+  .fin-drawer-foot > div .btn { flex: 1; min-height: 44px; }
+}

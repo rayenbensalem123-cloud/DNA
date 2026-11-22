@@ -32,6 +32,14 @@ const longDate = (iso) => {
   if (!m) return 'Date à fixer';
   return new Date(+m[1], +m[2] - 1, +m[3]).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
 };
+const dayLabel = (iso) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '');
+  if (!m) return 'Date à fixer';
+  const t = new Date(+m[1], +m[2] - 1, +m[3]).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  return t.charAt(0).toUpperCase() + t.slice(1);
+};
+const initials = (name) => String(name || '?').replace(/[^\p{L}\s]/gu, '').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '?';
+const assigned = (m) => [...(m.field || []), ...(m.var || [])].filter((x) => x?.nom).length;
 const fullName = (r) => [r.prenom, r.nom].filter(Boolean).join(' ');
 
 function Crumbs({ items }) {
@@ -42,17 +50,6 @@ function Crumbs({ items }) {
           {c.onClick ? <button type="button" className="fin-crumb-link" onClick={c.onClick}>{c.label}</button> : <strong>{c.label}</strong>}</span>
       ))}
     </nav>
-  );
-}
-
-function RefereeGroup({ title, roles, slots }) {
-  return (
-    <div className="fin-refs">
-      <h4>{title}</h4>
-      <ul>{roles.map((role, i) => (
-        <li key={role}><span className="fin-role">{role}</span><span className={'fin-ref-name' + (slots?.[i]?.nom ? '' : ' empty')}>{slots?.[i]?.nom || 'À désigner'}</span></li>
-      ))}</ul>
-    </div>
   );
 }
 
@@ -106,6 +103,44 @@ function MatchModal({ league, gameweek, match, referees, teams, onClose, onSaved
   );
 }
 
+function MatchDrawer({ match, league, onClose, onEdit, onDelete }) {
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  const n = assigned(match);
+  const person = (role, slot) => (
+    <li key={role} className={slot?.nom ? '' : 'is-empty'}>
+      <span className="fin-avatar" aria-hidden="true">{slot?.nom ? initials(slot.nom) : '?'}</span>
+      <span className="fin-person"><small>{role}</small><strong>{slot?.nom || 'À désigner'}</strong></span>
+    </li>
+  );
+  return (
+    <div className="fin-drawer-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <aside className="fin-drawer" role="dialog" aria-modal="true" aria-label={`${match.home} contre ${match.away}`}>
+        <header className="fin-drawer-head">
+          <div><span className="fin-kicker">{league.nom} · Journée {match.gameweek}</span><span className="fin-drawer-date">{dayLabel(match.date)}{match.time ? ' · ' + match.time : ''}</span></div>
+          <button type="button" className="modal-close" onClick={onClose} aria-label="Fermer">×</button>
+        </header>
+        <div className="fin-drawer-versus">
+          <div className="fin-club"><span className="fin-crest">{initials(match.home)}</span><strong>{match.home}</strong><small>Domicile</small></div>
+          <span className="fin-vs">VS</span>
+          <div className="fin-club"><span className="fin-crest alt">{initials(match.away)}</span><strong>{match.away}</strong><small>Extérieur</small></div>
+        </div>
+        <div className="fin-drawer-venue">📍 {match.venue || 'Stade à confirmer'}</div>
+        <div className="fin-drawer-body">
+          <section><h3>Arbitres terrain</h3><ul className="fin-people">{FIELD_ROLES.map((r, i) => person(r, match.field?.[i]))}</ul></section>
+          <section><h3>Équipe VAR</h3><ul className="fin-people">{VAR_ROLES.map((r, i) => person(r, match.var?.[i]))}</ul></section>
+        </div>
+        <footer className="fin-drawer-foot">
+          <span className={'fin-count' + (n === 8 ? ' is-full' : n === 0 ? ' is-none' : '')}>{n}/8 arbitres désignés</span>
+          <div><button type="button" className="btn btn-danger" onClick={onDelete}>Supprimer</button><button type="button" className="btn btn-primary" onClick={onEdit}>Modifier</button></div>
+        </footer>
+      </aside>
+    </div>
+  );
+}
+
 function LeaguePage({ league, gameweek, onNav }) {
   const [matches, setMatches] = useState([]);
   const [referees, setReferees] = useState([]);
@@ -113,6 +148,7 @@ function LeaguePage({ league, gameweek, onNav }) {
   const [error, setError] = useState('');
   const [editing, setEditing] = useState(null); // null | {} (new) | match
   const [confirm, setConfirm] = useState(null);
+  const [openId, setOpenId] = useState(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -127,10 +163,12 @@ function LeaguePage({ league, gameweek, onNav }) {
   const maxWeek = Math.max(league.weeks, lastPlayed);
   const counts = useMemo(() => { const c = {}; matches.forEach((m) => { c[m.gameweek] = (c[m.gameweek] || 0) + 1; }); return c; }, [matches]);
   const list = matches.filter((m) => m.gameweek === gw).sort((a, b) => String(a.date || '9999').localeCompare(String(b.date || '9999')) || String(a.time).localeCompare(String(b.time)));
+  const days = useMemo(() => { const g = []; list.forEach((m) => { const k = m.date || ''; const last = g[g.length - 1]; if (last && last.k === k) last.items.push(m); else g.push({ k, items: [m] }); }); return g; }, [list]);
+  const opened = list.find((m) => m.id === openId) || null;
   const teams = useMemo(() => [...new Set(matches.flatMap((m) => [m.home, m.away]))].sort(), [matches]);
 
   const remove = async (m) => {
-    try { await api.deleteMatch(m.id); setConfirm(null); load(); } catch (e) { setError(e.message); setConfirm(null); }
+    try { await api.deleteMatch(m.id); setConfirm(null); setOpenId(null); load(); } catch (e) { setError(e.message); setConfirm(null); }
   };
 
   const headers = [{ key: 'date', label: 'Date' }, { key: 'time', label: 'Heure' }, { key: 'match', label: 'Match' }, { key: 'venue', label: 'Stade' },
@@ -179,21 +217,35 @@ function LeaguePage({ league, gameweek, onNav }) {
           <button type="button" className="btn btn-primary" onClick={() => setEditing({})}>+ Ajouter un match</button>
         </div>
       ) : (
-        <div className="fin-matches">{list.map((m) => (
-          <article key={m.id} className="fin-match card">
-            <header className="fin-match-top">
-              <div className="fin-teams"><span className="fin-team">{m.home}</span><span className="fin-vs">VS</span><span className="fin-team">{m.away}</span></div>
-              <div className="fin-match-actions">
-                <button type="button" className="btn btn-secondary btn-sm" onClick={() => setEditing(m)}>Modifier</button>
-                <button type="button" className="btn btn-danger btn-sm" onClick={() => setConfirm(m)}>Supprimer</button>
-              </div>
-            </header>
-            <div className="fin-meta"><span>📅 {longDate(m.date)}{m.time ? ' · ' + m.time : ''}</span><span>📍 {m.venue || 'Stade à confirmer'}</span></div>
-            <div className="fin-refs-grid"><RefereeGroup title="Arbitres terrain" roles={FIELD_ROLES} slots={m.field} /><RefereeGroup title="Équipe VAR" roles={VAR_ROLES} slots={m.var} /></div>
-          </article>
-        ))}</div>
+        <div className="fin-days">
+          <p className="muted small fin-hint">Cliquez sur un match pour voir les arbitres désignés.</p>
+          {days.map((d) => (
+            <section key={d.k || 'none'} className="fin-day">
+              <h3 className="fin-day-title">{dayLabel(d.k)}<span>{d.items.length} match{d.items.length > 1 ? 's' : ''}</span></h3>
+              <ul className="fin-rows">{d.items.map((m) => {
+                const n = assigned(m);
+                return (
+                  <li key={m.id}>
+                    <button type="button" className="fin-row" onClick={() => setOpenId(m.id)} aria-label={`${m.home} contre ${m.away} — voir les arbitres`}>
+                      <span className="fin-time">{m.time || '—'}</span>
+                      <span className="fin-row-teams">
+                        <span className="fin-row-team"><span className="fin-crest sm">{initials(m.home)}</span>{m.home}</span>
+                        <span className="fin-row-vs">vs</span>
+                        <span className="fin-row-team"><span className="fin-crest sm alt">{initials(m.away)}</span>{m.away}</span>
+                      </span>
+                      <span className="fin-row-venue">📍 {m.venue || 'Stade à confirmer'}</span>
+                      <span className={'fin-count' + (n === 8 ? ' is-full' : n === 0 ? ' is-none' : '')} title={`${n} arbitres sur 8 désignés`} aria-label={`${n} arbitres sur 8 désignés`}>{n}/8<span className="fin-count-word"> arbitres</span></span>
+                      <span className="fin-chevron" aria-hidden="true">›</span>
+                    </button>
+                  </li>
+                );
+              })}</ul>
+            </section>
+          ))}
+        </div>
       )}
 
+      {opened && <MatchDrawer match={opened} league={league} onClose={() => setOpenId(null)} onEdit={() => { setEditing(opened); setOpenId(null); }} onDelete={() => { setConfirm(opened); setOpenId(null); }} />}
       {editing && <MatchModal league={league} gameweek={gw} match={editing.id ? editing : null} referees={referees} teams={teams} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />}
       {confirm && (
         <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setConfirm(null); }}>
