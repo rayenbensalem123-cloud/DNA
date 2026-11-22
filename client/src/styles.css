@@ -1909,3 +1909,28 @@ input:focus, select:focus, textarea:focus { outline: 2px solid #ffd3d8; outline-
 .fx-status { padding: 3px 10px; border-radius: 999px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; font-weight: 800; background: #fff3d6; color: #8a5a00; white-space: nowrap; }
 .fx-status.ok { background: #e3f6ea; color: #17693a; }
 .fx-status.none { background: #fde8ea; color: #a30014; }
+
+/* Finance v4: logos d'équipes + match centré */
+.fx-card { grid-template-columns: 76px minmax(0, 1fr) 76px; }
+.fx-card .fx-status { justify-self: end; }
+.fx-card-main { align-items: center; text-align: center; }
+.fx-card-teams { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 12px; }
+.fx-side { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.fx-side.home { justify-content: flex-end; } .fx-side.away { justify-content: flex-start; }
+.fx-side b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 800; }
+.fx-card-teams i { justify-self: center; }
+.fx-card-venue { text-align: center; }
+.fx-logo { position: relative; flex: none; display: inline-grid; place-items: center; border-radius: 12px; background: #f1f3f8; border: 1px solid #e2e5ee; overflow: hidden; }
+.fx-logo-sm { width: 40px; height: 40px; } .fx-logo-lg { width: 64px; height: 64px; border-radius: 16px; background: #fff; border-color: rgba(255,255,255,.4); }
+.fx-logo-img { width: 100%; height: 100%; object-fit: contain; padding: 3px; }
+.fx-logo-fallback { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 800; font-size: 12px; color: #a30014; }
+.fx-logo-lg .fx-logo-fallback { font-size: 17px; }
+.fx-logo.editable { cursor: pointer; }
+.fx-logo-edit { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(15,61,46,.7); font-size: 18px; opacity: 0; transition: opacity .15s ease; }
+.fx-logo.editable:hover .fx-logo-edit, .fx-logo.editable:focus-within .fx-logo-edit { opacity: 1; }
+@media (max-width: 767px) {
+  .fx-card { grid-template-columns: 50px minmax(0, 1fr) auto; }
+  .fx-card-teams { grid-template-columns: 1fr; gap: 4px; justify-items: stretch; } .fx-card-teams i { display: none; }
+  .fx-side.home, .fx-side.away { justify-content: flex-start; flex-direction: row; } .fx-side.home b { order: 2; } .fx-side.home .fx-logo { order: 1; }
+  .fx-logo-sm { width: 30px; height: 30px; } .fx-card-main { align-items: stretch; text-align: left; } .fx-card-venue { text-align: left; }
+}
