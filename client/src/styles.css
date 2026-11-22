@@ -1904,3 +1904,8 @@ input:focus, select:focus, textarea:focus { outline: 2px solid #ffd3d8; outline-
   .fx-time { font-size: 16px; } .fx-round { width: 44px; height: 44px; } .fx-jump { flex: 1 1 100%; margin: 4px 0 0; }
 }
 .fx-aside { scroll-margin-top: 84px; }
+
+/* Finance v3: pastille n/8 à la place des barres */
+.fx-status { padding: 3px 10px; border-radius: 999px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; font-weight: 800; background: #fff3d6; color: #8a5a00; white-space: nowrap; }
+.fx-status.ok { background: #e3f6ea; color: #17693a; }
+.fx-status.none { background: #fde8ea; color: #a30014; }

@@ -116,9 +116,8 @@ function Status({ m }) {
   const n = assigned(m);
   const tone = n === 8 ? 'ok' : n === 0 ? 'none' : 'part';
   return (
-    <span className="fx-status" title={`${n} arbitres sur 8 désignés`} aria-label={`${n} arbitres sur 8 désignés`}>
-      <span className="fx-bars">{team8(m).map((x, i) => <span key={i} className={'fx-bar' + (x.slot?.nom ? ' on ' + tone : '')} />)}</span>
-      <span className="fx-status-n">{n}/8</span>
+    <span className={'fx-status ' + tone} title={`${n} arbitres sur 8 désignés`} aria-label={`${n} arbitres sur 8 désignés`}>
+      {n}/8
     </span>
   );
 }
