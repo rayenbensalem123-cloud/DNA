@@ -12,7 +12,7 @@ export default function Portal({ onChoose }) {
       badge: 'R',
       image: true,
       accent: 'red',
-      description: 'Courriers, arbitres, comptes et suivi du bureau d’ordre',
+      description: 'Courriers, arbitres, comptes et suivi de la Direction Nationale de l’Arbitrage',
     },
     {
       id: 'finance',
@@ -39,8 +39,8 @@ export default function Portal({ onChoose }) {
       </header>
       <div className="portal-content">
         <img className="portal-emblem" src="/federation-tunisienne-logo.webp" alt="FTF" />
-        <h1 className="portal-title">BUREAU D’ORDRE</h1>
-        <div className="portal-kicker">DIRECTION NATIONALE DE L’ARBITRAGE</div>
+        <h1 className="portal-title">DIRECTION NATIONALE<br/>DE L’ARBITRAGE</h1>
+        <div className="portal-kicker">FÉDÉRATION TUNISIENNE DE FOOTBALL</div>
         <div className="portal-subtitle">SÉLECTIONNEZ UN DÉPARTEMENT</div>
         <div className="portal-cards">
           {cards.map((c) => (
