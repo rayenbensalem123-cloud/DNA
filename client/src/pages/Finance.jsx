@@ -359,7 +359,7 @@ function Home({ onNav }) {
   };
   return (
     <>
-      <div className="fin-head"><div><span className="fin-kicker">Finance</span><h1>Vue d’ensemble</h1><p className="muted fs-sub">Semaine du {week.label}</p></div></div>
+      <div className="fin-head"><div><span className="fin-kicker">Finance</span><h1>Dashboard</h1><p className="muted fs-sub">Semaine du {week.label}</p></div></div>
       {error && <div className="alert alert-error" role="alert">{error}</div>}
       <div className="fs-kpis">
         <Kpi label="Matchs cette semaine" value={all ? thisWeek.length : '…'} hint="tous championnats" />
@@ -438,7 +438,7 @@ export default function Finance({ onBack }) {
           <div><strong>Finance</strong><span>Direction Nationale de l’Arbitrage</span></div>
         </div>
         <nav className="fs-navlist" aria-label="Finance">
-          {item('home', 'Vue d’ensemble', NAV_ICONS.home, !league, () => go(null))}
+          {item('home', 'Dashboard', NAV_ICONS.home, !league, () => go(null))}
           <p className="fs-nav-label">Championnats</p>
           {LEAGUES.map((l) => item(l.id, l.nom, NAV_ICONS.ball, league?.id === l.id, () => go(l.id, route.league === l.id ? route.gameweek : null)))}
         </nav>
@@ -453,7 +453,7 @@ export default function Finance({ onBack }) {
           <button type="button" className="btn btn-secondary btn-sm" onClick={back}>← Retour</button>
           <Crumbs items={[
             { label: 'Finance', onClick: league ? () => go(null) : undefined },
-            ...(league ? [{ label: league.nom + (route.gameweek ? ` · Journée ${route.gameweek}` : '') }] : [{ label: 'Vue d’ensemble' }]),
+            ...(league ? [{ label: league.nom + (route.gameweek ? ` · Journée ${route.gameweek}` : '') }] : [{ label: 'Dashboard' }]),
           ]} />
         </div>
         {league ? <LeaguePage key={league.id} league={league} gameweek={route.gameweek} onNav={go} /> : <Home onNav={go} />}
