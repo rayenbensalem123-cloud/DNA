@@ -2022,3 +2022,34 @@ input:focus, select:focus, textarea:focus { outline: 2px solid #ffd3d8; outline-
   .fs-kpi { padding: 12px 14px; } .fs-kpi-value { font-size: 22px; } .fs-kpi-label { font-size: 10.5px; }
   .fx-side.home b, .fx-side.away b { text-align: left; }
 }
+
+/* Finance v6: panneau équipe arbitrale en cartes */
+.fx-panel { max-height: calc(100vh - 40px); }
+.fx-panel-head { padding: 18px 20px 16px; }
+.fx-panel-when { display: flex; flex-direction: column; gap: 2px; font-family: inherit; opacity: 1; }
+.fx-panel-when b { font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; opacity: .75; }
+.fx-panel-when span { font-size: 14px; font-weight: 700; text-transform: capitalize; }
+.fx-team { flex: 1; min-height: 0; overflow-y: auto; list-style: none; margin: 0; padding: 6px 16px 10px; display: grid; gap: 4px; align-content: start; scrollbar-width: thin; }
+.fx-group { padding-top: 10px; }
+.fx-group-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; padding: 0 2px; }
+.fx-group-head h3 { margin: 0; font-size: 11.5px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: #6a7180; }
+.fx-group-n { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; font-weight: 800; padding: 2px 8px; border-radius: 999px; background: #fff3d6; color: #8a5a00; }
+.fx-group-n.full { background: #e3f6ea; color: #17693a; }
+.fx-slots { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.fx-slot { display: flex; flex-direction: column; gap: 6px; min-height: 92px; padding: 10px 12px; border-radius: 12px; border: 1px solid #e2e5ee; background: #fff; text-align: left; font: inherit; color: inherit; }
+.fx-slot small { font-size: 10.5px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: #8a90a0; }
+.fx-slot.filled { border-color: #cfe6d8; background: linear-gradient(180deg, #fbfefc, #f3faf6); }
+.fx-slot-who { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.fx-slot-avatar { width: 28px; height: 28px; flex: none; display: grid; place-items: center; border-radius: 8px; background: #0f3d2e; color: #fff; font-size: 10.5px; font-weight: 800; font-family: ui-monospace, Menlo, monospace; }
+.fx-slot-who strong { font-size: 13.5px; line-height: 1.2; }
+.fx-slot-meta { margin-top: auto; display: flex; justify-content: space-between; align-items: baseline; gap: 6px; font-size: 10.5px; color: #8a90a0; text-transform: uppercase; letter-spacing: .05em; }
+.fx-slot-meta b { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #3a4150; letter-spacing: 0; }
+.fx-slot.empty { border-style: dashed; border-color: #c9cdd8; background: #fafbfd; cursor: pointer; transition: border-color .15s ease, background .15s ease; }
+.fx-slot.empty:hover, .fx-slot.empty:focus-visible { border-color: var(--primary); background: #fff6f7; outline: none; }
+.fx-slot.empty .fx-slot-meta b { color: #9aa0ad; font-weight: 600; }
+.fx-slot-add { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; font-size: 13px; font-weight: 800; color: #a30014; }
+.fx-slot-add i { font-style: normal; width: 20px; height: 20px; display: grid; place-items: center; border-radius: 50%; background: #fde8eb; font-size: 14px; line-height: 1; }
+.fx-panel-foot { align-items: center; }
+.fx-panel-foot > div { display: flex; flex-direction: column; gap: 1px; }
+.fx-panel-foot small { font-size: 11.5px; color: #6a7180; text-transform: none; letter-spacing: 0; font-weight: 600; }
+@media (max-width: 767px) { .fx-panel { max-height: none; } .fx-slots { grid-template-columns: 1fr 1fr; } .fx-slot { min-height: 88px; } }

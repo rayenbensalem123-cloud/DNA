@@ -164,7 +164,7 @@ function MatchPanel({ match, league, referees, onEdit, onDelete }) {
     <div className="fx-panel">
       <div className="fx-panel-head">
         <div className="fx-panel-top">
-          <span className="fx-panel-when">{league.nom} · J{match.gameweek} · {shortDay(match.date)}{match.time ? ' · ' + match.time : ''}</span>
+          <span className="fx-panel-when"><b>{league.nom} · Journée {match.gameweek}</b><span>{shortDay(match.date)}{match.time ? ' · ' + match.time : ''}</span></span>
           <span className="fx-panel-actions">
             <button type="button" className="fx-ghost" onClick={onEdit}>Modifier</button>
             <button type="button" className="fx-ghost danger" onClick={onDelete}>Supprimer</button>
@@ -177,18 +177,33 @@ function MatchPanel({ match, league, referees, onEdit, onDelete }) {
         </div>
         <p className="fx-stadium">📍 {match.venue || 'Stade à confirmer'}</p>
       </div>
-      <div className="fx-panel-sub"><strong>Équipe arbitrale</strong><Status m={match} /></div>
-      <ul className="fx-team">
-        {team8(match).map(({ role, slot }) => (
-          <li key={role}>
-            {slot?.nom ? <span className="fx-crest sm light">{initials(slot.nom)}</span> : <span className="fx-plus" aria-hidden="true">+</span>}
-            <div className="fx-person"><small>{role}</small><strong className={slot?.nom ? '' : 'empty'}>{slot?.nom || 'Non désigné'}</strong></div>
-            <div className="fx-fee"><b className={slot?.nom ? '' : 'empty'}>{slot?.nom ? money(FEES[role] || 0) : '—'}</b>{slot?.nom && region(slot) ? <small>{region(slot)}</small> : null}</div>
-            {!slot?.nom && <button type="button" className="fx-assign" onClick={onEdit}>Désigner</button>}
-          </li>
-        ))}
-      </ul>
-      <div className="fx-panel-foot"><span>Total match</span><strong>{money(payroll(match))}</strong></div>
+      <div className="fx-team">
+        {[['Arbitres terrain', FIELD_ROLES, match.field], ['Équipe VAR', VAR_ROLES, match.var]].map(([title, roles, slots]) => {
+          const n = roles.filter((_, i) => slots?.[i]?.nom).length;
+          return (
+            <section key={title} className="fx-group">
+              <header className="fx-group-head"><h3>{title}</h3><span className={'fx-group-n' + (n === roles.length ? ' full' : '')}>{n}/{roles.length}</span></header>
+              <div className="fx-slots">{roles.map((role, i) => {
+                const slot = slots?.[i];
+                return slot?.nom ? (
+                  <div key={role} className="fx-slot filled">
+                    <small>{role}</small>
+                    <div className="fx-slot-who"><span className="fx-slot-avatar" aria-hidden="true">{initials(slot.nom)}</span><strong>{slot.nom}</strong></div>
+                    <div className="fx-slot-meta"><span>{region(slot) || ' '}</span><b>{money(FEES[role] || 0)}</b></div>
+                  </div>
+                ) : (
+                  <button key={role} type="button" className="fx-slot empty" onClick={onEdit} aria-label={`Désigner : ${role}`}>
+                    <small>{role}</small>
+                    <span className="fx-slot-add"><i aria-hidden="true">+</i>Désigner</span>
+                    <span className="fx-slot-meta"><span /><b>{money(FEES[role] || 0)}</b></span>
+                  </button>
+                );
+              })}</div>
+            </section>
+          );
+        })}
+      </div>
+      <div className="fx-panel-foot"><div><span>Total match</span><small>{assigned(match)}/8 arbitres désignés</small></div><strong>{money(payroll(match))}</strong></div>
     </div>
   );
 }
