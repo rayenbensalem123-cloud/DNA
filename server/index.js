@@ -723,6 +723,98 @@ async function route(req, res) {
     return send(res, 200, { item: committee });
   }
 
+  // ---- Finance: journées de championnat (matchs + désignations arbitrales) ----
+  // Réservé à l'admin et au DAF (lecture comme écriture).
+  const MATCH_LEAGUES = { ligue1: 'Ligue 1', ligue2: 'Ligue 2', c1: 'Amateurs C1', c2: 'Amateurs C2' };
+  const matchIdMatch = /^\/api\/matches\/([A-Za-z0-9_-]+)$/.exec(pathname);
+  if (pathname === '/api/matches' || pathname === '/api/matches/summary' || matchIdMatch) {
+    const user = requireAuth(req, res);
+    if (!user) return;
+    if (!(user.role === 'admin' || user.role === 'daf')) return send(res, 403, { error: 'Réservé à l’admin et au DAF' });
+    const db = getDB();
+    if (!Array.isArray(db.matches)) db.matches = [];
+    const byDate = (a, b) => String(a.date || '9999').localeCompare(String(b.date || '9999')) || String(a.time || '').localeCompare(String(b.time || '')) || String(a.createdAt).localeCompare(String(b.createdAt));
+
+    if (pathname === '/api/matches/summary' && method === 'GET') {
+      const leagues = Object.entries(MATCH_LEAGUES).map(([id, nom]) => {
+        const list = db.matches.filter((m) => m.league === id);
+        const weeks = [...new Set(list.map((m) => m.gameweek))].sort((a, b) => a - b);
+        return { id, nom, matches: list.length, gameweeks: weeks };
+      });
+      return send(res, 200, { leagues });
+    }
+    if (pathname === '/api/matches' && method === 'GET') {
+      const league = url.searchParams.get('league') || '';
+      const gw = parseInt(url.searchParams.get('gameweek') || '', 10);
+      const items = db.matches.filter((m) => (!league || m.league === league) && (!gw || m.gameweek === gw)).sort(byDate);
+      return send(res, 200, { items });
+    }
+
+    // Normalise et valide un match (création et modification).
+    const clean = (body) => {
+      const league = String(body.league || '');
+      if (!MATCH_LEAGUES[league]) return { error: 'Championnat invalide' };
+      const gameweek = parseInt(body.gameweek, 10);
+      if (!(gameweek >= 1 && gameweek <= 60)) return { error: 'Journée invalide (1 à 60)' };
+      const home = String(body.home || '').trim().replace(/\s+/g, ' ').slice(0, 80);
+      const away = String(body.away || '').trim().replace(/\s+/g, ' ').slice(0, 80);
+      if (home.length < 2 || away.length < 2) return { error: 'Indiquez les deux équipes' };
+      if (home.toLowerCase() === away.toLowerCase()) return { error: 'Une équipe ne peut pas jouer contre elle-même' };
+      const date = String(body.date || '').trim();
+      if (date && !(/^\d{4}-\d{2}-\d{2}$/.test(date) && !Number.isNaN(Date.parse(date)))) return { error: 'Date invalide' };
+      const time = String(body.time || '').trim();
+      if (time && !/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) return { error: 'Heure invalide' };
+      const venue = String(body.venue || '').trim().replace(/\s+/g, ' ').slice(0, 120);
+      const slots = (list) => {
+        const arr = Array.isArray(list) ? list.slice(0, 4) : [];
+        while (arr.length < 4) arr.push({});
+        return arr.map((x) => {
+          const raw = x && typeof x === 'object' ? x : {};
+          const typed = String(raw.nom || '').trim().replace(/\s+/g, ' ').toLowerCase();
+          const ref = (db.referees || []).find((r) => (raw.refereeId && r.id === String(raw.refereeId)) || (!raw.refereeId && typed && [r.prenom, r.nom].filter(Boolean).join(' ').toLowerCase() === typed)) || null;
+          const nom = ref ? [ref.prenom, ref.nom].filter(Boolean).join(' ') : String(raw.nom || '').trim().replace(/\s+/g, ' ').slice(0, 120);
+          return { refereeId: ref ? ref.id : null, nom };
+        });
+      };
+      const field = slots(body.field); const varTeam = slots(body.var);
+      const names = [...field, ...varTeam].map((x) => x.nom.toLowerCase()).filter(Boolean);
+      if (new Set(names).size !== names.length) return { error: 'Le même arbitre est désigné deux fois dans ce match' };
+      return { value: { league, gameweek, home, away, date, time, venue, field, var: varTeam } };
+    };
+
+    if (method === 'POST' && pathname === '/api/matches') {
+      if (denyReadOnly(user, res)) return;
+      const r = clean(await readBody(req));
+      if (r.error) return send(res, 400, { error: r.error });
+      const match = { id: 'm' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex'), ...r.value, createdAt: new Date().toISOString(), createdBy: user.id };
+      db.matches.push(match);
+      logActivity(db, user, 'match.create', `${match.home} - ${match.away}`, { league: match.league, gameweek: match.gameweek, by: user.name });
+      await saveDB(db);
+      return send(res, 201, { item: match });
+    }
+    if (matchIdMatch && method === 'PATCH') {
+      if (denyReadOnly(user, res)) return;
+      const match = db.matches.find((m) => m.id === matchIdMatch[1]);
+      if (!match) return send(res, 404, { error: 'Match introuvable' });
+      const r = clean(await readBody(req));
+      if (r.error) return send(res, 400, { error: r.error });
+      Object.assign(match, r.value, { updatedAt: new Date().toISOString() });
+      logActivity(db, user, 'match.update', `${match.home} - ${match.away}`, { league: match.league, gameweek: match.gameweek, by: user.name });
+      await saveDB(db);
+      return send(res, 200, { item: match });
+    }
+    if (matchIdMatch && method === 'DELETE') {
+      if (denyReadOnly(user, res)) return;
+      const idx = db.matches.findIndex((m) => m.id === matchIdMatch[1]);
+      if (idx < 0) return send(res, 404, { error: 'Match introuvable' });
+      const [gone] = db.matches.splice(idx, 1);
+      logActivity(db, user, 'match.delete', `${gone.home} - ${gone.away}`, { league: gone.league, gameweek: gone.gameweek, by: user.name });
+      await saveDB(db);
+      return send(res, 200, { ok: true });
+    }
+    return send(res, 405, { error: 'Méthode non autorisée' });
+  }
+
   // ---- Referees (arbitres) ----
   const refereeIdMatch = /^\/api\/referees\/([A-Za-z0-9_-]+)$/.exec(pathname);
   // Génère un matricule unique et séquentiel: ARB-AAAA-NNNN

@@ -1682,3 +1682,64 @@ input:focus, select:focus, textarea:focus { outline: 2px solid #ffd3d8; outline-
 @media (max-width: 700px) { .portal-content { padding: 24px 16px 40px; } .portal-title { font-size: 26px; } .portal-emblem { width: 60px; height: 60px; margin-bottom: 12px; } .portal-cards { gap: 14px; margin-top: 28px; } .portal-card { width: 100%; max-width: 340px; height: 300px; } .portal-card-title { font-size: 24px; } .portal-card-desc { display: none; } }
 /* Écrans bas (laptop / paysage): cartes plus compactes pour voir ENTRER sans scroller */
 @media (max-height: 760px) { .portal-content { padding: 24px 24px 40px; } .portal-emblem { width: 56px; height: 56px; margin-bottom: 10px; } .portal-cards { margin-top: 22px; } .portal-card { height: 300px; } .portal-card-desc { display: none; } }
+
+/* ---------- Finance: championnats / journées ---------- */
+.portal-card:disabled { cursor: not-allowed; opacity: .55; filter: grayscale(.6); transform: none; }
+.portal-card:disabled:hover { transform: none; border-color: #e2e5ee; box-shadow: inset 0 4px 0 #d4a017, 0 10px 30px rgba(35,41,54,.08); }
+.finance-page { padding: 0; }
+.fin-bar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 24px; background: #fff; border-bottom: 1px solid #e2e5ee; box-shadow: 0 2px 10px rgba(35,41,54,.05); }
+.fin-bar-left, .fin-bar-right { display: flex; align-items: center; gap: 12px; }
+.fin-bar-logo { width: 38px; height: 38px; object-fit: contain; }
+.fin-bar-title { display: flex; flex-direction: column; line-height: 1.15; }
+.fin-bar-title strong { font-size: 16px; letter-spacing: .04em; }
+.fin-bar-title span { font-size: 11px; color: #6a7180; }
+.fin-bar-user { display: flex; flex-direction: column; align-items: flex-end; font-weight: 700; font-size: 13px; line-height: 1.2; }
+.fin-bar-user small { font-size: 10px; letter-spacing: .1em; color: #a30014; text-transform: uppercase; }
+.fin-main { max-width: 1200px; margin: 0 auto; padding: 20px 24px 60px; }
+.fin-crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 13px; color: #6a7180; margin-bottom: 14px; }
+.fin-crumb-sep { margin: 0 8px; opacity: .6; }
+.fin-crumb-link { background: none; border: 0; padding: 0; font: inherit; color: #a30014; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.fin-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+.fin-head h1 { margin: 2px 0 0; font-size: clamp(24px, 3.4vw, 34px); font-weight: 900; }
+.fin-kicker { font-size: 11px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; color: #a67c00; }
+.fin-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.fin-intro { max-width: 680px; margin: 0 0 18px; }
+.fin-group { margin-top: 22px; }
+.fin-group-title { font-size: 13px; letter-spacing: .14em; text-transform: uppercase; color: #6a7180; margin: 0 0 10px; }
+.fin-leagues { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.fin-league { position: relative; display: flex; flex-direction: column; gap: 6px; text-align: left; padding: 22px; min-height: 150px; border-radius: 14px; border: 1px solid #e2e5ee; background: #fff; cursor: pointer; box-shadow: inset 0 4px 0 var(--primary), 0 6px 18px rgba(35,41,54,.06); transition: transform .18s ease, box-shadow .18s ease; font: inherit; color: inherit; }
+.fin-league-c1, .fin-league-c2 { box-shadow: inset 0 4px 0 #d4a017, 0 6px 18px rgba(35,41,54,.06); }
+.fin-league:hover { transform: translateY(-3px); box-shadow: inset 0 4px 0 var(--primary), 0 16px 34px rgba(35,41,54,.12); }
+.fin-league-name { font-size: 24px; font-weight: 900; }
+.fin-league-desc { font-size: 12.5px; color: #6a7180; }
+.fin-league-stats { margin-top: auto; font-size: 12.5px; font-weight: 700; color: #232936; }
+.fin-league-go { font-size: 12px; font-weight: 800; letter-spacing: .08em; color: #a30014; text-transform: uppercase; }
+.fin-gw { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 6px 0 18px; }
+.fin-gw-select { min-width: 220px; }
+.fin-matches { display: grid; grid-template-columns: repeat(auto-fit, minmax(440px, 1fr)); gap: 16px; }
+.fin-match { padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+.fin-match-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
+.fin-teams { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 19px; font-weight: 900; }
+.fin-vs { font-size: 11px; font-weight: 800; letter-spacing: .12em; color: #fff; background: #232936; border-radius: 999px; padding: 3px 9px; }
+.fin-match-actions { display: flex; gap: 8px; }
+.fin-meta { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 13px; color: #514448; }
+.fin-refs-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; border-top: 1px solid #eceef4; padding-top: 12px; }
+.fin-refs h4 { margin: 0 0 8px; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: #6a7180; }
+.fin-refs ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.fin-refs li { display: flex; flex-direction: column; gap: 1px; }
+.fin-role { font-size: 10.5px; font-weight: 700; color: #a67c00; letter-spacing: .04em; text-transform: uppercase; }
+.fin-ref-name { font-size: 13.5px; font-weight: 700; }
+.fin-ref-name.empty { font-weight: 500; color: #9aa0ad; font-style: italic; }
+.fin-empty-state { text-align: center; padding: 48px 24px; display: flex; flex-direction: column; align-items: center; gap: 8px; max-width: 560px; margin: 30px auto; }
+.fin-empty-ball { font-size: 42px; }
+.fin-modal { width: min(720px, 94vw); }
+.fin-modal .modal-body { max-height: 70vh; overflow: auto; }
+.fin-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.fin-modal-h { font-size: 13px; letter-spacing: .1em; text-transform: uppercase; color: #6a7180; margin: 16px 0 8px; }
+@media (max-width: 700px) {
+  .fin-bar { padding: 8px 12px; } .fin-bar-title span, .fin-bar-user small { display: none; }
+  .fin-main { padding: 14px 12px 50px; }
+  .fin-matches { grid-template-columns: 1fr; }
+  .fin-refs-grid, .fin-grid2 { grid-template-columns: 1fr; }
+  .fin-gw-select { flex: 1 1 100%; order: -1; }
+}

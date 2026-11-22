@@ -1,6 +1,6 @@
 import { useAuth } from '../auth';
 
-export default function Portal({ onChoose }) {
+export default function Portal({ onChoose, canFinance = false }) {
   const { user, logout } = useAuth();
 
   const cards = [
@@ -22,7 +22,7 @@ export default function Portal({ onChoose }) {
       badge: 'F',
       motif: 'finance',
       accent: 'gold',
-      description: 'Espace financier — à venir',
+      description: 'Championnats, journées, matchs et désignations arbitrales — réservé à l’admin et au DAF',
     },
   ];
 
@@ -48,7 +48,9 @@ export default function Portal({ onChoose }) {
               key={c.id}
               type="button"
               className={`portal-card portal-card-${c.accent} portal-card-${c.motif}`}
-              onClick={() => onChoose(c.id)}
+              onClick={() => { if (c.id === 'finance' && !canFinance) return; onChoose(c.id); }}
+              disabled={c.id === 'finance' && !canFinance}
+              title={c.id === 'finance' && !canFinance ? 'Réservé à l’administrateur et au DAF' : undefined}
             >
               <div className="portal-card-motif" aria-hidden="true">
                 {c.motif === 'documents' ? (
@@ -67,7 +69,7 @@ export default function Portal({ onChoose }) {
                 <div className="portal-card-title">{c.title}</div>
                 <div className="portal-card-sub">{c.subtitle}</div>
                 <div className="portal-card-desc">{c.description}</div>
-                <span className="portal-enter">ENTRER <span aria-hidden="true">›</span></span>
+                <span className="portal-enter">{c.id === 'finance' && !canFinance ? 'ACCÈS RÉSERVÉ' : 'ENTRER'} <span aria-hidden="true">›</span></span>
               </div>
             </button>
           ))}

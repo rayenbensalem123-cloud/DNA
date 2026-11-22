@@ -101,8 +101,8 @@ function PermRoute({ perm, children }) {
 function AppRoutes({ splashDone, department, chooseDepartment }) {
   const { user } = useAuth();
   // Portal uniquement après connexion (jamais sur la page de login).
-  if (splashDone && user && !department) return <Portal onChoose={chooseDepartment} />;
-  if (splashDone && user && department === 'finance') return <Finance />;
+  if (splashDone && user && !department) return <Portal onChoose={chooseDepartment} canFinance={user.role === 'admin' || user.role === 'daf'} />;
+  if (splashDone && user && department === 'finance') return <Finance onBack={() => chooseDepartment(null)} />;
   return (
             <Routes>
               <Route path="/login" element={<ErrorBoundary label="login"><Login /></ErrorBoundary>} />

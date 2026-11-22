@@ -138,6 +138,11 @@ export const api = {
   saveSettings: (body) => req('/api/settings', { method: 'PUT', body }),
   // Templates de courrier
   // Referees (arbitres)
+  matchSummary: () => req('/api/matches/summary'),
+  listMatches: (league, gameweek) => req(`/api/matches?league=${encodeURIComponent(league)}&gameweek=${encodeURIComponent(gameweek)}`),
+  createMatch: (data) => req('/api/matches', { method: 'POST', body: data }),
+  updateMatch: (id, data) => req(`/api/matches/${encodeURIComponent(id)}`, { method: 'PATCH', body: data }),
+  deleteMatch: (id) => req(`/api/matches/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   referees: () => req('/api/referees'),
   referee: (id) => req('/api/referees/' + encodeURIComponent(id)),
   createReferee: (data) => req('/api/referees', { method: 'POST', body: data }),
