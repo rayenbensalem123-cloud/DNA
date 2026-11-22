@@ -118,6 +118,7 @@ export default function Layout() {
                 <span className={'user-role role-' + (user.role || 'agent')}>{t('auth.role.' + (user.role || ''))}</span>
               </div>
             </div>}
+            <button type="button" className="btn btn-ghost" onClick={() => { try { window.location.reload(); } catch {} }} title="Changer de département" aria-label="Changer de département"><svg viewBox="0 0 24 24" aria-hidden="true" style={{ width: 18, height: 18, fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' }}><path d="M4 8h13l-3-3M20 16H7l3 3" /></svg><span className="btn-label">Département</span></button>
             <button className="btn btn-ghost btn-logout" onClick={onLogout} aria-label={t('nav.logout')}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4.5H5.5v15H10M14 8l4 4-4 4M18 12H9" /></svg><span className="btn-label">{t('nav.logout')}</span></button>
           </div>
         </header>

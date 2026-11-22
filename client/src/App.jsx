@@ -100,13 +100,9 @@ function PermRoute({ perm, children }) {
 
 export default function App() {
   const [splashDone, setSplashDone] = useState(false);
-  const [department, setDepartment] = useState(() => {
-    try { return sessionStorage.getItem('dna_department') || null; } catch { return null; }
-  });
-  const chooseDepartment = (id) => {
-    setDepartment(id);
-    try { sessionStorage.setItem('dna_department', id); } catch { /* ignore */ }
-  };
+  // Le Portal s'affiche à chaque ouverture : le choix n'est pas mémorisé.
+  const [department, setDepartment] = useState(null);
+  const chooseDepartment = (id) => setDepartment(id);
 
   return (
     <ThemeProvider>
