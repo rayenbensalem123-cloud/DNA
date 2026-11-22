@@ -349,7 +349,7 @@ function Home({ onNav }) {
   const week = useMemo(weekRange, []);
   const list = all || [];
   const thisWeek = list.filter((m) => m.date >= week.from && m.date <= week.to).sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.time).localeCompare(String(b.time)));
-  const toAssign = thisWeek.reduce((t, m) => t + (8 - assigned(m)), 0);
+  const worked = thisWeek.reduce((t, m) => t + assigned(m), 0);
   const cost = thisWeek.reduce((t, m) => t + payroll(m), 0);
   const journees = new Set(list.map((m) => m.league + ':' + m.gameweek)).size;
   const leagueInfo = (id) => {
@@ -363,7 +363,7 @@ function Home({ onNav }) {
       {error && <div className="alert alert-error" role="alert">{error}</div>}
       <div className="fs-kpis">
         <Kpi label="Matchs cette semaine" value={all ? thisWeek.length : '…'} hint="tous championnats" />
-        <Kpi label="Arbitres à désigner" value={all ? toAssign : '…'} hint="sur les matchs de la semaine" tone={all && toAssign ? 'warn' : ''} />
+        <Kpi label="Arbitres ayant travaillé" value={all ? worked : '…'} hint="sur les matchs de la semaine" tone={all && worked ? 'ok' : ''} />
         <Kpi label="Coût de la semaine" value={all ? money(cost) : '…'} hint="arbitres déjà désignés" />
         <Kpi label="Journées saisies" value={all ? journees : '…'} hint={all ? `${list.length} match${list.length > 1 ? 's' : ''} au total` : ''} />
       </div>
@@ -396,8 +396,7 @@ function Home({ onNav }) {
               <button key={l.id} type="button" className={'fs-league fs-league-' + l.id} onClick={() => onNav(l.id, i.last || 1)}>
                 <span className="fs-league-top"><strong>{l.nom}</strong><span className="fs-league-group">{l.group}</span></span>
                 <span className="fs-league-meta">{all ? (i.total ? `Journée ${i.last} · ${i.count} match${i.count > 1 ? 's' : ''}` : 'Aucune journée saisie') : '…'}</span>
-                <span className="fs-progress" role="progressbar" aria-valuenow={i.pct} aria-valuemin="0" aria-valuemax="100" aria-label="Arbitres désignés"><span style={{ width: i.pct + '%' }} /></span>
-                <span className="fs-league-foot">{all && i.total ? `${i.pct}% des arbitres désignés` : 'Ouvrir ›'}</span>
+                <span className="fs-league-foot">{all && i.total ? `${i.count} match${i.count > 1 ? 's' : ''} · J${i.last}` : 'Ouvrir ›'}</span>
               </button>
             );
           })}</div>
