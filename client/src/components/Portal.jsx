@@ -10,7 +10,7 @@ export default function Portal({ onChoose }) {
       subtitle: 'GESTION DES COURRIERS',
       icon: '▤',
       badge: 'R',
-      image: true,
+      motif: 'documents',
       accent: 'red',
       description: 'Courriers, arbitres, comptes et suivi de la Direction Nationale de l’Arbitrage',
     },
@@ -20,7 +20,7 @@ export default function Portal({ onChoose }) {
       subtitle: 'GESTION FINANCIÈRE',
       icon: '◈',
       badge: 'F',
-      image: false,
+      motif: 'finance',
       accent: 'gold',
       description: 'Espace financier — à venir',
     },
@@ -47,10 +47,16 @@ export default function Portal({ onChoose }) {
             <button
               key={c.id}
               type="button"
-              className={`portal-card portal-card-${c.accent}${c.image ? ' portal-card-image' : ''}`}
+              className={`portal-card portal-card-${c.accent} portal-card-${c.motif}`}
               onClick={() => onChoose(c.id)}
             >
-              {c.image && <div className="portal-card-photo" />}
+              <div className="portal-card-motif" aria-hidden="true">
+                {c.motif === 'documents' ? (
+                  <svg viewBox="0 0 120 120" fill="none" stroke="currentColor" strokeWidth="2"><path d="M30 18h44l16 16v68H30z" rx="3"/><path d="M74 18v16h16"/><path d="M42 50h36M42 62h36M42 74h24"/><circle cx="84" cy="86" r="12"/><path d="M84 80v12M78 86h12"/></svg>
+                ) : (
+                  <svg viewBox="0 0 120 120" fill="none" stroke="currentColor" strokeWidth="2"><rect x="18" y="30" width="84" height="60" rx="6"/><path d="M34 50h20v20H34zM62 50h24M62 60h24M62 70h16"/><path d="M48 30v-8M72 30v-8"/></svg>
+                )}
+              </div>
               <div className="portal-card-shade" />
               <div className="portal-card-top">
                 <span className="portal-card-badge">{c.badge}</span>
