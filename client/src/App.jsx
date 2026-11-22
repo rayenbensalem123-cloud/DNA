@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useState } from 'react';
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { LanguageProvider, useLanguage } from './i18n';
 import { AuthProvider, useAuth } from './auth';
 import { ThemeProvider } from './theme';
@@ -98,20 +98,12 @@ function PermRoute({ perm, children }) {
   return ok ? children : <Navigate to="/" replace />;
 }
 
-export default function App() {
-  const [splashDone, setSplashDone] = useState(false);
-  // Le Portal s'affiche à chaque ouverture : le choix n'est pas mémorisé.
-  const [department, setDepartment] = useState(null);
-  const chooseDepartment = (id) => setDepartment(id);
-
+function AppRoutes({ splashDone, department, chooseDepartment }) {
+  const { user } = useAuth();
+  // Portal uniquement après connexion (jamais sur la page de login).
+  if (splashDone && user && !department) return <Portal onChoose={chooseDepartment} />;
+  if (splashDone && user && department === 'finance') return <Finance />;
   return (
-    <ThemeProvider>
-      <LanguageProvider>
-        <AuthProvider>
-          <ErrorBoundary>
-            <Splashes onComplete={() => setSplashDone(true)} />
-            <Stage>
-            {splashDone && !department ? <Portal onChoose={chooseDepartment} /> : department === 'finance' ? <Finance /> :
             <Routes>
               <Route path="/login" element={<ErrorBoundary label="login"><Login /></ErrorBoundary>} />
               <Route path="/" element={<Protected><Layout /></Protected>}>
@@ -130,7 +122,29 @@ export default function App() {
                 <Route path="reception" element={<Navigate to="/courrier?direction=entrant" replace />} />
               </Route>
               <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>}
+            </Routes>
+  );
+}
+
+export default function App() {
+  const navigate = useNavigate();
+  const [splashDone, setSplashDone] = useState(false);
+  // Le Portal s'affiche à chaque ouverture : le choix n'est pas mémorisé.
+  const [department, setDepartment] = useState(null);
+  const chooseDepartment = (id) => {
+    setDepartment(id);
+    // Registre → retour explicite au dashboard (évite de rester sur /login)
+    if (id === 'registre') navigate('/', { replace: true });
+  };
+
+  return (
+    <ThemeProvider>
+      <LanguageProvider>
+        <AuthProvider>
+          <ErrorBoundary>
+            <Splashes onComplete={() => setSplashDone(true)} />
+            <Stage>
+              <AppRoutes splashDone={splashDone} department={department} chooseDepartment={chooseDepartment} />
             </Stage>
           </ErrorBoundary>
         </AuthProvider>
