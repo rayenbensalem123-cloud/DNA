@@ -1822,3 +1822,85 @@ input:focus, select:focus, textarea:focus { outline: 2px solid #ffd3d8; outline-
   .fin-drawer-foot > div { flex-direction: row-reverse; }
   .fin-drawer-foot > div .btn { flex: 1; min-height: 44px; }
 }
+
+/* ---------- Finance v3: design Lovable (liste + panneau équipe arbitrale) ---------- */
+.fx-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px; }
+.fx-title { display: flex; align-items: center; gap: 12px; margin-top: 4px; flex-wrap: wrap; }
+.fx-title h1 { margin: 0; font-size: clamp(28px, 4vw, 40px); font-weight: 900; letter-spacing: -.01em; }
+.fx-round { width: 36px; height: 36px; border-radius: 50%; border: 1px solid #e2e5ee; background: #fff; font-size: 20px; line-height: 1; cursor: pointer; color: #232936; }
+.fx-round:hover:not(:disabled) { background: #f1f3f8; }
+.fx-round:disabled { opacity: .4; cursor: default; }
+.fx-jump { min-width: 170px; margin-left: 6px; }
+.fx-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; }
+.fx-total { display: flex; flex-direction: column; justify-content: center; padding: 6px 12px; border: 1px solid #e2e5ee; border-radius: 10px; background: #fff; }
+.fx-total small { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: #6a7180; font-weight: 600; }
+.fx-total strong { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 14px; font-weight: 900; line-height: 1.2; }
+.fx-btn { padding: 8px 14px; border-radius: 10px; border: 1px solid #e2e5ee; background: #fff; font: inherit; font-weight: 700; font-size: 14px; cursor: pointer; color: #232936; }
+.fx-btn:hover:not(:disabled) { background: #f1f3f8; }
+.fx-btn:disabled { opacity: .5; cursor: default; }
+.fx-btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; padding: 8px 18px; }
+.fx-btn.primary:hover { opacity: .9; background: var(--primary); }
+.fx-grid { margin-top: 24px; display: grid; gap: 24px; grid-template-columns: minmax(0, 1fr) 420px; align-items: start; }
+.fx-list { display: grid; gap: 22px; }
+.fx-day { margin: 0 0 8px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: #6a7180; }
+.fx-cards { display: grid; gap: 8px; }
+.fx-card { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; align-items: center; gap: 16px; width: 100%; padding: 16px; text-align: left; font: inherit; color: inherit; background: #fff; border: 1px solid #e2e5ee; border-radius: 14px; cursor: pointer; transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease; }
+.fx-card:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(35,41,54,.1); }
+.fx-card.active { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary), 0 10px 26px rgba(163,0,20,.14); }
+.fx-card:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.fx-time { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 18px; font-weight: 800; }
+.fx-card.active .fx-time { color: var(--primary); }
+.fx-card-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.fx-card-teams { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 16px; min-width: 0; }
+.fx-card-teams span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fx-card-teams i { font-style: normal; font-size: 12px; font-weight: 500; color: #6a7180; flex: none; }
+.fx-card-venue { font-size: 12.5px; color: #6a7180; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fx-status { display: inline-flex; align-items: center; gap: 8px; }
+.fx-bars { display: inline-flex; gap: 2px; }
+.fx-bar { width: 4px; height: 12px; border-radius: 4px; background: #e2e5ee; }
+.fx-bar.on.ok { background: #1f9d55; } .fx-bar.on.part { background: #e0a100; } .fx-bar.on.none { background: #d4183d; }
+.fx-status-n { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; font-weight: 800; color: #5b6270; }
+.fx-aside { position: sticky; top: 76px; }
+.fx-panel { display: flex; flex-direction: column; max-height: max(520px, calc(100vh - 230px)); overflow: hidden; background: #fff; border: 1px solid #e2e5ee; border-radius: 18px; box-shadow: 0 18px 44px rgba(35,41,54,.16); }
+.fx-panel-head { flex: none; padding: 20px 24px; background: #0f3d2e; color: #f3fbf6; }
+.fx-panel-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.fx-panel-when { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; opacity: .7; }
+.fx-panel-actions { display: flex; gap: 6px; }
+.fx-ghost { background: rgba(255,255,255,.12); color: #fff; border: 0; border-radius: 8px; padding: 4px 10px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.fx-ghost:hover { background: rgba(255,255,255,.22); } .fx-ghost.danger:hover { background: #d4183d; }
+.fx-versus { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; margin-top: 16px; text-align: center; }
+.fx-club { display: flex; flex-direction: column; align-items: center; gap: 8px; font-weight: 800; font-size: 14px; line-height: 1.2; min-width: 0; }
+.fx-vs { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; opacity: .55; }
+.fx-stadium { margin: 14px 0 0; text-align: center; font-size: 12px; opacity: .7; }
+.fx-crest { display: inline-grid; place-items: center; width: 40px; height: 40px; flex: none; border-radius: 10px; background: var(--primary); color: #fff; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; font-weight: 800; }
+.fx-crest.light { background: #fff; color: #0f3d2e; }
+.fx-versus .fx-crest.light { background: #fff; }
+.fx-crest.sm { width: 36px; height: 36px; background: #0f3d2e; color: #fff; }
+.fx-panel-sub { flex: none; display: flex; align-items: center; justify-content: space-between; padding: 12px 24px; border-bottom: 1px solid #e2e5ee; font-size: 14px; }
+.fx-team { flex: 1; min-height: 0; overflow-y: auto; list-style: none; margin: 0; padding: 0; }
+.fx-team li { display: flex; align-items: center; gap: 12px; padding: 11px 24px; }
+.fx-team li + li { border-top: 1px solid #eceef4; }
+.fx-plus { width: 36px; height: 36px; flex: none; display: grid; place-items: center; border-radius: 10px; border: 1px dashed #c9cdd8; color: #9aa0ad; }
+.fx-person { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.fx-person small { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #6a7180; }
+.fx-person strong { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fx-person strong.empty, .fx-fee b.empty { color: #9aa0ad; font-weight: 600; }
+.fx-fee { flex: none; text-align: right; display: flex; flex-direction: column; }
+.fx-fee b { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13.5px; }
+.fx-fee small { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: #6a7180; }
+.fx-assign { flex: none; border: 0; border-radius: 8px; padding: 5px 10px; background: #fff3d6; color: #8a5a00; font: inherit; font-size: 12px; font-weight: 800; cursor: pointer; }
+.fx-assign:hover { background: #ffe9b0; }
+.fx-panel-foot { flex: none; display: flex; justify-content: space-between; align-items: center; padding: 12px 24px; border-top: 1px solid #e2e5ee; background: #f4f6fa; }
+.fx-panel-foot span { font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #6a7180; }
+.fx-panel-foot strong { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 16px; font-weight: 900; }
+@media (max-width: 1023px) { .fx-grid { grid-template-columns: minmax(0, 1fr) minmax(290px, 36%); } }
+@media (max-width: 767px) {
+  .fx-grid { grid-template-columns: 1fr; }
+  .fx-aside { position: static; }
+  .fx-panel { max-height: none; }
+  .fx-tools { width: 100%; } .fx-tools .fx-btn { flex: 1; min-height: 44px; } .fx-total { flex: 1 1 100%; }
+  .fx-card { grid-template-columns: 52px minmax(0, 1fr) auto; gap: 10px; padding: 12px; }
+  .fx-card-teams { flex-direction: column; align-items: flex-start; gap: 0; font-size: 14px; } .fx-card-teams i { display: none; }
+  .fx-time { font-size: 16px; } .fx-round { width: 44px; height: 44px; } .fx-jump { flex: 1 1 100%; margin: 4px 0 0; }
+}
+.fx-aside { scroll-margin-top: 84px; }

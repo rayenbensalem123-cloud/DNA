@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api';
 import { useAuth } from '../auth';
 import { fmtDate } from '../utils';
@@ -14,6 +14,15 @@ const LEAGUES = [
 ];
 const FIELD_ROLES = ['Arbitre central', 'Assistant 1', 'Assistant 2', '4e arbitre'];
 const VAR_ROLES = ['VAR', 'AVAR 1', 'AVAR 2', 'AVAR 3'];
+// Indemnités par rôle (TND) — barème du design validé.
+const FEES = { 'Arbitre central': 400, 'Assistant 1': 250, 'Assistant 2': 250, '4e arbitre': 200, VAR: 350, 'AVAR 1': 300, 'AVAR 2': 300, 'AVAR 3': 300 };
+const money = (n) => `${Number(n).toLocaleString('fr-FR')} TND`;
+const team8 = (m) => [...FIELD_ROLES.map((role, i) => ({ role, slot: m.field?.[i] })), ...VAR_ROLES.map((role, i) => ({ role, slot: m.var?.[i] }))];
+const payroll = (m) => team8(m).reduce((t, x) => t + (x.slot?.nom ? FEES[x.role] || 0 : 0), 0);
+const shortDay = (iso) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '');
+  return m ? new Date(+m[1], +m[2] - 1, +m[3]).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' }) : 'Date à fixer';
+};
 const EMPTY_SLOTS = () => [{ nom: '' }, { nom: '' }, { nom: '' }, { nom: '' }];
 
 // URL hash navigation (#/finance/<league>/<gameweek>) so the browser Back button works.
@@ -103,40 +112,48 @@ function MatchModal({ league, gameweek, match, referees, teams, onClose, onSaved
   );
 }
 
-function MatchDrawer({ match, league, onClose, onEdit, onDelete }) {
-  useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-  const n = assigned(match);
-  const person = (role, slot) => (
-    <li key={role} className={slot?.nom ? '' : 'is-empty'}>
-      <span className="fin-avatar" aria-hidden="true">{slot?.nom ? initials(slot.nom) : '?'}</span>
-      <span className="fin-person"><small>{role}</small><strong>{slot?.nom || 'À désigner'}</strong></span>
-    </li>
-  );
+function Status({ m }) {
+  const n = assigned(m);
+  const tone = n === 8 ? 'ok' : n === 0 ? 'none' : 'part';
   return (
-    <div className="fin-drawer-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <aside className="fin-drawer" role="dialog" aria-modal="true" aria-label={`${match.home} contre ${match.away}`}>
-        <header className="fin-drawer-head">
-          <div><span className="fin-kicker">{league.nom} · Journée {match.gameweek}</span><span className="fin-drawer-date">{dayLabel(match.date)}{match.time ? ' · ' + match.time : ''}</span></div>
-          <button type="button" className="modal-close" onClick={onClose} aria-label="Fermer">×</button>
-        </header>
-        <div className="fin-drawer-versus">
-          <div className="fin-club"><span className="fin-crest">{initials(match.home)}</span><strong>{match.home}</strong><small>Domicile</small></div>
-          <span className="fin-vs">VS</span>
-          <div className="fin-club"><span className="fin-crest alt">{initials(match.away)}</span><strong>{match.away}</strong><small>Extérieur</small></div>
+    <span className="fx-status" title={`${n} arbitres sur 8 désignés`} aria-label={`${n} arbitres sur 8 désignés`}>
+      <span className="fx-bars">{team8(m).map((x, i) => <span key={i} className={'fx-bar' + (x.slot?.nom ? ' on ' + tone : '')} />)}</span>
+      <span className="fx-status-n">{n}/8</span>
+    </span>
+  );
+}
+
+function MatchPanel({ match, league, referees, onEdit, onDelete }) {
+  const region = (slot) => (slot?.refereeId ? referees.find((r) => r.id === slot.refereeId)?.region : '') || '';
+  return (
+    <div className="fx-panel">
+      <div className="fx-panel-head">
+        <div className="fx-panel-top">
+          <span className="fx-panel-when">{league.nom} · J{match.gameweek} · {shortDay(match.date)}{match.time ? ' · ' + match.time : ''}</span>
+          <span className="fx-panel-actions">
+            <button type="button" className="fx-ghost" onClick={onEdit}>Modifier</button>
+            <button type="button" className="fx-ghost danger" onClick={onDelete}>Supprimer</button>
+          </span>
         </div>
-        <div className="fin-drawer-venue">📍 {match.venue || 'Stade à confirmer'}</div>
-        <div className="fin-drawer-body">
-          <section><h3>Arbitres terrain</h3><ul className="fin-people">{FIELD_ROLES.map((r, i) => person(r, match.field?.[i]))}</ul></section>
-          <section><h3>Équipe VAR</h3><ul className="fin-people">{VAR_ROLES.map((r, i) => person(r, match.var?.[i]))}</ul></section>
+        <div className="fx-versus">
+          <div className="fx-club"><span className="fx-crest">{initials(match.home)}</span><span>{match.home}</span></div>
+          <span className="fx-vs">VS</span>
+          <div className="fx-club"><span className="fx-crest light">{initials(match.away)}</span><span>{match.away}</span></div>
         </div>
-        <footer className="fin-drawer-foot">
-          <span className={'fin-count' + (n === 8 ? ' is-full' : n === 0 ? ' is-none' : '')}>{n}/8 arbitres désignés</span>
-          <div><button type="button" className="btn btn-danger" onClick={onDelete}>Supprimer</button><button type="button" className="btn btn-primary" onClick={onEdit}>Modifier</button></div>
-        </footer>
-      </aside>
+        <p className="fx-stadium">📍 {match.venue || 'Stade à confirmer'}</p>
+      </div>
+      <div className="fx-panel-sub"><strong>Équipe arbitrale</strong><Status m={match} /></div>
+      <ul className="fx-team">
+        {team8(match).map(({ role, slot }) => (
+          <li key={role}>
+            {slot?.nom ? <span className="fx-crest sm light">{initials(slot.nom)}</span> : <span className="fx-plus" aria-hidden="true">+</span>}
+            <div className="fx-person"><small>{role}</small><strong className={slot?.nom ? '' : 'empty'}>{slot?.nom || 'Non désigné'}</strong></div>
+            <div className="fx-fee"><b className={slot?.nom ? '' : 'empty'}>{slot?.nom ? money(FEES[role] || 0) : '—'}</b>{slot?.nom && region(slot) ? <small>{region(slot)}</small> : null}</div>
+            {!slot?.nom && <button type="button" className="fx-assign" onClick={onEdit}>Désigner</button>}
+          </li>
+        ))}
+      </ul>
+      <div className="fx-panel-foot"><span>Total match</span><strong>{money(payroll(match))}</strong></div>
     </div>
   );
 }
@@ -149,6 +166,7 @@ function LeaguePage({ league, gameweek, onNav }) {
   const [editing, setEditing] = useState(null); // null | {} (new) | match
   const [confirm, setConfirm] = useState(null);
   const [openId, setOpenId] = useState(null);
+  const panelRef = useRef(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -164,7 +182,9 @@ function LeaguePage({ league, gameweek, onNav }) {
   const counts = useMemo(() => { const c = {}; matches.forEach((m) => { c[m.gameweek] = (c[m.gameweek] || 0) + 1; }); return c; }, [matches]);
   const list = matches.filter((m) => m.gameweek === gw).sort((a, b) => String(a.date || '9999').localeCompare(String(b.date || '9999')) || String(a.time).localeCompare(String(b.time)));
   const days = useMemo(() => { const g = []; list.forEach((m) => { const k = m.date || ''; const last = g[g.length - 1]; if (last && last.k === k) last.items.push(m); else g.push({ k, items: [m] }); }); return g; }, [list]);
-  const opened = list.find((m) => m.id === openId) || null;
+  const opened = list.find((m) => m.id === openId) || list[0] || null;
+  const dayTotal = list.reduce((t, m) => t + payroll(m), 0);
+  const pick = (id) => { setOpenId(id); if (window.matchMedia('(max-width: 767px)').matches) panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
   const teams = useMemo(() => [...new Set(matches.flatMap((m) => [m.home, m.away]))].sort(), [matches]);
 
   const remove = async (m) => {
@@ -172,10 +192,11 @@ function LeaguePage({ league, gameweek, onNav }) {
   };
 
   const headers = [{ key: 'date', label: 'Date' }, { key: 'time', label: 'Heure' }, { key: 'match', label: 'Match' }, { key: 'venue', label: 'Stade' },
-    ...FIELD_ROLES.map((r, i) => ({ key: 'f' + i, label: r })), ...VAR_ROLES.map((r, i) => ({ key: 'v' + i, label: r }))];
+    ...FIELD_ROLES.map((r, i) => ({ key: 'f' + i, label: r })), ...VAR_ROLES.map((r, i) => ({ key: 'v' + i, label: r })), { key: 'total', label: 'Total (TND)' }];
   const rows = list.map((m) => {
     const o = { date: m.date ? fmtDate(m.date) : '', time: m.time || '', match: `${m.home} - ${m.away}`, venue: m.venue || '' };
     FIELD_ROLES.forEach((_, i) => { o['f' + i] = m.field?.[i]?.nom || ''; }); VAR_ROLES.forEach((_, i) => { o['v' + i] = m.var?.[i]?.nom || ''; });
+    o.total = payroll(m);
     return o;
   });
   const doExport = async (kind) => {
@@ -189,23 +210,22 @@ function LeaguePage({ league, gameweek, onNav }) {
 
   return (
     <>
-      <div className="fin-head">
-        <div><span className="fin-kicker">{league.group}</span><h1>{league.nom} — Journée {gw}</h1></div>
-        <div className="fin-actions">
-          <button type="button" className="btn btn-primary" onClick={() => setEditing({})}><span aria-hidden="true">+</span> Ajouter un match</button>
-          <div className="export-group" role="group" aria-label="Exporter la journée">
-            <button type="button" className="btn btn-secondary btn-sm" onClick={() => doExport('csv')} disabled={!list.length}>CSV</button>
-            <button type="button" className="btn btn-secondary btn-sm" onClick={() => doExport('xlsx')} disabled={!list.length}>Excel</button>
-            <button type="button" className="btn btn-secondary btn-sm" onClick={() => doExport('pdf')} disabled={!list.length}>PDF</button>
+      <div className="fx-head">
+        <div>
+          <span className="fin-kicker">{league.group} · {league.nom}</span>
+          <div className="fx-title">
+            <button type="button" className="fx-round" onClick={() => onNav(league.id, gw - 1)} disabled={gw <= 1} aria-label="Journée précédente">‹</button>
+            <h1>Journée {gw}</h1>
+            <button type="button" className="fx-round" onClick={() => onNav(league.id, gw + 1)} disabled={gw >= 60} aria-label="Journée suivante">›</button>
+            <div className="fx-jump"><Select ariaLabel="Aller à la journée" value={String(gw)} onChange={(v) => onNav(league.id, parseInt(v, 10))}
+              options={Array.from({ length: maxWeek }, (_, i) => ({ value: String(i + 1), label: `Journée ${i + 1}` + (counts[i + 1] ? ` · ${counts[i + 1]}` : '') }))} /></div>
           </div>
         </div>
-      </div>
-
-      <div className="fin-gw" role="group" aria-label="Choisir la journée">
-        <button type="button" className="btn btn-secondary" onClick={() => onNav(league.id, gw - 1)} disabled={gw <= 1}>‹ Précédente</button>
-        <div className="fin-gw-select"><Select ariaLabel="Journée" value={String(gw)} onChange={(v) => onNav(league.id, parseInt(v, 10))}
-          options={Array.from({ length: maxWeek }, (_, i) => ({ value: String(i + 1), label: `Journée ${i + 1}` + (counts[i + 1] ? ` · ${counts[i + 1]} match${counts[i + 1] > 1 ? 's' : ''}` : '') }))} /></div>
-        <button type="button" className="btn btn-secondary" onClick={() => onNav(league.id, gw + 1)} disabled={gw >= 60}>Suivante ›</button>
+        <div className="fx-tools">
+          <div className="fx-total"><small>Total journée</small><strong>{money(dayTotal)}</strong></div>
+          {['csv', 'xlsx', 'pdf'].map((k) => <button key={k} type="button" className="fx-btn" onClick={() => doExport(k)} disabled={!list.length}>{k === 'xlsx' ? 'Excel' : k.toUpperCase()}</button>)}
+          <button type="button" className="fx-btn primary" onClick={() => setEditing({})}>+ Ajouter un match</button>
+        </div>
       </div>
 
       {error && <div className="alert alert-error" role="alert">{error}</div>}
@@ -217,35 +237,30 @@ function LeaguePage({ league, gameweek, onNav }) {
           <button type="button" className="btn btn-primary" onClick={() => setEditing({})}>+ Ajouter un match</button>
         </div>
       ) : (
-        <div className="fin-days">
-          <p className="muted small fin-hint">Cliquez sur un match pour voir les arbitres désignés.</p>
-          {days.map((d) => (
-            <section key={d.k || 'none'} className="fin-day">
-              <h3 className="fin-day-title">{dayLabel(d.k)}<span>{d.items.length} match{d.items.length > 1 ? 's' : ''}</span></h3>
-              <ul className="fin-rows">{d.items.map((m) => {
-                const n = assigned(m);
-                return (
-                  <li key={m.id}>
-                    <button type="button" className="fin-row" onClick={() => setOpenId(m.id)} aria-label={`${m.home} contre ${m.away} — voir les arbitres`}>
-                      <span className="fin-time">{m.time || '—'}</span>
-                      <span className="fin-row-teams">
-                        <span className="fin-row-team"><span className="fin-crest sm">{initials(m.home)}</span>{m.home}</span>
-                        <span className="fin-row-vs">vs</span>
-                        <span className="fin-row-team"><span className="fin-crest sm alt">{initials(m.away)}</span>{m.away}</span>
-                      </span>
-                      <span className="fin-row-venue">📍 {m.venue || 'Stade à confirmer'}</span>
-                      <span className={'fin-count' + (n === 8 ? ' is-full' : n === 0 ? ' is-none' : '')} title={`${n} arbitres sur 8 désignés`} aria-label={`${n} arbitres sur 8 désignés`}>{n}/8<span className="fin-count-word"> arbitres</span></span>
-                      <span className="fin-chevron" aria-hidden="true">›</span>
-                    </button>
-                  </li>
-                );
-              })}</ul>
-            </section>
-          ))}
+        <div className="fx-grid">
+          <section className="fx-list">
+            {days.map((d) => (
+              <div key={d.k || 'none'}>
+                <p className="fx-day">{shortDay(d.k)}</p>
+                <div className="fx-cards">{d.items.map((m) => (
+                  <button key={m.id} type="button" className={'fx-card' + (opened && m.id === opened.id ? ' active' : '')} onClick={() => pick(m.id)} aria-pressed={opened && m.id === opened.id} aria-label={`${m.home} contre ${m.away} — voir l’équipe arbitrale`}>
+                    <span className="fx-time">{m.time || '—'}</span>
+                    <span className="fx-card-main">
+                      <span className="fx-card-teams"><span>{m.home}</span><i>vs</i><span>{m.away}</span></span>
+                      <span className="fx-card-venue">{m.venue || 'Stade à confirmer'}</span>
+                    </span>
+                    <Status m={m} />
+                  </button>
+                ))}</div>
+              </div>
+            ))}
+          </section>
+          <aside ref={panelRef} className="fx-aside">
+            {opened && <MatchPanel match={opened} league={league} referees={referees} onEdit={() => setEditing(opened)} onDelete={() => setConfirm(opened)} />}
+          </aside>
         </div>
       )}
 
-      {opened && <MatchDrawer match={opened} league={league} onClose={() => setOpenId(null)} onEdit={() => { setEditing(opened); setOpenId(null); }} onDelete={() => { setConfirm(opened); setOpenId(null); }} />}
       {editing && <MatchModal league={league} gameweek={gw} match={editing.id ? editing : null} referees={referees} teams={teams} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />}
       {confirm && (
         <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setConfirm(null); }}>
