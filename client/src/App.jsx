@@ -100,6 +100,9 @@ function PermRoute({ perm, children }) {
 
 function AppRoutes({ splashDone, department, chooseDepartment }) {
   const { user } = useAuth();
+  // Tant que le splash n'est pas fini, ne rien rendre derrière lui :
+  // sinon le dashboard apparaît un instant avant le Portal (flash).
+  if (!splashDone) return null;
   // Portal uniquement après connexion (jamais sur la page de login).
   if (splashDone && user && !department) return <Portal onChoose={chooseDepartment} canFinance={user.role === 'admin' || user.role === 'daf'} />;
   if (splashDone && user && department === 'finance') return <Finance onBack={() => chooseDepartment(null)} />;
