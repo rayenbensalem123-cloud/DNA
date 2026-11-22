@@ -314,35 +314,86 @@ function LeaguePage({ league, gameweek, onNav }) {
   );
 }
 
+const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const weekRange = () => {
+  const now = new Date(); const dow = (now.getDay() + 6) % 7; // Monday = 0
+  const from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dow); const to = new Date(from.getFullYear(), from.getMonth(), from.getDate() + 6);
+  return { from: isoDay(from), to: isoDay(to), label: `${from.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })} au ${to.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}` };
+};
+
+function Kpi({ label, value, hint, tone }) {
+  return <div className={'fs-kpi' + (tone ? ' ' + tone : '')}><span className="fs-kpi-label">{label}</span><strong className="fs-kpi-value">{value}</strong>{hint && <span className="fs-kpi-hint">{hint}</span>}</div>;
+}
+
 function Home({ onNav }) {
-  const [summary, setSummary] = useState(null);
+  const [all, setAll] = useState(null);
   const [error, setError] = useState('');
-  useEffect(() => { api.matchSummary().then((d) => setSummary(d.leagues || [])).catch((e) => setError(e.message)); }, []);
-  const info = (id) => summary?.find((l) => l.id === id);
+  useEffect(() => { api.listMatches('', '').then((d) => setAll(d.items || [])).catch((e) => setError(e.message)); }, []);
+  const week = useMemo(weekRange, []);
+  const list = all || [];
+  const thisWeek = list.filter((m) => m.date >= week.from && m.date <= week.to).sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.time).localeCompare(String(b.time)));
+  const toAssign = thisWeek.reduce((t, m) => t + (8 - assigned(m)), 0);
+  const cost = thisWeek.reduce((t, m) => t + payroll(m), 0);
+  const journees = new Set(list.map((m) => m.league + ':' + m.gameweek)).size;
+  const leagueInfo = (id) => {
+    const ms = list.filter((m) => m.league === id); const last = ms.reduce((x, m) => Math.max(x, m.gameweek), 0);
+    const lastMs = ms.filter((m) => m.gameweek === last); const done = lastMs.reduce((t, m) => t + assigned(m), 0); const need = lastMs.length * 8;
+    return { total: ms.length, last, count: lastMs.length, pct: need ? Math.round((done / need) * 100) : 0 };
+  };
   return (
     <>
-      <div className="fin-head"><div><span className="fin-kicker">Finance</span><h1>Championnats et journées</h1></div></div>
-      <p className="muted fin-intro">Choisissez un championnat pour consulter ou saisir les matchs de chaque journée, avec le lieu, la date et les arbitres (terrain et VAR).</p>
+      <div className="fin-head"><div><span className="fin-kicker">Finance</span><h1>Vue d’ensemble</h1><p className="muted fs-sub">Semaine du {week.label}</p></div></div>
       {error && <div className="alert alert-error" role="alert">{error}</div>}
-      {['Professionnels', 'Amateurs'].map((group) => (
-        <section key={group} className="fin-group">
-          <h2 className="fin-group-title">{group}</h2>
-          <div className="fin-leagues">{LEAGUES.filter((l) => l.group === group).map((l) => {
-            const i = info(l.id); const last = i?.gameweeks?.length ? Math.max(...i.gameweeks) : 0;
+      <div className="fs-kpis">
+        <Kpi label="Matchs cette semaine" value={all ? thisWeek.length : '…'} hint="tous championnats" />
+        <Kpi label="Arbitres à désigner" value={all ? toAssign : '…'} hint="sur les matchs de la semaine" tone={all && toAssign ? 'warn' : ''} />
+        <Kpi label="Coût de la semaine" value={all ? money(cost) : '…'} hint="arbitres déjà désignés" />
+        <Kpi label="Journées saisies" value={all ? journees : '…'} hint={all ? `${list.length} match${list.length > 1 ? 's' : ''} au total` : ''} />
+      </div>
+
+      <div className="fs-cols">
+        <section className="fs-card">
+          <header className="fs-card-head"><h2>Cette semaine</h2><span className="muted">{thisWeek.length} match{thisWeek.length > 1 ? 's' : ''}</span></header>
+          {all && thisWeek.length === 0 ? <p className="fs-empty">Aucun match cette semaine. Ouvrez un championnat pour en ajouter.</p> : (
+            <ul className="fs-week">{thisWeek.map((m) => {
+              const lg = LEAGUES.find((l) => l.id === m.league);
+              return (
+                <li key={m.id}>
+                  <button type="button" onClick={() => onNav(m.league, m.gameweek)}>
+                    <span className="fs-when"><b>{shortDay(m.date)}</b><small>{m.time || '—'}</small></span>
+                    <span className="fs-match"><span className="fs-team"><b>{m.home}</b><TeamLogo name={m.home} size="sm" /></span><i>vs</i><span className="fs-team away"><TeamLogo name={m.away} size="sm" /><b>{m.away}</b></span></span>
+                    <span className="fs-tag">{lg?.nom} · J{m.gameweek}</span>
+                    <Status m={m} />
+                  </button>
+                </li>
+              );
+            })}</ul>
+          )}
+        </section>
+
+        <section className="fs-card">
+          <header className="fs-card-head"><h2>Championnats</h2></header>
+          <div className="fs-leagues">{LEAGUES.map((l) => {
+            const i = leagueInfo(l.id);
             return (
-              <button key={l.id} type="button" className={'fin-league fin-league-' + l.id} onClick={() => onNav(l.id, last || 1)}>
-                <span className="fin-league-name">{l.nom}</span>
-                <span className="fin-league-desc">{l.desc}</span>
-                <span className="fin-league-stats">{i ? `${i.matches} match${i.matches > 1 ? 's' : ''} · ${last ? 'dernière journée ' + last : 'aucune journée'}` : '…'}</span>
-                <span className="fin-league-go">Ouvrir ›</span>
+              <button key={l.id} type="button" className={'fs-league fs-league-' + l.id} onClick={() => onNav(l.id, i.last || 1)}>
+                <span className="fs-league-top"><strong>{l.nom}</strong><span className="fs-league-group">{l.group}</span></span>
+                <span className="fs-league-meta">{all ? (i.total ? `Journée ${i.last} · ${i.count} match${i.count > 1 ? 's' : ''}` : 'Aucune journée saisie') : '…'}</span>
+                <span className="fs-progress" role="progressbar" aria-valuenow={i.pct} aria-valuemin="0" aria-valuemax="100" aria-label="Arbitres désignés"><span style={{ width: i.pct + '%' }} /></span>
+                <span className="fs-league-foot">{all && i.total ? `${i.pct}% des arbitres désignés` : 'Ouvrir ›'}</span>
               </button>
             );
           })}</div>
         </section>
-      ))}
+      </div>
     </>
   );
 }
+
+const NAV_ICONS = {
+  home: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-8 9 8M5 10v10h14V10" /></svg>,
+  ball: <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7l4 3-1.5 5h-5L8 10z" /></svg>,
+};
 
 export default function Finance({ onBack }) {
   const { user, logout } = useAuth();
@@ -359,27 +410,36 @@ export default function Finance({ onBack }) {
   if (!allowed) {
     return <div className="finance-page"><div className="card fin-empty-state"><h2>Accès réservé</h2><p className="muted">Le département Finance est réservé à l’administrateur et au DAF.</p><button type="button" className="btn btn-primary" onClick={leave}>← Retour aux départements</button></div></div>;
   }
-  const back = league ? () => window.history.length > 1 ? window.history.back() : go(null) : leave;
+  const back = league ? () => (window.history.length > 1 ? window.history.back() : go(null)) : leave;
+  const item = (key, label, icon, active, onClick) => (
+    <button key={key} type="button" className={'fs-nav' + (active ? ' active' : '')} onClick={onClick} aria-current={active ? 'page' : undefined}>{icon}<span>{label}</span></button>
+  );
   return (
-    <div className="finance-page">
-      <header className="fin-bar">
-        <div className="fin-bar-left">
-          <button type="button" className="btn btn-secondary" onClick={back}>← {league ? 'Retour' : 'Départements'}</button>
-          <img className="fin-bar-logo" src="/federation-tunisienne-logo.webp" alt="" />
-          <div className="fin-bar-title"><strong>Finance</strong><span>Direction Nationale de l’Arbitrage</span></div>
+    <div className="finance-page fs-shell">
+      <aside className="fs-side">
+        <div className="fs-brand">
+          <img src="/federation-tunisienne-logo.webp" alt="" />
+          <div><strong>Finance</strong><span>Direction Nationale de l’Arbitrage</span></div>
         </div>
-        <div className="fin-bar-right">
-          <button type="button" className="btn btn-ghost" onClick={leave} title="Changer de département">Départements</button>
-          <span className="fin-bar-user">{user?.name}<small>{user?.role === 'daf' ? 'DAF' : 'Administrateur'}</small></span>
-          <button type="button" className="btn btn-ghost" onClick={logout}>Déconnexion</button>
+        <nav className="fs-navlist" aria-label="Finance">
+          {item('home', 'Vue d’ensemble', NAV_ICONS.home, !league, () => go(null))}
+          <p className="fs-nav-label">Championnats</p>
+          {LEAGUES.map((l) => item(l.id, l.nom, NAV_ICONS.ball, league?.id === l.id, () => go(l.id, route.league === l.id ? route.gameweek : null)))}
+        </nav>
+        <div className="fs-side-foot">
+          <button type="button" className="fs-switch" onClick={leave}>⇄ Changer de département</button>
+          <div className="fs-user"><span className="fs-avatar" aria-hidden="true">{initials(user?.name)}</span><span><strong>{user?.name}</strong><small>{user?.role === 'daf' ? 'DAF' : 'Administrateur'}</small></span></div>
+          <button type="button" className="fs-logout" onClick={logout}>Déconnexion</button>
         </div>
-      </header>
-      <main className="fin-main">
-        <Crumbs items={[
-          { label: 'Départements', onClick: leave },
-          { label: 'Finance', onClick: league ? () => go(null) : undefined },
-          ...(league ? [{ label: league.nom + (route.gameweek ? ` · Journée ${route.gameweek}` : '') }] : []),
-        ]} />
+      </aside>
+      <main className="fs-main">
+        <div className="fs-topline">
+          <button type="button" className="btn btn-secondary btn-sm" onClick={back}>← Retour</button>
+          <Crumbs items={[
+            { label: 'Finance', onClick: league ? () => go(null) : undefined },
+            ...(league ? [{ label: league.nom + (route.gameweek ? ` · Journée ${route.gameweek}` : '') }] : [{ label: 'Vue d’ensemble' }]),
+          ]} />
+        </div>
         {league ? <LeaguePage key={league.id} league={league} gameweek={route.gameweek} onNav={go} /> : <Home onNav={go} />}
       </main>
     </div>
