@@ -19,12 +19,14 @@ import ToSend from './pages/ToSend';
 import Registre from './pages/Registre';
 import Gmail from './pages/Gmail';
 import Splash from './components/Splash';
+import Portal from './components/Portal';
+import Finance from './pages/Finance';
 
 const BOOT_MIN_MS = 1500;
 const WELCOME_MS = 1800;
 const LEAVE_MS = 800;
 
-function Splashes() {
+function Splashes({ onComplete }) {
   const { t } = useLanguage();
   const { loading, welcome, endWelcome } = useAuth();
   const [bootPhase, setBootPhase] = useState('show');
@@ -50,6 +52,10 @@ function Splashes() {
 
   const holding = bootPhase === 'show' || (greeted && welcomePhase === 'show');
   useLayoutEffect(() => { setHolding(Boolean(holding)); }, [holding]);
+  // Boot + welcome terminés → on peut afficher la page de sélection
+  useEffect(() => {
+    if (bootPhase === 'done' && !greeted && !welcome) onComplete?.();
+  }, [bootPhase, greeted, welcome, onComplete]);
 
   if (greeted) {
     return <Splash title={t('splash.welcome', { name: greeted.name })} subtitle={t('auth.role.' + greeted.role)} leaving={welcomePhase === 'leaving'} />;
@@ -93,13 +99,23 @@ function PermRoute({ perm, children }) {
 }
 
 export default function App() {
+  const [splashDone, setSplashDone] = useState(false);
+  const [department, setDepartment] = useState(() => {
+    try { return sessionStorage.getItem('dna_department') || null; } catch { return null; }
+  });
+  const chooseDepartment = (id) => {
+    setDepartment(id);
+    try { sessionStorage.setItem('dna_department', id); } catch { /* ignore */ }
+  };
+
   return (
     <ThemeProvider>
       <LanguageProvider>
         <AuthProvider>
           <ErrorBoundary>
-            <Splashes />
+            <Splashes onComplete={() => setSplashDone(true)} />
             <Stage>
+            {splashDone && !department ? <Portal onChoose={chooseDepartment} /> : department === 'finance' ? <Finance /> :
             <Routes>
               <Route path="/login" element={<ErrorBoundary label="login"><Login /></ErrorBoundary>} />
               <Route path="/" element={<Protected><Layout /></Protected>}>
@@ -118,7 +134,7 @@ export default function App() {
                 <Route path="reception" element={<Navigate to="/courrier?direction=entrant" replace />} />
               </Route>
               <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
+            </Routes>}
             </Stage>
           </ErrorBoundary>
         </AuthProvider>
