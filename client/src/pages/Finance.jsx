@@ -113,8 +113,10 @@ function MatchModal({ league, gameweek, match, referees, teams, onClose, onSaved
   );
 }
 
-// Club logos (Ligue 1 clubs, from TheSportsDB). Matching ignores accents/case; clubs without a logo fall back to their initials.
-const BADGE = 'https://r2.thesportsdb.com/images/media/team/badge/';
+// Club logos (Ligue 1 clubs, from TheSportsDB), hébergés localement dans
+// /public/teams/ pour un affichage garanti sur tout appareil (pas de CDN externe).
+// Matching ignores accents/case; clubs without a logo fall back to their initials.
+const BADGE = '/teams/';
 const CLUB_LOGOS = [
   ['csvbqw1753934121', 'Espérance de Tunis', 'es tunis', 'est', 'esperance sportive de tunis'],
   ['2gijg71753933998', 'Club Africain', 'ca', 'club africain'],
@@ -133,7 +135,7 @@ const CLUB_LOGOS = [
   ['r0o21i1791695547', 'Sakiet Eddaïer', 'as sakiet eddaier', 'ps sakiet eddaier', 'progres sakiet eddaier'],
   ['wf634m1785432763', 'Hammam-Sousse', 'us hammam sousse', 'es hammam sousse'],
 ];
-const LOGO_BY_NAME = new Map(CLUB_LOGOS.flatMap(([id, ...names]) => names.map((n) => [normName(n), `${BADGE}${id}.png/medium`])));
+const LOGO_BY_NAME = new Map(CLUB_LOGOS.flatMap(([id, ...names]) => names.map((n) => [normName(n), `${BADGE}${id}.png`])));
 
 function TeamLogo({ name, size = 'md' }) {
   const src = LOGO_BY_NAME.get(normName(name));
