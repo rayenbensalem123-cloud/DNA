@@ -434,18 +434,27 @@ export default function Finance({ onBack }) {
     <div className="finance-page fs-shell">
       <aside className="fs-side">
         <div className="fs-brand">
-          <img src="/federation-tunisienne-logo.webp" alt="" />
-          <div><strong>Finance</strong><span>Direction Nationale de l’Arbitrage</span></div>
+          <div className="fs-brand-mark"><img src="/federation-tunisienne-logo.webp" alt="" /></div>
+          <div className="fs-brand-copy"><strong>Finance</strong><span>Direction Nationale<br/>de l’Arbitrage</span></div>
         </div>
         <nav className="fs-navlist" aria-label="Finance">
           {item('home', 'Dashboard', NAV_ICONS.home, !league, () => go(null))}
-          <p className="fs-nav-label">Championnats</p>
-          {LEAGUES.map((l) => item(l.id, l.nom, NAV_ICONS.ball, league?.id === l.id, () => go(l.id, route.league === l.id ? route.gameweek : null)))}
+          <p className="fs-nav-label"><span>CHAMPIONNATS</span><span className="fs-nav-count">{LEAGUES.length}</span></p>
+          {LEAGUES.map((l) => (
+            <button key={l.id} type="button" className={'fs-nav fs-nav-league' + (league?.id === l.id ? ' active' : '')} onClick={() => go(l.id, route.league === l.id ? route.gameweek : null)} aria-current={league?.id === l.id ? 'page' : undefined}>
+              <span className={'fs-league-dot fs-dot-' + l.id} aria-hidden="true" />
+              <span className="fs-nav-text"><span>{l.nom}</span><small>{l.group}</small></span>
+              <span className="fs-nav-arrow" aria-hidden="true">›</span>
+            </button>
+          ))}
         </nav>
         <div className="fs-side-foot">
-          <button type="button" className="fs-switch" onClick={leave}>⇄ Changer de département</button>
-          <div className="fs-user"><span className="fs-avatar" aria-hidden="true">{initials(user?.name)}</span><span><strong>{user?.name}</strong><small>{user?.role === 'daf' ? 'DAF' : 'Administrateur'}</small></span></div>
-          <button type="button" className="fs-logout" onClick={logout}>Déconnexion</button>
+          <button type="button" className="fs-switch" onClick={leave}><span aria-hidden="true">⇄</span> Changer de département</button>
+          <div className="fs-user">
+            <span className="fs-avatar" aria-hidden="true">{initials(user?.name)}</span>
+            <span className="fs-user-copy"><strong>{user?.name}</strong><small className={'fs-role-' + (user?.role || '')}>{user?.role === 'daf' ? 'DAF' : 'Administrateur'}</small></span>
+            <button type="button" className="fs-logout" onClick={logout} title="Déconnexion" aria-label="Déconnexion">⏻</button>
+          </div>
         </div>
       </aside>
       <main className="fs-main">
