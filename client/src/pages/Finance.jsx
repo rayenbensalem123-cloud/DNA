@@ -418,6 +418,7 @@ function BaremePage() {
   const [draft, setDraft] = useState(null);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
+  const defaultDraft = () => Object.fromEntries(LEAGUES.map((l) => [l.id, Object.fromEntries(Object.keys(DEFAULT_FEES).map((r) => [r, String(DEFAULT_FEES[r])]))]));
   const fromSrc = useCallback(() => {
     const src = bareme || {};
     return Object.fromEntries(LEAGUES.map((l) => [l.id, Object.fromEntries(Object.keys(DEFAULT_FEES).map((r) => [r, String(src[l.id]?.[r] ?? DEFAULT_FEES[r])]))]));
@@ -429,6 +430,7 @@ function BaremePage() {
   const dirty = bareme && LEAGUES.some((l) => Object.keys(DEFAULT_FEES).some((r) => Number(draft[l.id][r]) !== (bareme[l.id]?.[r])));
   const bad = LEAGUES.some((l) => Object.values(draft[l.id]).some((v) => v === '' || !Number.isFinite(Number(v)) || Number(v) < 0));
   const teamTotal = (l) => Object.values(draft[l.id]).reduce((t, v) => t + (Number(v) || 0), 0);
+  const changed = (l, r) => Number(draft[l][r]) !== (bareme?.[l]?.[r] ?? DEFAULT_FEES[r]);
   const save = async () => {
     setSaving(true); setMsg(null);
     try {
@@ -436,9 +438,30 @@ function BaremePage() {
       await api.saveBareme(out); await reload(); setMsg({ ok: true, t: 'Barème enregistré.' });
     } catch (e) { setMsg({ ok: false, t: e.message }); } finally { setSaving(false); }
   };
+  const doExport = (format) => {
+    const headers = [{ key: 'role', label: 'Rôle' }, ...LEAGUES.map((l) => ({ key: l.id, label: l.nom }))];
+    const rows = Object.keys(DEFAULT_FEES).map((r) => ({ role: r, ...Object.fromEntries(LEAGUES.map((l) => [l.id, Number(draft[l.id][r])])) }));
+    rows.push({ role: 'Total match (8)', ...Object.fromEntries(LEAGUES.map((l) => [l.id, teamTotal(l.id)])) });
+    if (format === 'csv') downloadCsv('bareme-indemnites', headers, rows);
+    else if (format === 'xlsx') downloadXlsx('bareme-indemnites', headers, rows);
+    else printPdf({ title: 'Barème des indemnités', subtitle: 'Indemnités par rôle et par championnat (TND)', headers, rows, meta: { by: 'Direction Nationale de l’Arbitrage' } });
+  };
+  const seasonTotal = LEAGUES.reduce((t, l) => t + teamTotal(l.id) * (l.weeks || 30) * 6, 0); // approx: 6 matchs/journée
   return (
     <section className="fin-page">
-      <div className="fin-head"><div><span className="fin-kicker">Finance</span><h1>Barème</h1><p className="muted fs-sub">Indemnité par rôle (TND) pour chaque championnat. Les totaux des journées se recalculent automatiquement.</p></div></div>
+      <div className="fin-head">
+        <div><span className="fin-kicker">Finance</span><h1>Barème</h1><p className="muted fs-sub">Indemnité par rôle (TND) pour chaque championnat. Les totaux des journées se recalculent automatiquement.</p></div>
+        <div className="export-group" role="group" aria-label="Exporter le barème">
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => doExport('csv')}>CSV</button>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => doExport('xlsx')}>Excel</button>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => doExport('pdf')}>PDF</button>
+        </div>
+      </div>
+      <div className="bm-summary">
+        <div className="bm-summary-item"><span>Total par match</span><strong>{money(teamTotal('ligue1'))}</strong><small>Ligue 1 · 8 arbitres</small></div>
+        <div className="bm-summary-item"><span>Budget saison (estimé)</span><strong>{money(seasonTotal)}</strong><small>4 championnats · ~30 journées</small></div>
+        <div className="bm-summary-item"><span>Rôles</span><strong>{Object.keys(DEFAULT_FEES).length}</strong><small>4 terrain + 4 VAR</small></div>
+      </div>
       <div className="card bm-card">
         <table className="bm-table">
           <thead><tr><th>Rôle</th>{LEAGUES.map((l) => <th key={l.id}><span className={'fs-league-dot fs-dot-' + l.id} aria-hidden="true" /> {l.nom}</th>)}</tr></thead>
@@ -448,7 +471,13 @@ function BaremePage() {
                 <tr className="bm-group"><td colSpan={LEAGUES.length + 1}>{g.t}</td></tr>
                 {g.list.map((r) => (
                   <tr key={r}><th scope="row">{r}</th>{LEAGUES.map((l) => (
-                    <td key={l.id}><label className="bm-in"><input type="number" inputMode="numeric" min="0" step="1" aria-label={`${r} · ${l.nom}`} value={draft[l.id][r]} onChange={(e) => set(l.id, r, e.target.value)} /><span>TND</span></label></td>
+                    <td key={l.id}>
+                      <label className={'bm-in' + (changed(l.id, r) ? ' changed' : '')}>
+                        <input type="number" inputMode="numeric" min="0" step="1" aria-label={`${r} · ${l.nom}`} value={draft[l.id][r]} onChange={(e) => set(l.id, r, e.target.value)} />
+                        <span>TND</span>
+                      </label>
+                      {changed(l.id, r) && <span className="bm-old">was {bareme?.[l.id]?.[r] ?? DEFAULT_FEES[r]}</span>}
+                    </td>
                   ))}</tr>
                 ))}
               </Fragment>
@@ -459,6 +488,7 @@ function BaremePage() {
       </div>
       <div className="bm-actions">
         {msg && <span className={msg.ok ? 'bm-ok' : 'bm-err'} role="status">{msg.t}</span>}
+        <button type="button" className="btn btn-ghost" disabled={saving} onClick={() => { setMsg(null); setDraft(defaultDraft()); }}>Réinitialiser</button>
         <button type="button" className="btn btn-secondary" disabled={!dirty || saving} onClick={() => { setMsg(null); setDraft(fromSrc()); }}>Annuler</button>
         <button type="button" className="btn btn-primary" disabled={!dirty || bad || saving} onClick={save}>{saving ? 'Enregistrement…' : 'Enregistrer le barème'}</button>
       </div>

@@ -2089,6 +2089,14 @@ input:focus, select:focus, textarea:focus { outline: 2px solid #ffd3d8; outline-
 .bm-group td { padding-top: 16px; font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: #9aa0ae; border-bottom: 0; }
 .bm-in { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #d8dce6; border-radius: 10px; background: #fff; padding: 0 10px; height: 40px; }
 .bm-in:focus-within { border-color: #c8102e; box-shadow: 0 0 0 3px rgba(200,16,46,.12); }
+.bm-in.changed { border-color: #e0a800; background: #fffdf5; }
+.bm-old { display: block; margin-top: 3px; font-size: 10px; color: #a67c00; text-decoration: line-through; }
+/* Résumé du barème */
+.bm-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.bm-summary-item { display: flex; flex-direction: column; gap: 3px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 12px; background: #fff; box-shadow: 0 2px 10px rgba(35,41,54,.05); }
+.bm-summary-item span { font-size: 10.5px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: #8a90a0; }
+.bm-summary-item strong { font-size: 24px; font-weight: 900; color: #1f2533; font-variant-numeric: tabular-nums; }
+.bm-summary-item small { font-size: 11px; color: #6a7180; }
 .bm-in input { width: 70px; border: 0; outline: 0; background: transparent; font: 700 15px ui-monospace, SFMono-Regular, Menlo, monospace; text-align: right; }
 .bm-in span { font-size: 11px; font-weight: 700; color: #9aa0ae; }
 .bm-table tfoot th, .bm-table tfoot td { border-bottom: 0; background: #f4f6fa; font-weight: 800; }
