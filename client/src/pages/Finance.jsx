@@ -429,7 +429,12 @@ function BaremePage() {
   const set = (l, r, v) => { setMsg(null); setDraft({ ...draft, [l]: { ...draft[l], [r]: v } }); };
   const dirty = bareme && LEAGUES.some((l) => Object.keys(DEFAULT_FEES).some((r) => Number(draft[l.id][r]) !== (bareme[l.id]?.[r])));
   const bad = LEAGUES.some((l) => Object.values(draft[l.id]).some((v) => v === '' || !Number.isFinite(Number(v)) || Number(v) < 0));
-  const teamTotal = (l) => Object.values(draft[l.id]).reduce((t, v) => t + (Number(v) || 0), 0);
+  // Accepte l'id d'un championnat (string) ou son objet { id }.
+  const teamTotal = (l) => {
+    const id = typeof l === 'string' ? l : l?.id;
+    const fees = draft?.[id];
+    return fees ? Object.values(fees).reduce((t, v) => t + (Number(v) || 0), 0) : 0;
+  };
   const changed = (l, r) => Number(draft[l][r]) !== (bareme?.[l]?.[r] ?? DEFAULT_FEES[r]);
   const save = async () => {
     setSaving(true); setMsg(null);
