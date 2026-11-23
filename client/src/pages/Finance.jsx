@@ -499,7 +499,7 @@ function BaremePage() {
         <button type="button" className="btn btn-secondary" disabled={!dirty || saving} onClick={() => { setMsg(null); setDraft(fromSrc()); }}>Annuler</button>
         <button type="button" className="btn btn-primary" disabled={!dirty || bad || saving} onClick={save}>{saving ? 'Enregistrement…' : 'Enregistrer le barème'}</button>
       </div>
-      <p className="muted bm-note">Le nouveau barème s’applique à tous les matchs, y compris ceux déjà joués.</p>
+      <p className="muted bm-note">Le barème est figé à la création de chaque match : modifier ce barème n’affecte que les nouveaux matchs. Les matchs déjà enregistrés conservent leurs indemnités d’origine.</p>
     </section>
   );
 }
