@@ -15,7 +15,7 @@ const LEAGUES = [
 const FIELD_ROLES = ['Arbitre central', 'Assistant 1', 'Assistant 2', '4e arbitre'];
 const VAR_ROLES = ['VAR', 'AVAR 1', 'AVAR 2', 'AVAR 3'];
 // Indemnités par rôle (TND) — barème du design validé.
-const FEES = { 'Arbitre central': 400, 'Assistant 1': 250, 'Assistant 2': 250, '4e arbitre': 200, VAR: 350, 'AVAR 1': 300, 'AVAR 2': 300, 'AVAR 3': 300 };
+const FEES = { 'Arbitre central': 400, 'Assistant 1': 250, 'Assistant 2': 250, '4e arbitre': 200, VAR: 400, 'AVAR 1': 250, 'AVAR 2': 250, 'AVAR 3': 250 };
 const money = (n) => `${Number(n).toLocaleString('fr-FR')} TND`;
 const team8 = (m) => [...FIELD_ROLES.map((role, i) => ({ role, slot: m.field?.[i] })), ...VAR_ROLES.map((role, i) => ({ role, slot: m.var?.[i] }))];
 const payroll = (m) => team8(m).reduce((t, x) => t + (x.slot?.nom ? FEES[x.role] || 0 : 0), 0);
