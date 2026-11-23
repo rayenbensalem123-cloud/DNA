@@ -2,6 +2,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
+// Barème des indemnités arbitrales (TND) par championnat et par rôle — modifiable par l'admin / DAF.
+export const BAREME_ROLES = ['Arbitre central', 'Assistant 1', 'Assistant 2', '4e arbitre', 'VAR', 'AVAR 1', 'AVAR 2', 'AVAR 3'];
+export const BAREME_LEAGUES = ['ligue1', 'ligue2', 'c1', 'c2'];
+function defaultBareme() {
+  const base = { 'Arbitre central': 400, 'Assistant 1': 250, 'Assistant 2': 250, '4e arbitre': 200, VAR: 400, 'AVAR 1': 250, 'AVAR 2': 250, 'AVAR 3': 250 };
+  return Object.fromEntries(BAREME_LEAGUES.map((l) => [l, { ...base }]));
+}
+
 const DATA_DIR = path.join(process.cwd(), 'server', 'data');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 
@@ -50,6 +58,7 @@ function seed() {
     notifications: [],
     referees: [],
     matches: [],
+    bareme: defaultBareme(),
     committees: COMMITTEES.map((c) => ({ ...c })),
     secret: crypto.randomBytes(32).toString('hex'),
   };
@@ -88,6 +97,7 @@ function migrate(db) {
   if (!Array.isArray(db.notifications)) { db.notifications = []; changed = true; }
   if (!Array.isArray(db.referees)) { db.referees = []; changed = true; }
   if (!Array.isArray(db.matches)) { db.matches = []; changed = true; }
+  if (!db.bareme || typeof db.bareme !== 'object') { db.bareme = defaultBareme(); changed = true; }
   // One-time data load (runs once per database, recorded in db.seeds): Ligue 1, journée 8 (20-22 nov. 2026).
   if (!Array.isArray(db.seeds)) { db.seeds = []; changed = true; }
   if (!db.seeds.includes('ligue1-j8-2026')) {

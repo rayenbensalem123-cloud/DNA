@@ -2,7 +2,7 @@ import http from 'node:http';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import fs from 'node:fs';
-import { getDB, saveDB, updateDB, verifyPassword, hashPassword, initializeDB, getSessionSecret } from './store.js';
+import { getDB, saveDB, updateDB, verifyPassword, hashPassword, initializeDB, getSessionSecret, BAREME_ROLES, BAREME_LEAGUES } from './store.js';
 
 // Best-effort email sending via the configured Gmail account (nodemailer SMTP).
 // Never blocks a request — failures are swallowed so the app stays usable.
@@ -721,6 +721,33 @@ async function route(req, res) {
     logActivity(db, user, 'committee.update', nom, { committeeId: committee.id, oldName: oldNom, by: user.name });
     await saveDB(db);
     return send(res, 200, { item: committee });
+  }
+
+  // ---- Finance: barème des indemnités (par championnat et par rôle) — admin / DAF ----
+  if (pathname === '/api/bareme') {
+    const user = requireAuth(req, res);
+    if (!user) return;
+    if (!(user.role === 'admin' || user.role === 'daf')) return send(res, 403, { error: 'Réservé à l’admin et au DAF' });
+    const db = getDB();
+    if (method === 'GET') return send(res, 200, { bareme: db.bareme, roles: BAREME_ROLES });
+    if (method === 'PUT') {
+      if (denyReadOnly(user, res)) return;
+      const body = await readBody(req);
+      const next = {};
+      for (const l of BAREME_LEAGUES) {
+        next[l] = {};
+        for (const r of BAREME_ROLES) {
+          const v = Number(body?.bareme?.[l]?.[r]);
+          if (!Number.isFinite(v) || v < 0 || v > 100000) return send(res, 400, { error: `Montant invalide (${l} · ${r})` });
+          next[l][r] = Math.round(v * 1000) / 1000;
+        }
+      }
+      db.bareme = next;
+      logActivity(db, user, 'bareme.update', 'bareme', {});
+      await saveDB(db);
+      return send(res, 200, { bareme: db.bareme, roles: BAREME_ROLES });
+    }
+    return send(res, 405, { error: 'Méthode non autorisée' });
   }
 
   // ---- Finance: journées de championnat (matchs + désignations arbitrales) ----

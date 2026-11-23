@@ -2079,3 +2079,25 @@ input:focus, select:focus, textarea:focus { outline: 2px solid #ffd3d8; outline-
 .fx-panel-foot > div { display: flex; flex-direction: column; gap: 1px; }
 .fx-panel-foot small { font-size: 11.5px; color: #6a7180; text-transform: none; letter-spacing: 0; font-weight: 600; }
 @media (max-width: 767px) { .fx-panel { max-height: none; } .fx-slots { grid-template-columns: 1fr 1fr; } .fx-slot { min-height: 88px; } }
+
+/* Finance — Barème */
+.bm-card { padding: 8px 8px 4px; overflow-x: auto; }
+.bm-table { width: 100%; border-collapse: collapse; min-width: 640px; }
+.bm-table th, .bm-table td { padding: 10px 14px; text-align: left; border-bottom: 1px solid #eceef4; }
+.bm-table thead th { font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #6a7180; white-space: nowrap; }
+.bm-table tbody th { font-weight: 700; font-size: 14px; }
+.bm-group td { padding-top: 16px; font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: #9aa0ae; border-bottom: 0; }
+.bm-in { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #d8dce6; border-radius: 10px; background: #fff; padding: 0 10px; height: 40px; }
+.bm-in:focus-within { border-color: #c8102e; box-shadow: 0 0 0 3px rgba(200,16,46,.12); }
+.bm-in input { width: 70px; border: 0; outline: 0; background: transparent; font: 700 15px ui-monospace, SFMono-Regular, Menlo, monospace; text-align: right; }
+.bm-in span { font-size: 11px; font-weight: 700; color: #9aa0ae; }
+.bm-table tfoot th, .bm-table tfoot td { border-bottom: 0; background: #f4f6fa; font-weight: 800; }
+.bm-table tfoot strong { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.bm-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+.bm-ok { color: #1a7f4b; font-weight: 700; margin-right: auto; }
+.bm-err { color: #c8102e; font-weight: 700; margin-right: auto; }
+.bm-note { margin-top: 10px; font-size: 13px; }
+@media (max-width: 700px) { .bm-actions .btn { flex: 1; } }
+.bm-table .bm-in input { border: 0; box-shadow: none; padding: 0; height: auto; background: transparent; border-radius: 0; }
+.bm-table .bm-in input:focus { outline: 0; box-shadow: none; }
+.bm-table thead th .fs-league-dot { display: inline-block; vertical-align: middle; margin-right: 6px; }

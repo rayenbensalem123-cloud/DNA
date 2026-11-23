@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api';
 import { useAuth } from '../auth';
 import { fmtDate } from '../utils';
@@ -14,11 +14,13 @@ const LEAGUES = [
 ];
 const FIELD_ROLES = ['Arbitre central', 'Assistant 1', 'Assistant 2', '4e arbitre'];
 const VAR_ROLES = ['VAR', 'AVAR 1', 'AVAR 2', 'AVAR 3'];
-// Indemnités par rôle (TND) — barème du design validé.
-const FEES = { 'Arbitre central': 400, 'Assistant 1': 250, 'Assistant 2': 250, '4e arbitre': 200, VAR: 400, 'AVAR 1': 250, 'AVAR 2': 250, 'AVAR 3': 250 };
+// Barème (TND) par championnat et par rôle : chargé depuis le serveur, modifiable par l'admin / DAF.
+const DEFAULT_FEES = { 'Arbitre central': 400, 'Assistant 1': 250, 'Assistant 2': 250, '4e arbitre': 200, VAR: 400, 'AVAR 1': 250, 'AVAR 2': 250, 'AVAR 3': 250 };
+const BaremeCtx = createContext({ bareme: null, reload: () => {} });
+const feesOf = (bareme, leagueId) => (bareme && bareme[leagueId]) || DEFAULT_FEES;
 const money = (n) => `${Number(n).toLocaleString('fr-FR')} TND`;
 const team8 = (m) => [...FIELD_ROLES.map((role, i) => ({ role, slot: m.field?.[i] })), ...VAR_ROLES.map((role, i) => ({ role, slot: m.var?.[i] }))];
-const payroll = (m) => team8(m).reduce((t, x) => t + (x.slot?.nom ? FEES[x.role] || 0 : 0), 0);
+const payroll = (m, bareme) => { const f = feesOf(bareme, m.league); return team8(m).reduce((t, x) => t + (x.slot?.nom ? f[x.role] || 0 : 0), 0); };
 const shortDay = (iso) => {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '');
   return m ? new Date(+m[1], +m[2] - 1, +m[3]).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' }) : 'Date à fixer';
@@ -29,6 +31,7 @@ const EMPTY_SLOTS = () => [{ nom: '' }, { nom: '' }, { nom: '' }, { nom: '' }];
 const readRoute = () => {
   const m = /^#\/finance\/([a-z0-9]+)(?:\/(\d+))?/.exec(window.location.hash || '');
   const league = m && LEAGUES.some((l) => l.id === m[1]) ? m[1] : null;
+  if (m && m[1] === 'bareme') return { league: null, page: 'bareme', gameweek: null };
   return { league, gameweek: league && m[2] ? Math.min(60, Math.max(1, parseInt(m[2], 10))) : null };
 };
 const go = (league, gameweek) => {
@@ -161,6 +164,8 @@ function Status({ m }) {
 }
 
 function MatchPanel({ match, league, referees, onEdit, onDelete }) {
+  const { bareme } = useContext(BaremeCtx);
+  const FEES = feesOf(bareme, league.id);
   const region = (slot) => (slot?.refereeId ? referees.find((r) => r.id === slot.refereeId)?.region : '') || '';
   return (
     <div className="fx-panel">
@@ -205,12 +210,13 @@ function MatchPanel({ match, league, referees, onEdit, onDelete }) {
           );
         })}
       </div>
-      <div className="fx-panel-foot"><div><span>Total match</span><small>{assigned(match)}/8 arbitres désignés</small></div><strong>{money(payroll(match))}</strong></div>
+      <div className="fx-panel-foot"><div><span>Total match</span><small>{assigned(match)}/8 arbitres désignés</small></div><strong>{money(payroll(match, bareme))}</strong></div>
     </div>
   );
 }
 
 function LeaguePage({ league, gameweek, onNav }) {
+  const { bareme } = useContext(BaremeCtx);
   const [matches, setMatches] = useState([]);
   const [referees, setReferees] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -235,7 +241,7 @@ function LeaguePage({ league, gameweek, onNav }) {
   const list = matches.filter((m) => m.gameweek === gw).sort((a, b) => String(a.date || '9999').localeCompare(String(b.date || '9999')) || String(a.time).localeCompare(String(b.time)));
   const days = useMemo(() => { const g = []; list.forEach((m) => { const k = m.date || ''; const last = g[g.length - 1]; if (last && last.k === k) last.items.push(m); else g.push({ k, items: [m] }); }); return g; }, [list]);
   const opened = list.find((m) => m.id === openId) || list[0] || null;
-  const dayTotal = list.reduce((t, m) => t + payroll(m), 0);
+  const dayTotal = list.reduce((t, m) => t + payroll(m, bareme), 0);
   const pick = (id) => { setOpenId(id); if (window.matchMedia('(max-width: 767px)').matches) panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
   const teams = useMemo(() => [...new Set(matches.flatMap((m) => [m.home, m.away]))].sort(), [matches]);
 
@@ -248,7 +254,7 @@ function LeaguePage({ league, gameweek, onNav }) {
   const rows = list.map((m) => {
     const o = { date: m.date ? fmtDate(m.date) : '', time: m.time || '', match: `${m.home} - ${m.away}`, venue: m.venue || '' };
     FIELD_ROLES.forEach((_, i) => { o['f' + i] = m.field?.[i]?.nom || ''; }); VAR_ROLES.forEach((_, i) => { o['v' + i] = m.var?.[i]?.nom || ''; });
-    o.total = payroll(m);
+    o.total = payroll(m, bareme);
     return o;
   });
   const doExport = async (kind) => {
@@ -343,6 +349,7 @@ function Kpi({ label, value, hint, tone }) {
 }
 
 function Home({ onNav }) {
+  const { bareme } = useContext(BaremeCtx);
   const [all, setAll] = useState(null);
   const [error, setError] = useState('');
   useEffect(() => { api.listMatches('', '').then((d) => setAll(d.items || [])).catch((e) => setError(e.message)); }, []);
@@ -350,7 +357,7 @@ function Home({ onNav }) {
   const list = all || [];
   const thisWeek = list.filter((m) => m.date >= week.from && m.date <= week.to).sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.time).localeCompare(String(b.time)));
   const worked = thisWeek.reduce((t, m) => t + assigned(m), 0);
-  const cost = thisWeek.reduce((t, m) => t + payroll(m), 0);
+  const cost = thisWeek.reduce((t, m) => t + payroll(m, bareme), 0);
   const journees = new Set(list.map((m) => m.league + ':' + m.gameweek)).size;
   const leagueInfo = (id) => {
     const ms = list.filter((m) => m.league === id); const last = ms.reduce((x, m) => Math.max(x, m.gameweek), 0);
@@ -406,8 +413,63 @@ function Home({ onNav }) {
   );
 }
 
+function BaremePage() {
+  const { bareme, reload } = useContext(BaremeCtx);
+  const [draft, setDraft] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const fromSrc = useCallback(() => {
+    const src = bareme || {};
+    return Object.fromEntries(LEAGUES.map((l) => [l.id, Object.fromEntries(Object.keys(DEFAULT_FEES).map((r) => [r, String(src[l.id]?.[r] ?? DEFAULT_FEES[r])]))]));
+  }, [bareme]);
+  useEffect(() => { setDraft(fromSrc()); }, [fromSrc]);
+  if (!draft) return <p className="muted">Chargement…</p>;
+  const roles = [{ t: 'Arbitres terrain', list: FIELD_ROLES }, { t: 'Équipe VAR', list: VAR_ROLES }];
+  const set = (l, r, v) => { setMsg(null); setDraft({ ...draft, [l]: { ...draft[l], [r]: v } }); };
+  const dirty = bareme && LEAGUES.some((l) => Object.keys(DEFAULT_FEES).some((r) => Number(draft[l.id][r]) !== (bareme[l.id]?.[r])));
+  const bad = LEAGUES.some((l) => Object.values(draft[l.id]).some((v) => v === '' || !Number.isFinite(Number(v)) || Number(v) < 0));
+  const teamTotal = (l) => Object.values(draft[l.id]).reduce((t, v) => t + (Number(v) || 0), 0);
+  const save = async () => {
+    setSaving(true); setMsg(null);
+    try {
+      const out = Object.fromEntries(LEAGUES.map((l) => [l.id, Object.fromEntries(Object.entries(draft[l.id]).map(([r, v]) => [r, Number(v)]))]));
+      await api.saveBareme(out); await reload(); setMsg({ ok: true, t: 'Barème enregistré.' });
+    } catch (e) { setMsg({ ok: false, t: e.message }); } finally { setSaving(false); }
+  };
+  return (
+    <section className="fin-page">
+      <div className="fin-head"><div><span className="fin-kicker">Finance</span><h1>Barème</h1><p className="muted fs-sub">Indemnité par rôle (TND) pour chaque championnat. Les totaux des journées se recalculent automatiquement.</p></div></div>
+      <div className="card bm-card">
+        <table className="bm-table">
+          <thead><tr><th>Rôle</th>{LEAGUES.map((l) => <th key={l.id}><span className={'fs-league-dot fs-dot-' + l.id} aria-hidden="true" /> {l.nom}</th>)}</tr></thead>
+          <tbody>
+            {roles.map((g) => (
+              <Fragment key={g.t}>
+                <tr className="bm-group"><td colSpan={LEAGUES.length + 1}>{g.t}</td></tr>
+                {g.list.map((r) => (
+                  <tr key={r}><th scope="row">{r}</th>{LEAGUES.map((l) => (
+                    <td key={l.id}><label className="bm-in"><input type="number" inputMode="numeric" min="0" step="1" aria-label={`${r} · ${l.nom}`} value={draft[l.id][r]} onChange={(e) => set(l.id, r, e.target.value)} /><span>TND</span></label></td>
+                  ))}</tr>
+                ))}
+              </Fragment>
+            ))}
+          </tbody>
+          <tfoot><tr><th scope="row">Match complet (8 arbitres)</th>{LEAGUES.map((l) => <td key={l.id}><strong>{money(teamTotal(l))}</strong></td>)}</tr></tfoot>
+        </table>
+      </div>
+      <div className="bm-actions">
+        {msg && <span className={msg.ok ? 'bm-ok' : 'bm-err'} role="status">{msg.t}</span>}
+        <button type="button" className="btn btn-secondary" disabled={!dirty || saving} onClick={() => { setMsg(null); setDraft(fromSrc()); }}>Annuler</button>
+        <button type="button" className="btn btn-primary" disabled={!dirty || bad || saving} onClick={save}>{saving ? 'Enregistrement…' : 'Enregistrer le barème'}</button>
+      </div>
+      <p className="muted bm-note">Le nouveau barème s’applique à tous les matchs, y compris ceux déjà joués.</p>
+    </section>
+  );
+}
+
 const NAV_ICONS = {
   home: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-8 9 8M5 10v10h14V10" /></svg>,
+  coin: <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M14.5 9.5c-.6-.8-1.6-1.2-2.6-1.2-1.4 0-2.4.7-2.4 1.8 0 2.7 5 1.2 5 3.9 0 1.1-1.1 1.9-2.6 1.9-1.1 0-2.2-.5-2.8-1.4M12 6.5v1.8M12 15.9v1.6" /></svg>,
   ball: <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7l4 3-1.5 5h-5L8 10z" /></svg>,
 };
 
@@ -421,12 +483,17 @@ export default function Finance({ onBack }) {
   }, []);
   const allowed = user?.role === 'admin' || user?.role === 'daf';
   const league = LEAGUES.find((l) => l.id === route.league) || null;
+  const onBareme = route.page === 'bareme';
+  const [bareme, setBareme] = useState(null);
+  const reloadBareme = useCallback(() => api.bareme().then((d) => setBareme(d.bareme)).catch(() => {}), []);
+  useEffect(() => { if (allowed) reloadBareme(); }, [allowed, reloadBareme]);
+  const ctx = useMemo(() => ({ bareme, reload: reloadBareme }), [bareme, reloadBareme]);
   const leave = () => { if (window.location.hash) window.history.replaceState(null, '', window.location.pathname); onBack(); };
 
   if (!allowed) {
     return <div className="finance-page"><div className="card fin-empty-state"><h2>Accès réservé</h2><p className="muted">Le département Finance est réservé à l’administrateur et au DAF.</p><button type="button" className="btn btn-primary" onClick={leave}>← Retour aux départements</button></div></div>;
   }
-  const back = league ? () => (window.history.length > 1 ? window.history.back() : go(null)) : leave;
+  const back = league || onBareme ? () => (window.history.length > 1 ? window.history.back() : go(null)) : leave;
   const item = (key, label, icon, active, onClick) => (
     <button key={key} type="button" className={'fs-nav' + (active ? ' active' : '')} onClick={onClick} aria-current={active ? 'page' : undefined}>{icon}<span>{label}</span></button>
   );
@@ -438,7 +505,8 @@ export default function Finance({ onBack }) {
           <div className="fs-brand-copy"><strong>Finance</strong><span>Direction Nationale<br/>de l’Arbitrage</span></div>
         </div>
         <nav className="fs-navlist" aria-label="Finance">
-          {item('home', 'Dashboard', NAV_ICONS.home, !league, () => go(null))}
+          {item('home', 'Dashboard', NAV_ICONS.home, !league && !onBareme, () => go(null))}
+          {item('bareme', 'Barème', NAV_ICONS.coin, onBareme, () => go('bareme'))}
           <p className="fs-nav-label"><span>CHAMPIONNATS</span><span className="fs-nav-count">{LEAGUES.length}</span></p>
           {LEAGUES.map((l) => (
             <button key={l.id} type="button" className={'fs-nav fs-nav-league' + (league?.id === l.id ? ' active' : '')} onClick={() => go(l.id, route.league === l.id ? route.gameweek : null)} aria-current={league?.id === l.id ? 'page' : undefined}>
@@ -461,11 +529,13 @@ export default function Finance({ onBack }) {
         <div className="fs-topline">
           <button type="button" className="btn btn-secondary btn-sm" onClick={back}>← Retour</button>
           <Crumbs items={[
-            { label: 'Finance', onClick: league ? () => go(null) : undefined },
-            ...(league ? [{ label: league.nom + (route.gameweek ? ` · Journée ${route.gameweek}` : '') }] : [{ label: 'Dashboard' }]),
+            { label: 'Finance', onClick: league || onBareme ? () => go(null) : undefined },
+            ...(onBareme ? [{ label: 'Barème' }] : league ? [{ label: league.nom + (route.gameweek ? ` · Journée ${route.gameweek}` : '') }] : [{ label: 'Dashboard' }]),
           ]} />
         </div>
-        {league ? <LeaguePage key={league.id} league={league} gameweek={route.gameweek} onNav={go} /> : <Home onNav={go} />}
+        <BaremeCtx.Provider value={ctx}>
+          {onBareme ? <BaremePage /> : league ? <LeaguePage key={league.id} league={league} gameweek={route.gameweek} onNav={go} /> : <Home onNav={go} />}
+        </BaremeCtx.Provider>
       </main>
     </div>
   );
