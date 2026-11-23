@@ -760,6 +760,13 @@ async function route(req, res) {
     if (!(user.role === 'admin' || user.role === 'daf')) return send(res, 403, { error: 'Réservé à l’admin et au DAF' });
     const db = getDB();
     if (!Array.isArray(db.matches)) db.matches = [];
+    // Migration: les matchs créés avant le figement reçoivent une copie du
+    // barème actuel UNE SEULE FOIS, puis restent figés.
+    let migrated = false;
+    for (const m of db.matches) {
+      if (!m.fees) { m.fees = { ...(db.bareme?.[m.league] || {}) }; migrated = true; }
+    }
+    if (migrated) await saveDB(db);
     const byDate = (a, b) => String(a.date || '9999').localeCompare(String(b.date || '9999')) || String(a.time || '').localeCompare(String(b.time || '')) || String(a.createdAt).localeCompare(String(b.createdAt));
 
     if (pathname === '/api/matches/summary' && method === 'GET') {
@@ -813,7 +820,10 @@ async function route(req, res) {
       if (denyReadOnly(user, res)) return;
       const r = clean(await readBody(req));
       if (r.error) return send(res, 400, { error: r.error });
-      const match = { id: 'm' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex'), ...r.value, createdAt: new Date().toISOString(), createdBy: user.id };
+      // Figer le barème au moment de la création: les changements futurs du
+      // barème ne modifieront PAS le coût de ce match.
+      const feesSnapshot = { ...(db.bareme?.[r.value.league] || {}) };
+      const match = { id: 'm' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex'), ...r.value, fees: feesSnapshot, createdAt: new Date().toISOString(), createdBy: user.id };
       db.matches.push(match);
       logActivity(db, user, 'match.create', `${match.home} - ${match.away}`, { league: match.league, gameweek: match.gameweek, by: user.name });
       await saveDB(db);

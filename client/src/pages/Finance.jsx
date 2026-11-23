@@ -20,7 +20,9 @@ const BaremeCtx = createContext({ bareme: null, reload: () => {} });
 const feesOf = (bareme, leagueId) => (bareme && bareme[leagueId]) || DEFAULT_FEES;
 const money = (n) => `${Number(n).toLocaleString('fr-FR')} TND`;
 const team8 = (m) => [...FIELD_ROLES.map((role, i) => ({ role, slot: m.field?.[i] })), ...VAR_ROLES.map((role, i) => ({ role, slot: m.var?.[i] }))];
-const payroll = (m, bareme) => { const f = feesOf(bareme, m.league); return team8(m).reduce((t, x) => t + (x.slot?.nom ? f[x.role] || 0 : 0), 0); };
+// Utilise le barème figé sur le match (m.fees) s'il existe, sinon le barème courant.
+// Les anciens matchs gardent ainsi toujours le tarif en vigueur à leur création.
+const payroll = (m, bareme) => { const f = m.fees && Object.keys(m.fees).length ? m.fees : feesOf(bareme, m.league); return team8(m).reduce((t, x) => t + (x.slot?.nom ? f[x.role] || 0 : 0), 0); };
 const shortDay = (iso) => {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '');
   return m ? new Date(+m[1], +m[2] - 1, +m[3]).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' }) : 'Date à fixer';
